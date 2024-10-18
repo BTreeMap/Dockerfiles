@@ -6,4 +6,5 @@ RUN wget https://packages.microsoft.com/config/debian/$(lsb_release -rs)/package
 RUN dpkg -i $MS_PACKAGES_DEB_PATH
 RUN rm $MS_PACKAGES_DEB_PATH
 RUN apt update
+RUN mkdir -p /usr/share/man/man1
 RUN apt install msopenjdk-21
