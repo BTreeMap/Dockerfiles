@@ -10,6 +10,8 @@ ARG GUACAMOLE_VERSION=1.5.5
 ARG TOMCAT_VERSION=8.5
 ARG TOMCAT_JRE=jdk8
 
+ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-client-source"
+
 # Use official maven image for the build
 FROM maven:3-eclipse-temurin-8-focal AS builder
 
@@ -18,10 +20,11 @@ RUN apt-get update              \
     && apt-get install -y git
 
 # Clone the repository and checkout the specified tag
-RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-client.git /tmp/guacamole-client-source
+RUN mkdir -p ${GUACAMOLE_SOURCE_DIR}
+RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-client.git ${GUACAMOLE_SOURCE_DIR}
 
 # Set up a working directory
-WORKDIR /tmp/guacamole-client-source
+WORKDIR ${GUACAMOLE_SOURCE_DIR}
 
 # Use Mozilla's Firefox PPA (newer Ubuntu lacks a "firefox-esr" package and
 # provides only a transitional "firefox" package that actually requires Snap

@@ -6,6 +6,9 @@ ARG GUACAMOLE_VERSION=1.5.5
 
 # Use the arm64v8 variant of Alpine as the base image
 ARG ALPINE_BASE_IMAGE=3.18
+
+ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-server-source"
+
 FROM arm64v8/alpine:${ALPINE_BASE_IMAGE} AS builder
 
 # Install build dependencies
@@ -34,10 +37,11 @@ RUN apk add --no-cache                \
         webkit2gtk-dev
 
 # Clone the repository and checkout the specified tag
-RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-server.git /tmp/guacamole-server-source
+RUN mkdir -p ${GUACAMOLE_SOURCE_DIR}
+RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-server.git ${GUACAMOLE_SOURCE_DIR}
 
 # Set up a working directory
-WORKDIR /tmp/guacamole-server-source
+WORKDIR ${GUACAMOLE_SOURCE_DIR}
 
 # Copy source to container for sake of build
 ARG BUILD_DIR=/tmp/guacamole-server
