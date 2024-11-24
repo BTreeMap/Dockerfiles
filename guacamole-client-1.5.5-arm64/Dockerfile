@@ -20,7 +20,7 @@ RUN apt-get update              \
     && apt-get install -y git
 
 # Clone the repository and checkout the specified tag
-WORKDIR ${GUACAMOLE_SOURCE_DIR}
+WORKDIR $GUACAMOLE_SOURCE_DIR
 RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-client.git .
 
 # Use Mozilla's Firefox PPA (newer Ubuntu lacks a "firefox-esr" package and

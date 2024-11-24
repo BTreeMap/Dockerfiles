@@ -37,7 +37,7 @@ RUN apk add --no-cache                \
         webkit2gtk-dev
 
 # Clone the repository and checkout the specified tag
-WORKDIR ${GUACAMOLE_SOURCE_DIR}
+WORKDIR $GUACAMOLE_SOURCE_DIR
 RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-server.git .
 
 # Copy source to container for sake of build
