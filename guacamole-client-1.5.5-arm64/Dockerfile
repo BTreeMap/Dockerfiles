@@ -1,28 +1,8 @@
 # Dockerfile for guacamole-client
 # Reference: https://github.com/apache/guacamole-client/blob/1.5.5/Dockerfile
 
-#
-# Licensed to the Apache Software Foundation (ASF) under one
-# or more contributor license agreements.  See the NOTICE file
-# distributed with this work for additional information
-# regarding copyright ownership.  The ASF licenses this file
-# to you under the Apache License, Version 2.0 (the
-# "License"); you may not use this file except in compliance
-# with the License.  You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing,
-# software distributed under the License is distributed on an
-# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-# KIND, either express or implied.  See the License for the
-# specific language governing permissions and limitations
-# under the License.
-#
-
-#
-# Dockerfile for guacamole-client
-#
+# Define the tag as an ARG for easy modification.
+ARG GUACAMOLE_VERSION=1.5.5
 
 # Use args for Tomcat image label to allow image builder to choose alternatives
 # such as `--build-arg TOMCAT_JRE=jre8-alpine`
@@ -32,6 +12,16 @@ ARG TOMCAT_JRE=jdk8
 
 # Use official maven image for the build
 FROM maven:3-eclipse-temurin-8-focal AS builder
+
+RUN apt-get update              \
+    && apt-get upgrade -y       \
+    && apt-get install -y git
+
+# Clone the repository and checkout the specified tag
+RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-client.git /tmp/guacamole-client-source
+
+# Set up a working directory
+WORKDIR /tmp/guacamole-client-source
 
 # Use Mozilla's Firefox PPA (newer Ubuntu lacks a "firefox-esr" package and
 # provides only a transitional "firefox" package that actually requires Snap
@@ -72,7 +62,7 @@ COPY . "$BUILD_DIR"
 RUN /opt/guacamole/bin/build-guacamole.sh "$BUILD_DIR" /opt/guacamole
 
 # For the runtime image, we start with the official Tomcat distribution
-FROM tomcat:${TOMCAT_VERSION}-${TOMCAT_JRE}
+FROM arm64v8/tomcat:${TOMCAT_VERSION}-${TOMCAT_JRE}
 
 # Install XMLStarlet for server.xml alterations and unzip for LOGBACK_LEVEL case
 RUN apt-get update -qq \

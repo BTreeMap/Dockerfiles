@@ -33,15 +33,15 @@ RUN apk add --no-cache                \
         util-linux-dev                \
         webkit2gtk-dev
 
-# Set up a working directory
-WORKDIR /tmp
-
 # Clone the repository and checkout the specified tag
-RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-server.git
+RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-server.git /tmp/guacamole-server-source
+
+# Set up a working directory
+WORKDIR /tmp/guacamole-server-source
 
 # Copy source to container for sake of build
 ARG BUILD_DIR=/tmp/guacamole-server
-# COPY guacamole-server ${BUILD_DIR}
+COPY . ${BUILD_DIR}
 
 #
 # Base directory for installed build artifacts.
