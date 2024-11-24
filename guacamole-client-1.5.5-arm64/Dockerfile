@@ -1,9 +1,6 @@
 # Dockerfile for guacamole-client
 # Reference: https://github.com/apache/guacamole-client/blob/1.5.5/Dockerfile
 
-# Define the tag as an ARG for easy modification.
-ARG GUACAMOLE_VERSION=1.5.5
-
 # Use args for Tomcat image label to allow image builder to choose alternatives
 # such as `--build-arg TOMCAT_JRE=jre8-alpine`
 #
@@ -14,6 +11,7 @@ ARG TOMCAT_JRE=jdk8
 FROM maven:3-eclipse-temurin-8-focal AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
+ENV GUACAMOLE_VERSION=1.5.5
 
 RUN apt-get update              \
     && apt-get upgrade -y       \
@@ -21,7 +19,7 @@ RUN apt-get update              \
 
 # Clone the repository and checkout the specified tag
 WORKDIR $GUACAMOLE_SOURCE_DIR
-RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-client.git
+RUN git clone --depth 1 --branch $GUACAMOLE_VERSION https://github.com/apache/guacamole-client.git
 WORKDIR $GUACAMOLE_SOURCE_DIR/guacamole-client
 
 # Use Mozilla's Firefox PPA (newer Ubuntu lacks a "firefox-esr" package and

@@ -1,15 +1,13 @@
 # Dockerfile for guacamole-server
 # Reference: https://github.com/apache/guacamole-server/blob/1.5.5/Dockerfile
 
-# Define the tag as an ARG for easy modification.
-ARG GUACAMOLE_VERSION=1.5.5
-
 # Use the arm64v8 variant of Alpine as the base image
 ARG ALPINE_BASE_IMAGE=3.18
 
 FROM arm64v8/alpine:${ALPINE_BASE_IMAGE} AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
+ENV GUACAMOLE_VERSION=1.5.5
 
 # Install build dependencies
 RUN apk add --no-cache                \
@@ -38,7 +36,7 @@ RUN apk add --no-cache                \
 
 # Clone the repository and checkout the specified tag
 WORKDIR $GUACAMOLE_SOURCE_DIR
-RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-server.git
+RUN git clone --depth 1 --branch $GUACAMOLE_VERSION https://github.com/apache/guacamole-server.git
 WORKDIR $GUACAMOLE_SOURCE_DIR/guacamole-server
 
 # Copy source to container for sake of build
