@@ -46,15 +46,20 @@ jobs:
       - name: Build and push Docker images
         run: |
           docker run --privileged --rm tonistiigi/binfmt --install all
+
+          # Convert REGISTRY and IMAGE_NAME to lowercase
+          registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
+          image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+
           # Find all Dockerfiles recursively
           for dockerfile in $(find . -name 'Dockerfile'); do
             # Get directory of the Dockerfile
             dir=$(dirname "$dockerfile")
-            # Construct image tag based on the directory structure
-            image_name="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-$(basename "$dir")"
-            echo "Building image for $image_name"
+            # Construct image tag based on the directory structure, ensuring all parts are lowercase
+            image_tag="${registry_lower}/${image_name_lower}:${{ github.sha }}-$(basename "$dir" | tr '[:upper:]' '[:lower:]')"
+            echo "Building image for $image_tag"
             # Build and push the Docker image
-            docker buildx build --platform linux/arm64 "$dir" --file "$dockerfile" --tag "$image_name" --push
+            docker buildx build --platform linux/arm64 "$dir" --file "$dockerfile" --tag "$image_tag" --push
           done
 
       # Sign the published Docker images except on PRs.
