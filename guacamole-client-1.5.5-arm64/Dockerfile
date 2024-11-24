@@ -8,7 +8,7 @@ ARG TOMCAT_VERSION=8.5
 ARG TOMCAT_JRE=jdk8
 
 # Use official maven image for the build
-FROM maven:3-eclipse-temurin-8-focal AS builder
+FROM --platform=linux/amd64 maven:3-eclipse-temurin-8-focal AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
@@ -52,7 +52,7 @@ ENV \
     BUILD_DIR=/tmp/guacamole-docker-BUILD
 
 # Add configuration scripts
-RUN mkdir -p /opt/guacamole/bin/ && cp -r guacamole-docker/bin/ /opt/guacamole/bin/
+RUN mkdir -p /opt/guacamole/bin/ && cp -r guacamole-docker/bin/ /opt/guacamole/bin/ && ls -a guacamole-docker/bin/ && ls -a /opt/guacamole/bin/
 
 # Copy source to container for sake of build
 RUN mkdir -p "$BUILD_DIR" && cp -r . "$BUILD_DIR"
