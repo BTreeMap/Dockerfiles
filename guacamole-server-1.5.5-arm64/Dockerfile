@@ -27,6 +27,9 @@ RUN apk add --no-cache                \
         pulseaudio-dev                \
         util-linux-dev                \
 
+# Set up a working directory
+WORKDIR /tmp
+
 # Clone the repository and checkout the specified tag
 RUN git clone https://github.com/apache/guacamole-server.git && \
     cd guacamole-server && \
@@ -34,7 +37,7 @@ RUN git clone https://github.com/apache/guacamole-server.git && \
 
 # Copy source to container for sake of build
 ARG BUILD_DIR=/tmp/guacamole-server
-COPY guacamole-server ${BUILD_DIR}
+# COPY guacamole-server ${BUILD_DIR}
 
 #
 # Base directory for installed build artifacts.
@@ -134,7 +137,7 @@ RUN ${BUILD_DIR}/src/guacd-docker/bin/list-dependencies.sh \
         > ${PREFIX_DIR}/DEPENDENCIES
 
 # Use same Alpine version as the base for the runtime image
-FROM alpine:${ALPINE_BASE_IMAGE}
+FROM arm64v8/alpine:${ALPINE_BASE_IMAGE}
 
 #
 # Base directory for installed build artifacts. See also the
