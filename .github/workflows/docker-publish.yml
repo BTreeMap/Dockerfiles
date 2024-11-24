@@ -53,18 +53,19 @@ jobs:
 
           # Find all Dockerfiles recursively
           for dockerfile in $(find . -name 'Dockerfile'); do
-            # Get directory of the Dockerfile
+            # Get the directory of the Dockerfile
             dir=$(dirname "$dockerfile")
-            # Construct image tag based on the directory structure, ensuring all parts are lowercase
-            image_tag="${registry_lower}/${image_name_lower}:${{ github.sha }}-$(basename "$dir" | tr '[:upper:]' '[:lower:]')"
-            echo "Building image for $image_tag"
-            # Build and push the Docker image
-            docker buildx build --platform linux/arm64 "$dir" --file "$dockerfile" --tag "$image_tag" --push
-          done
 
-      # Sign the published Docker images except on PRs.
-      - name: Sign the published Docker images
-        env:
-          TAGS: ${{ steps.build-and-push.outputs.tags }} # Adjust as necessary based on your tagging strategy
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}
-        run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+            # Construct the image tag using the current commit SHA and the directory name
+            dir_tag="${registry_lower}/${image_name_lower}:$(basename "$dir" | tr '[:upper:]' '[:lower:]')"
+            sha_tag="${dir_tag}-${{ github.sha }}"
+
+            echo "Building image for $sha_tag"
+            echo "Tagging image as: $dir_tag"
+
+            # Build the Docker image and tag it with both tags
+            docker buildx build --platform linux/arm64 "$dir" --file "$dockerfile" --tag "$sha_tag" --tag "$dir_tag" --push
+            
+            # Remove the local image to save space
+            docker rmi "$sha_tag" "$dir_tag" || true  # Ignore errors if the image is not found
+          done
