@@ -12,6 +12,8 @@ env:
 
 jobs:
   build:
+    # Only run the job if the event is not a pull request AND the commit message contains 'run-ci'
+    if: github.event_name != 'pull_request' && contains(github.event.head_commit.message, 'run-ci')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,7 +26,6 @@ jobs:
 
       # Install the cosign tool except on PR
       - name: Install cosign
-        if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 #v3.5.0
         with:
           cosign-release: 'v2.2.4'
@@ -35,7 +36,6 @@ jobs:
 
       # Login against a Docker registry except on PR
       - name: Log into registry ${{ env.REGISTRY }}
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
           registry: ${{ env.REGISTRY }}
@@ -64,7 +64,6 @@ jobs:
 
       # Sign the published Docker images except on PRs.
       - name: Sign the published Docker images
-        if: ${{ github.event_name != 'pull_request' }}
         env:
           TAGS: ${{ steps.build-and-push.outputs.tags }} # Adjust as necessary based on your tagging strategy
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
