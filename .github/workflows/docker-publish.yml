@@ -2,7 +2,8 @@ name: Docker
 
 on:
   schedule:
-    - cron: '22 14 * * *'
+    - cron: '0 5 * * *'
+    - cron: '0 17 * * *'
   push:
     branches: [ "main" ]
 
@@ -12,8 +13,8 @@ env:
 
 jobs:
   build:
-    # Only run the job if the event is not a pull request AND the commit message contains 'run-ci'
-    if: github.event_name != 'pull_request' && contains(github.event.head_commit.message, 'run-ci')
+    # Run the job if triggered by a cron job or a push containing the specific commit message
+    if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
