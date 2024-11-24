@@ -10,10 +10,10 @@ ARG GUACAMOLE_VERSION=1.5.5
 ARG TOMCAT_VERSION=8.5
 ARG TOMCAT_JRE=jdk8
 
-ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-client-source"
-
 # Use official maven image for the build
 FROM maven:3-eclipse-temurin-8-focal AS builder
+
+ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-client-source"
 
 RUN apt-get update              \
     && apt-get upgrade -y       \

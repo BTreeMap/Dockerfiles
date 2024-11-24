@@ -7,9 +7,9 @@ ARG GUACAMOLE_VERSION=1.5.5
 # Use the arm64v8 variant of Alpine as the base image
 ARG ALPINE_BASE_IMAGE=3.18
 
-ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-server-source"
-
 FROM arm64v8/alpine:${ALPINE_BASE_IMAGE} AS builder
+
+ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-server-source"
 
 # Install build dependencies
 RUN apk add --no-cache                \
