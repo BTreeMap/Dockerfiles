@@ -14,9 +14,12 @@ RUN apk add --no-cache                \
         automake                      \
         build-base                    \
         cairo-dev                     \
+        cjson-dev                     \
         cmake                         \
+        cunit-dev                     \
         git                           \
         grep                          \
+        krb5-dev                      \
         libjpeg-turbo-dev             \
         libpng-dev                    \
         libtool                       \
@@ -25,7 +28,10 @@ RUN apk add --no-cache                \
         openssl1.1-compat-dev         \
         pango-dev                     \
         pulseaudio-dev                \
-        util-linux-dev
+        sdl2-dev                      \
+        sdl2_ttf-dev                  \
+        util-linux-dev                \
+        webkit2gtk-dev
 
 # Set up a working directory
 WORKDIR /tmp
