@@ -1,4 +1,4 @@
-FROM lscr.io/linuxserver/rdesktop:arm64v8-ubuntu-kde
+FROM --platform=linux/arm64 lscr.io/linuxserver/rdesktop:arm64v8-ubuntu-kde
 
 # Set environment variables
 ENV DOCKER_TMP_DIR="/tmp/.docker"

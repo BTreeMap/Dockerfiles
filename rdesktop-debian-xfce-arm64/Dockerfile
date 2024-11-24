@@ -1,4 +1,4 @@
-FROM lscr.io/linuxserver/rdesktop:arm64v8-debian-xfce
+FROM --platform=linux/arm64 lscr.io/linuxserver/rdesktop:arm64v8-debian-xfce
 
 # Set environment variables
 ENV DOCKER_TMP_DIR="/tmp/.docker"
