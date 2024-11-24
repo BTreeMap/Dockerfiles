@@ -1,7 +1,7 @@
 FROM lscr.io/linuxserver/rdesktop:arm64v8-debian-xfce
 
 # Set environment variables
-ENV DOCKER_TMP_DIR="/tmp/.docker/"
+ENV DOCKER_TMP_DIR="/tmp/.docker"
 ENV MS_PACKAGES_DEB_PATH="$DOCKER_TMP_DIR/packages-microsoft-prod.deb"
 
 # Create temporary directory and install necessary packages
