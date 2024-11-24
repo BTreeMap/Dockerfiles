@@ -41,7 +41,7 @@ WORKDIR /tmp/guacamole-server-source
 
 # Copy source to container for sake of build
 ARG BUILD_DIR=/tmp/guacamole-server
-COPY . ${BUILD_DIR}
+RUN cp . ${BUILD_DIR}
 
 #
 # Base directory for installed build artifacts.

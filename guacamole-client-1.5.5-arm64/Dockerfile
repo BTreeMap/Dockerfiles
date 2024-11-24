@@ -32,7 +32,7 @@ RUN    apt-get update                                \
     && add-apt-repository -y ppa:mozillateam/ppa
 
 # Explicitly prefer packages from the Firefox PPA
-COPY guacamole-docker/mozilla-firefox.pref /etc/apt/preferences.d/
+RUN cp guacamole-docker/mozilla-firefox.pref /etc/apt/preferences.d/
 
 # Install firefox browser for sake of JavaScript unit tests
 RUN apt-get update && apt-get install -y firefox
@@ -53,10 +53,10 @@ ENV \
     BUILD_DIR=/tmp/guacamole-docker-BUILD
 
 # Add configuration scripts
-COPY guacamole-docker/bin/ /opt/guacamole/bin/
+RUN cp guacamole-docker/bin/ /opt/guacamole/bin/
 
 # Copy source to container for sake of build
-COPY . "$BUILD_DIR"
+RUN cp . "$BUILD_DIR"
 
 # Run the build itself
 RUN /opt/guacamole/bin/build-guacamole.sh "$BUILD_DIR" /opt/guacamole
