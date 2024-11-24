@@ -25,7 +25,7 @@ RUN apk add --no-cache                \
         openssl1.1-compat-dev         \
         pango-dev                     \
         pulseaudio-dev                \
-        util-linux-dev                \
+        util-linux-dev
 
 # Set up a working directory
 WORKDIR /tmp
