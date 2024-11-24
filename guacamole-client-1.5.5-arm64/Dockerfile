@@ -21,7 +21,7 @@ RUN apt-get update              \
 
 # Clone the repository and checkout the specified tag
 WORKDIR $GUACAMOLE_SOURCE_DIR
-RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-client.git .
+RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} https://github.com/apache/guacamole-client.git $GUACAMOLE_SOURCE_DIR
 
 # Use Mozilla's Firefox PPA (newer Ubuntu lacks a "firefox-esr" package and
 # provides only a transitional "firefox" package that actually requires Snap
