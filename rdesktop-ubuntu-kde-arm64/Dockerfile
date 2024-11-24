@@ -16,7 +16,8 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     apt-get update && \
     mkdir -p /usr/share/man/man1 && \
     apt-get install -y msopenjdk-21 && \
-    apt-get clean
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Optionally, set JAVA_HOME if needed
 ENV JAVA_HOME=/usr/lib/jvm/msopenjdk-21
