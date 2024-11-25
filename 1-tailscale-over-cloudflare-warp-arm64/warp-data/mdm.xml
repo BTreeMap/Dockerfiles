@@ -1,0 +1,8 @@
+<dict>
+  <key>service_mode</key>
+  <string>proxy</string>
+  <key>proxy_port</key>
+  <integer>8080</integer>
+  <key>switch_locked</key>
+  <boolean>true</boolean>
+</dict>
