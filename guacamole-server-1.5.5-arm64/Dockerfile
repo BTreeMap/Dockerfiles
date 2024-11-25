@@ -7,7 +7,7 @@ ARG ALPINE_BASE_IMAGE=3.18
 FROM --platform=linux/arm64 arm64v8/alpine:${ALPINE_BASE_IMAGE} AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
-ENV GUACAMOLE_VERSION=8e75eea9ce7e4b672f55bfb4068b927255156dc0
+ENV GUACAMOLE_VERSION=1.5.5
 
 # Install build dependencies
 RUN apk add --no-cache                \
@@ -93,7 +93,7 @@ ARG FREERDP_OPTS="\
     -DWITH_SERVER_INTERFACE=OFF \
     -DWITH_SHADOW_MAC=OFF \
     -DWITH_SHADOW_X11=OFF \
-    -DWITH_SSE2=ON \
+    -DWITH_SSE2=OFF \
     -DWITH_WAYLAND=OFF \
     -DWITH_X11=OFF \
     -DWITH_X264=OFF \
