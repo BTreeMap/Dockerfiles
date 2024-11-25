@@ -1,9 +1,7 @@
-version: "3"
-
 services:
-  warp:
-    image: caomingjun/warp
-    container_name: warp
+  tailscale-over-warp:
+    image: ghcr.io/btreemap/dockerfiles:1-tailscale-over-cloudflare-warp
+    container_name: tailscale-over-warp
     restart: always
     ports:
       - "1080:1080"
@@ -20,4 +18,5 @@ services:
       - net.ipv6.conf.all.disable_ipv6=0
       - net.ipv4.conf.all.src_valid_mark=1
     volumes:
-      - ./data:/var/lib/cloudflare-warp
+      - ./tailscale-data:/var/lib/tailscale
+      - ./warp-data:/var/lib/cloudflare-warp
