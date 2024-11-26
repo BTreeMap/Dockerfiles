@@ -55,7 +55,7 @@ sleep 5
 
 # Disable qlog debugging for the Warp client to reduce logging verbosity
 echo "Disabling qlog debugging for Warp client..."
-warp-cli --accept-tos debug qlog disable
+su -c "warp-cli --accept-tos debug qlog disable" ubuntu
 
 # Connect the Warp client to the service as user 'ubuntu'
 echo "Connecting to the Warp service as user 'ubuntu'..."
