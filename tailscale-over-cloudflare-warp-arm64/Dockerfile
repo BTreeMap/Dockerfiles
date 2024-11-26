@@ -35,6 +35,10 @@ RUN apt-get update && \
     # Clean up APT caches and temporary files to minimize the final image size
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
+    
+    # Remove the state directories for Tailscale and Cloudflare WARP to ensure they are empty in the image
+    rm -rf /var/lib/tailscale && \
+    rm -rf /var/lib/cloudflare-warp && \
 
     # Make the entrypoint script executable to ensure it can be run at container start
     chmod +x /entrypoint.sh && \
