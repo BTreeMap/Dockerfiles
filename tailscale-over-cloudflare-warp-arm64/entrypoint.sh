@@ -12,5 +12,5 @@ fi
 dbus-daemon --config-file=/usr/share/dbus-1/system.conf
 
 # Start the warp service daemon with the accept terms of service option,
-# running it in the background
-warp-svc --accept-tos &
+# running it in the foreground
+warp-svc --accept-tos
