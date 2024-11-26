@@ -1,17 +1,5 @@
 #!/bin/bash
 
-# Check if the TUN device exists; if not, create it for compatibility with Podman
-if [ ! -e /dev/net/tun ]; then
-    # Ensure the /dev/net directory exists
-    sudo mkdir -p /dev/net
-    
-    # Create the TUN device with major number 10 and minor number 200
-    sudo mknod /dev/net/tun c 10 200
-    
-    # Set the permissions of the TUN device to allow read/write access for the owner only
-    sudo chmod 600 /dev/net/tun
-fi
-
 # Create the /run/dbus directory if it does not already exist
 mkdir -p /run/dbus
 
@@ -34,6 +22,9 @@ tailscaled --state=tailscaled.state &
 
 # Disable qlog debugging for Warp client to minimize logging verbosity
 warp-cli debug qlog disable
+
+NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
+sudo ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
 
 # Execute an indefinite tail command to keep the container running
 # This prevents the container from exiting, allowing the background services to continue
