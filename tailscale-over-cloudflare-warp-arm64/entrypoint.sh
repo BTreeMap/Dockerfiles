@@ -15,4 +15,6 @@ dbus-daemon --config-file=/usr/share/dbus-1/system.conf
 # running it in the foreground
 warp-svc --accept-tos &
 
+warp-cli debug qlog disable
+
 exec tail -f /dev/null

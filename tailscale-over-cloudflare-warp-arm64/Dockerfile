@@ -5,35 +5,44 @@
 # Use the official Ubuntu 24.04 base image for ARM64 architecture
 FROM --platform=linux/arm64 ubuntu:24.04
 
-# Copy the entrypoint script into the container
+# Copy the entrypoint script into the container's root directory
 COPY entrypoint.sh /entrypoint.sh
 
-# Install necessary packages and set up Cloudflare and Tailscale clients
+# Install necessary packages and configure the environment for Cloudflare and Tailscale clients
 RUN apt-get update && \
     apt-get upgrade -y && \
-    
-    # Install required tools
+
+    # Install required utilities for package management and GPG handling
     apt-get install -y curl gnupg lsb-release && \
-    
-    # Import the Cloudflare GPG key and add the Cloudflare APT repository
+
+    # Import the Cloudflare GPG key for package verification
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | \
     gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && \
+
+    # Add the Cloudflare APT repository to the sources list
     echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | \
     tee /etc/apt/sources.list.d/cloudflare-client.list && \
-    
-    # Update the APT index and install the Cloudflare WARP client
+
+    # Update the package index after adding the new repository
     apt-get update && \
+
+    # Install the Cloudflare WARP client
     apt-get install -y cloudflare-warp && \
-    
-    # Install Tailscale
+
+    # Download and install Tailscale using its installation script
     curl -fsSL https://tailscale.com/install.sh | sh && \
-    
-    # Clean up APT and temporary files to reduce image size
+
+    # Clean up APT caches and temporary files to minimize the final image size
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    
-    # Make the entrypoint script executable
-    chmod +x /entrypoint.sh
 
-# Set the entrypoint for the container
+    # Make the entrypoint script executable to ensure it can be run at container start
+    chmod +x /entrypoint.sh && \
+
+    # Create necessary directories for WARP and pre-accept TOS (terms of service)
+    mkdir -p /home/ubuntu/.local/share/warp && \
+    echo -n 'yes' > /home/ubuntu/.local/share/warp/accepted-tos.txt && \
+    echo -n 'yes' > /home/ubuntu/.local/share/warp/accepted-teams-tos.txt
+
+# Set the entrypoint for the container to execute the entrypoint script when the container starts
 ENTRYPOINT ["/entrypoint.sh"]
