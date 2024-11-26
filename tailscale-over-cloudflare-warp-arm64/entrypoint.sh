@@ -24,12 +24,25 @@ fi
 echo "Starting the D-Bus daemon..."
 dbus-daemon --config-file=/usr/share/dbus-1/system.conf
 
+# Optimize Tailscale performance by configuring UDP generic receive offload (GRO)
+echo "Optimizing Tailscale performance with UDP GRO settings..."
+NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
+ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
+
 # Start the Tailscale daemon in the background
 echo "Starting the Tailscale daemon..."
-tailscaled --state=tailscaled.state &
+tailscaled --statedir=/var/lib/tailscale --state=tailscaled.state &
 
 # Sleep for 5 seconds to allow Tailscale daemon to initialize
 echo "Sleeping for 5 seconds to allow the Tailscale daemon to initialize..."
+sleep 5
+
+# Bring up the Tailscale connection and advertise this node as an exit node
+echo "Connecting Tailscale and advertising this node as an exit node..."
+tailscale up --advertise-exit-node
+
+# Allow some time (5 seconds) for the Tailscale connection to establish
+echo "Sleeping for 5 seconds to allow Tailscale connection to establish..."
 sleep 5
 
 # Start the Cloudflare WARP service daemon and accept the terms of service
@@ -43,19 +56,6 @@ sleep 5
 # Disable qlog debugging for the Warp client to reduce logging verbosity
 echo "Disabling qlog debugging for Warp client..."
 warp-cli debug qlog disable
-
-# Optimize Tailscale performance by configuring UDP generic receive offload (GRO)
-echo "Optimizing Tailscale performance with UDP GRO settings..."
-NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
-ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
-
-# Bring up the Tailscale connection and advertise this node as an exit node
-echo "Connecting Tailscale and advertising this node as an exit node..."
-tailscale up --advertise-exit-node
-
-# Allow some time (5 seconds) for the Tailscale connection to establish
-echo "Sleeping for 5 seconds to allow Tailscale connection to establish..."
-sleep 5
 
 # Connect the Warp client to the service as user 'ubuntu'
 echo "Connecting to the Warp service as user 'ubuntu'..."
