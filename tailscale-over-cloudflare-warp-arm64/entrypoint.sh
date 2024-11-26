@@ -31,7 +31,7 @@ ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
 
 # Start the Tailscale daemon in the background
 echo "Starting the Tailscale daemon..."
-tailscaled --statedir=/var/lib/tailscale --state=tailscaled.state &
+tailscaled --statedir=/var/lib/tailscale &
 
 # Sleep for 5 seconds to allow Tailscale daemon to initialize
 echo "Sleeping for 5 seconds to allow the Tailscale daemon to initialize..."
