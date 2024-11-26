@@ -33,15 +33,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     
     # Make the entrypoint script executable
-    chmod +x /entrypoint.sh && \
-    
-    # Create a non-root user for running the warp client
-    useradd -m -s /bin/bash multiset && \
-    
-    # Allow the 'multiset' user to execute sudo without a password
-    echo "multiset ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/multiset
-
-USER multiset
+    chmod +x /entrypoint.sh
 
 # Set the entrypoint for the container
 ENTRYPOINT ["/entrypoint.sh"]
