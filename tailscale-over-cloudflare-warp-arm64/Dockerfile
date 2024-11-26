@@ -13,7 +13,7 @@ RUN apt-get update && \
     apt-get upgrade -y && \
 
     # Install required utilities for package management and GPG handling
-    apt-get install -y curl gnupg lsb-release && \
+    apt-get install -y curl gnupg lsb-release ethtool && \
 
     # Import the Cloudflare GPG key for package verification
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | \
