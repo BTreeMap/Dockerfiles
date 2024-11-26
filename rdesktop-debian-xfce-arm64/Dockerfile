@@ -8,7 +8,7 @@ ENV MS_PACKAGES_DEB_PATH="$DOCKER_TMP_DIR/packages-microsoft-prod.deb"
 RUN mkdir -p $DOCKER_TMP_DIR && \
     apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y wget lsb-release git && \
+    apt-get install -y wget lsb-release git vim && \
     wget https://packages.microsoft.com/config/debian/$(lsb_release -rs)/packages-microsoft-prod.deb -O $MS_PACKAGES_DEB_PATH && \
     dpkg -i $MS_PACKAGES_DEB_PATH && \
     rm $MS_PACKAGES_DEB_PATH && \
