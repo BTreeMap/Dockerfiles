@@ -11,47 +11,56 @@
 set -e
 
 # Create the /run/dbus directory if it does not already exist
+echo "Creating /run/dbus directory..."
 mkdir -p /run/dbus
 
 # Check for the existence of the D-Bus PID file and remove it if found
-# This ensures a clean start for the D-Bus session without any conflicts
+echo "Removing existing D-Bus PID file if it exists..."
 if [ -f /run/dbus/pid ]; then
     rm /run/dbus/pid
 fi
 
 # Start the D-Bus daemon with the specified configuration file
-# This daemon facilitates inter-process communication for services
+echo "Starting the D-Bus daemon..."
 dbus-daemon --config-file=/usr/share/dbus-1/system.conf
 
-# Start the Tailscale daemon, specifying the state file for persistent 
-# connection management, and run it in the background
+# Start the Tailscale daemon in the background
+echo "Starting the Tailscale daemon..."
 tailscaled --state=tailscaled.state &
 
+# Sleep for 5 seconds to allow Tailscale daemon to initialize
+echo "Sleeping for 5 seconds to allow the Tailscale daemon to initialize..."
+sleep 5
+
 # Start the Cloudflare WARP service daemon and accept the terms of service
-# Running this in the background allows the script to continue executing
+echo "Starting the Cloudflare WARP service and accepting terms of service..."
 warp-svc --accept-tos &
 
-# Allow the daemons to initialize by sleeping for 5 seconds
+# Allow the daemons to initialize by sleeping for an additional 5 seconds
+echo "Sleeping for 5 seconds to allow WARP service to initialize..."
 sleep 5
 
 # Disable qlog debugging for the Warp client to reduce logging verbosity
+echo "Disabling qlog debugging for Warp client..."
 warp-cli debug qlog disable
 
 # Optimize Tailscale performance by configuring UDP generic receive offload (GRO)
-# Find the active network device by checking the route to an external address (e.g., Google DNS)
+echo "Optimizing Tailscale performance with UDP GRO settings..."
 NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
-# Enable UDP GRO forwarding while disabling regular GRO for performance enhancement
-sudo ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
+ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
 
 # Bring up the Tailscale connection and advertise this node as an exit node
+echo "Connecting Tailscale and advertising this node as an exit node..."
 tailscale up --advertise-exit-node
 
 # Allow some time (5 seconds) for the Tailscale connection to establish
+echo "Sleeping for 5 seconds to allow Tailscale connection to establish..."
 sleep 5
 
-# Connect the Warp client to the service
-warp-cli connect
+# Connect the Warp client to the service as user 'ubuntu'
+echo "Connecting to the Warp service as user 'ubuntu'..."
+su -c "warp-cli --accept-tos connect" ubuntu
 
 # Execute an indefinite tail command to keep the container running
-# This prevents the container from exiting, allowing all background services to continue
+echo "Starting indefinite tail command to keep the container running..."
 exec tail -f /dev/null
