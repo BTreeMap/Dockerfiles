@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Create the /run/dbus directory if it does not already exist
 mkdir -p /run/dbus
 
