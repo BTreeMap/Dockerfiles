@@ -17,7 +17,7 @@ RUN apk add --no-cache \
       iptables \
       ip6tables \
       openssh && \
-    pip3 install sshuttle && \
+    pip3 install sshuttle --break-system-packages && \
     rm -rf /var/cache/apk/* && \
     chmod +x /entrypoint.sh
 
