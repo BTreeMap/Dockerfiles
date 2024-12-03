@@ -1,5 +1,13 @@
 #!/bin/ash
 
+# Before running this script, ensure to bind /dev/net/tun:/dev/net/tun 
+# to the container. Additionally, grant the following capabilities:
+#   - net_admin: Allows the container to manage networking aspects.
+#   - sys_module: Enables loading and unloading kernel modules.
+
+# Exit the script immediately if any command fails.
+set -e
+
 # Check for required environment variables and provide defaults
 : "${SSH_USER:="username"}"     # Default SSH user
 : "${SSH_HOST:="sshserver"}"     # Default SSH host
@@ -29,4 +37,7 @@ fi
 $SSH_COMMAND &
 
 # Start the original Tailscale entrypoint
-exec /tailscale/run.sh
+exec /usr/local/bin/containerboot
+
+# Keep the script running indefinitely to prevent container exit.
+exec tail -f /dev/null
