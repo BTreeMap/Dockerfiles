@@ -44,8 +44,11 @@ RUN apk update && \
     # Create a directory for Gluetun configurations or data.
     mkdir -p /gluetun && \
 
-    # Ensure /gluetun is empty
-    rm -rf /gluetun
+    # Ensure /gluetun is empty.
+    rm -rf /gluetun && \
+
+    # Add execution permission to the entrypoint script.
+    chmod +x /entrypoint.sh
 
 # Set the entrypoint for the container to the specified script, allowing for proper initialization.
 ENTRYPOINT ["/entrypoint.sh"]
