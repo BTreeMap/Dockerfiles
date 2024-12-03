@@ -14,6 +14,8 @@ RUN apk add --no-cache \
       openssl-dev \
       build-base \
       py3-pip \
+      iptables \
+      ip6tables \
       openssh && \
     pip3 install sshuttle && \
     rm -rf /var/cache/apk/* && \
