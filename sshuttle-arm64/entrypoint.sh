@@ -64,8 +64,5 @@ fi
 # Start sshuttle in the background
 $SSH_COMMAND &
 
-# Start the original Tailscale entrypoint
-exec /usr/local/bin/containerboot
-
 # Keep the script running indefinitely to prevent container exit.
 exec tail -f /dev/null

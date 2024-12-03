@@ -1,5 +1,5 @@
-# Use the tailscale/tailscale:latest image as a base with ARM64 support
-FROM --platform=linux/arm64 tailscale/tailscale:latest
+# Use the alpine:3.20 image as a base with ARM64 support
+FROM --platform=linux/arm64 alpine:3.20
 
 # Set environment variables for non-interactive installations
 ENV PYTHONUNBUFFERED=1
