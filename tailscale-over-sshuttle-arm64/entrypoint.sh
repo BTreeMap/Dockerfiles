@@ -14,7 +14,7 @@ set -e
 : "${SSH_METHOD:=""}"            # Optional method for sshuttle (e.g., "tproxy")
 : "${SSH_DNS:=""}"               # If set, will enable DNS proxying
 : "${SSH_EXCLUDE:=""}"           # Comma-separated list of addresses to exclude (e.g., "sshserver,sshserver:22")
-: "${SSH_KEY_DIR:=""}"           # Optional path to ssh keys directory
+: "${SSH_KEY_DIR:=""}"           # Optional path to SSH keys directory
 : "${SSH_EXTRA_ARGS:=""}"        # Optional extra arguments for sshuttle
 
 # Create the target SSH directory if it does not exist
@@ -32,11 +32,11 @@ else
 fi
 
 # Set the correct permissions for the .ssh directory and its contents
-chmod 700 /root/.ssh
-chmod 600 /root/.ssh/*
+chmod 700 /root/.ssh               # Read, write, and execute permissions for the owner only
+chmod 600 /root/.ssh/*             # Read and write permissions for the owner only
 
 # Change ownership, ensuring that it is set to root
-chown -R root:root /root/.ssh
+chown -R root:root /root/.ssh      # Set ownership to root for the .ssh directory and its contents
 
 # Construct the base sshuttle command
 SSH_COMMAND="sshuttle -r ${SSH_USER}@${SSH_HOST} 0/0"
@@ -64,8 +64,8 @@ fi
 # Start sshuttle in the background
 $SSH_COMMAND &
 
-# Sleep for 5 seconds to allow sshutile to connect
-echo "Sleeping for 5 seconds to allow the sshutile to connect..."
+# Sleep for 5 seconds to allow sshuttle to connect
+echo "Sleeping for 5 seconds to allow sshuttle to connect..."
 sleep 5
 
 # Start the original Tailscale entrypoint
