@@ -15,7 +15,6 @@ RUN apk add --no-cache \
       build-base \
       py3-pip \
       iptables \
-      ip6tables \
       openssh && \
     pip3 install sshuttle --break-system-packages && \
     rm -rf /var/cache/apk/* && \
