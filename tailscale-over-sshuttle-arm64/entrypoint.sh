@@ -15,6 +15,7 @@ set -e
 : "${SSH_DNS:=""}"               # If set, will enable DNS proxying
 : "${SSH_EXCLUDE:=""}"           # Comma-separated list of addresses to exclude (e.g., "sshserver,sshserver:22")
 : "${SSH_KEY_DIR:=""}"           # Optional path to ssh keys directory
+: "${SSH_EXTRA_ARGS:=""}"        # Optional extra arguments for sshuttle
 
 # Create the target SSH directory if it does not exist
 mkdir -p /root/.ssh/
@@ -39,6 +40,11 @@ chown -R root:root /root/.ssh
 
 # Construct the base sshuttle command
 SSH_COMMAND="sshuttle -r ${SSH_USER}@${SSH_HOST} 0/0"
+
+# Append any additional arguments provided in SSH_EXTRA_ARGS
+if [ ! -z "$SSH_EXTRA_ARGS" ]; then
+    SSH_COMMAND="$SSH_COMMAND $SSH_EXTRA_ARGS"
+fi
 
 # Add DNS option if specified
 if [ ! -z "$SSH_DNS" ]; then
