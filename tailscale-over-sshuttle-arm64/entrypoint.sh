@@ -16,25 +16,26 @@ set -e
 : "${SSH_EXCLUDE:=""}"           # Comma-separated list of addresses to exclude (e.g., "sshserver,sshserver:22")
 : "${SSH_KEY_DIR:=""}"           # Optional path to ssh keys directory
 
+# Create the target SSH directory if it does not exist
+mkdir -p /root/.ssh/
+
 # If SSH_KEY_DIR is set, copy its contents to /root/.ssh/
 if [ -n "$SSH_KEY_DIR" ] && [ -d "$SSH_KEY_DIR" ]; then
     echo "Copying SSH keys from $SSH_KEY_DIR to /root/.ssh/"
 
-    # Create the target directory if it does not exist
-    mkdir -p /root/.ssh/
-
     # Copy the contents of the SSH key directory
     cp -r "$SSH_KEY_DIR/"* /root/.ssh/
-
-    # Set the correct permissions for the copied files and change ownership
-    chmod 700 /root/.ssh
-    chmod 600 /root/.ssh/*
-    chown -R root:root /root/.ssh  # Ensure ownership is set to root
-
-    echo "SSH keys copied and permissions set."
+    echo "SSH keys copied from $SSH_KEY_DIR to /root/.ssh/"
 else
     echo "No SSH key directory specified or directory not found. Skipping SSH keys setup."
 fi
+
+# Set the correct permissions for the .ssh directory and its contents
+chmod 700 /root/.ssh
+chmod 600 /root/.ssh/*
+
+# Change ownership, ensuring that it is set to root
+chown -R root:root /root/.ssh
 
 # Construct the base sshuttle command
 SSH_COMMAND="sshuttle -r ${SSH_USER}@${SSH_HOST} 0/0"
