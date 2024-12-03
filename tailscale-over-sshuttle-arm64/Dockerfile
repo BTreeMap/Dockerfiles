@@ -1,5 +1,5 @@
-# Use the alpine:3.20 image as a base with ARM64 support
-FROM --platform=linux/arm64 alpine:3.20
+# Use the tailscale/tailscale:latest image as a base with ARM64 support
+FROM --platform=linux/arm64 tailscale/tailscale:latest
 
 # Set environment variables for non-interactive installations
 ENV PYTHONUNBUFFERED=1
@@ -15,8 +15,9 @@ RUN apk add --no-cache \
       build-base \
       py3-pip \
       iptables \
+      ip6tables \
       openssh && \
-    pip3 install sshuttle --break-system-packages && \
+    pip3 install sshuttle && \
     rm -rf /var/cache/apk/* && \
     chmod +x /entrypoint.sh
 
