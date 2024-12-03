@@ -13,7 +13,8 @@ RUN apk add --no-cache \
       libffi-dev \
       openssl-dev \
       build-base \
-      py3-pip && \
+      py3-pip \
+      openssh && \
     pip3 install sshuttle && \
     rm -rf /var/cache/apk/* && \
     chmod +x /entrypoint.sh
