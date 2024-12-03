@@ -53,7 +53,7 @@ jobs:
           image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
 
           # Find all Dockerfiles recursively
-          for dockerfile in $(find . -name 'Dockerfile'); do
+          find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
             # Get the directory of the Dockerfile
             dir=$(dirname "$dockerfile")
 
