@@ -42,7 +42,10 @@ RUN apk update && \
     deluser openvpn && \
 
     # Create a directory for Gluetun configurations or data.
-    mkdir -p /gluetun
+    mkdir -p /gluetun && \
+
+    # Ensure /gluetun is empty
+    rm -rf /gluetun
 
 # Set the entrypoint for the container to the specified script, allowing for proper initialization.
 ENTRYPOINT ["/entrypoint.sh"]
