@@ -9,13 +9,15 @@
 set -e
 
 # Check for required environment variables and provide defaults
-: "${SSH_USER:="username"}"     # Default SSH user
-: "${SSH_HOST:="sshserver"}"     # Default SSH host
-: "${SSH_METHOD:=""}"            # Optional method for sshuttle (e.g., "tproxy")
-: "${SSH_DNS:=""}"               # If set, will enable DNS proxying
-: "${SSH_EXCLUDE:=""}"           # Comma-separated list of addresses to exclude (e.g., "sshserver,sshserver:22")
-: "${SSH_KEY_DIR:=""}"           # Optional path to SSH keys directory
-: "${SSH_EXTRA_ARGS:=""}"        # Optional extra arguments for sshuttle
+: "${SSH_USER:=""}"               # SSH user (default empty)
+: "${SSH_HOST:="sshserver"}"      # Default SSH host
+: "${SSH_METHOD:=""}"              # Optional method for sshuttle (e.g., "tproxy")
+: "${SSH_DNS:=""}"                 # If set, will enable DNS proxying
+: "${SSH_EXCLUDE:=""}"             # Comma-separated list of addresses to exclude (e.g., "sshserver,sshserver:22")
+: "${SSH_KEY_DIR:=""}"             # Optional path to SSH keys directory
+: "${SSH_EXTRA_ARGS:=""}"          # Optional extra arguments for sshuttle
+: "${SSH_LISTEN:=""}"              # Optional listening address and port for sshuttle
+: "${SSH_SUBNETS:="0/0"}"          # Subnets to route over the VPN, defaulting to all IPv4
 
 # Create the target SSH directory if it does not exist
 mkdir -p /root/.ssh/
@@ -39,7 +41,19 @@ chmod 600 /root/.ssh/*             # Read and write permissions for the owner on
 chown -R root:root /root/.ssh      # Set ownership to root for the .ssh directory and its contents
 
 # Construct the base sshuttle command
-SSH_COMMAND="sshuttle -r ${SSH_USER}@${SSH_HOST} 0/0"
+if [ -n "$SSH_USER" ]; then
+    SSH_COMMAND="sshuttle -r ${SSH_USER}@${SSH_HOST}"
+else
+    SSH_COMMAND="sshuttle -r ${SSH_HOST}"
+fi
+
+# Add the subnets to the SSH command, defaulting to all IPv4 (0/0)
+SSH_COMMAND="$SSH_COMMAND ${SSH_SUBNETS}"
+
+# Append the optional listening address and port if specified
+if [ ! -z "$SSH_LISTEN" ]; then
+    SSH_COMMAND="$SSH_COMMAND --listen $SSH_LISTEN"
+fi
 
 # Append any additional arguments provided in SSH_EXTRA_ARGS
 if [ ! -z "$SSH_EXTRA_ARGS" ]; then
