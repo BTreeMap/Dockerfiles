@@ -64,5 +64,12 @@ fi
 # Start sshuttle in the background
 $SSH_COMMAND &
 
+# Sleep for 5 seconds to allow sshutile to connect
+echo "Sleeping for 5 seconds to allow the sshutile to connect..."
+sleep 5
+
+# Start the original Tailscale entrypoint
+exec /usr/local/bin/containerboot
+
 # Keep the script running indefinitely to prevent container exit.
 exec tail -f /dev/null
