@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/ash
 
 # Before running this script, ensure to bind /dev/net/tun:/dev/net/tun 
 # to the container. Additionally, grant the following capabilities:
