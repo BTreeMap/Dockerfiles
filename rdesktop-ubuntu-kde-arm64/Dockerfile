@@ -24,9 +24,9 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     # Reference: https://github.com/linuxserver/docker-rdesktop/blob/ubuntu-kde/Dockerfile
     sed -i 's/applications:org.kde.discover.desktop,/applications:org.kde.konsole.desktop,/g' \
     /usr/share/plasma/plasmoids/org.kde.plasma.taskmanager/contents/config/main.xml && \ 
-    
+
     # Install essential packages required for the setup
-    apt-get install -y wget lsb-release apt-transport-https git vim && \ 
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wget lsb-release apt-transport-https git vim && \ 
     
     # Get the current Ubuntu version to construct the Microsoft package URL
     ubuntu_release=$(lsb_release -rs) && \ 
@@ -47,7 +47,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     mkdir -p /usr/share/man/man1 && \           
     
     # Install Microsoft OpenJDK 21
-    apt-get install -y msopenjdk-21 && \          
+    DEBIAN_FRONTEND=noninteractive apt-get install -y msopenjdk-21 && \          
     
     # Clean up the apt cache to reduce the final image size
     apt-get clean && \                            

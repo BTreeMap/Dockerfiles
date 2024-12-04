@@ -12,7 +12,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     apt-get update && \                          
 
     # Set the apt frontend to non-interactive mode for automated installs
-    DEBIAN_FRONTEND=noninteractive \             
+    DEBIAN_FRONTEND=noninteractive \
 
     # Upgrade installed packages to their latest versions
     apt-get upgrade -y && \                      
@@ -28,7 +28,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     rm -f /etc/xdg/autostart/xscreensaver.desktop && \
     
     # Install required packages for functionality
-    apt-get install -y wget lsb-release git vim && \ 
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wget lsb-release git vim && \ 
 
     # Download the Microsoft package for the current Debian release
     wget https://packages.microsoft.com/config/debian/$(lsb_release -rs)/packages-microsoft-prod.deb -O $MS_PACKAGES_DEB_PATH && \ 
@@ -46,17 +46,17 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     mkdir -p /usr/share/man/man1 && \           
     
     # Install Microsoft OpenJDK 21 for Java applications
-    apt-get install -y msopenjdk-21 && \          
+    DEBIAN_FRONTEND=noninteractive apt-get install -y msopenjdk-21 && \          
     
     # Clean up apt cache to reduce image size
     apt-get clean && \                            
 
     # Remove unnecessary files to reduce final image size
     rm -rf \
-        /config/.cache \                          # Remove local cache
-        /var/lib/apt/lists/* \                   # Remove apt list files
-        /var/tmp/* \                              # Clean temporary files
-        /tmp/*                                    # Clean temporary files
+        /config/.cache \
+        /var/lib/apt/lists/* \
+        /var/tmp/* \
+        /tmp/*
 
 # Optionally set JAVA_HOME for Java applications
 ENV JAVA_HOME=/usr/lib/jvm/msopenjdk-21         

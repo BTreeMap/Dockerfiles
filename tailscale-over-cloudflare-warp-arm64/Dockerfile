@@ -10,10 +10,13 @@ COPY entrypoint.sh /entrypoint.sh
 
 # Install necessary packages and configure the environment for Cloudflare and Tailscale clients
 RUN apt-get update && \
+    # Set the apt frontend to non-interactive mode for automated installs
+    DEBIAN_FRONTEND=noninteractive \             
+
     apt-get upgrade -y && \
 
     # Install required utilities for package management and GPG handling
-    apt-get install -y curl gnupg lsb-release ethtool && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl gnupg lsb-release ethtool && \
 
     # Import the Cloudflare GPG key for package verification
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | \
@@ -27,7 +30,7 @@ RUN apt-get update && \
     apt-get update && \
 
     # Install the Cloudflare WARP client
-    apt-get install -y cloudflare-warp && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y cloudflare-warp && \
 
     # Download and install Tailscale using its installation script
     curl -fsSL https://tailscale.com/install.sh | sh && \
