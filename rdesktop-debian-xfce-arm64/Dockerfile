@@ -13,6 +13,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
 
     # Backup the modified exo-open file
     cp /usr/bin/exo-open /usr/bin/exo-open.bak && \
+    mv /usr/bin/exo-open-real /usr/bin/exo-open && \
 
     # Set the apt frontend to non-interactive mode for automated installs
     DEBIAN_FRONTEND=noninteractive \
