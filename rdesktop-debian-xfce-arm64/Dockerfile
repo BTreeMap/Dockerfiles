@@ -9,7 +9,10 @@ ENV MS_PACKAGES_DEB_PATH="$DOCKER_TMP_DIR/packages-microsoft-prod.deb"
 RUN mkdir -p $DOCKER_TMP_DIR && \              
 
     # Update package lists for the apt package manager
-    apt-get update && \                          
+    apt-get update && \
+
+    # Backup the modified exo-open file
+    cp /usr/bin/exo-open /usr/bin/exo-open.bak && \
 
     # Set the apt frontend to non-interactive mode for automated installs
     DEBIAN_FRONTEND=noninteractive \
@@ -22,7 +25,10 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     echo "**** Application tweaks ****" && \
     sed -i 's#^Exec=.*#Exec=/usr/local/bin/wrapped-chromium#g' /usr/share/applications/chromium.desktop && \
     mv /usr/bin/exo-open /usr/bin/exo-open-real && \
-    
+
+    # Restore the modified exo-open file
+    mv /usr/bin/exo-open.bak /usr/bin/exo-open && \
+
     # Remove the screensaver autostart to improve the desktop experience
     echo "**** XFCE tweaks ****" && \
     rm -f /etc/xdg/autostart/xscreensaver.desktop && \
