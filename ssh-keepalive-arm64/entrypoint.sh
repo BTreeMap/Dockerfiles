@@ -28,15 +28,15 @@ chmod 600 /root/.ssh/*             # Read and write permissions for the owner on
 chown -R root:root /root/.ssh      # Set ownership to root for the .ssh directory and its contents
 
 # Retrieve the SSH connection parameters from environment variables
-SSH_USER="${SSH_USER:-root}"        # Default to root if not specified
-SSH_HOST="${SSH_HOST:-localhost}"    # Default to localhost if not specified
+SSH_USER="${SSH_USER:-}"            # Default to empty if not specified
+SSH_HOST="${SSH_HOST:-}"            # Default to empty if not specified
 SSH_PORT="${SSH_PORT:-22}"           # Default to 22 if not specified
 
-# Construct the SSH command based on whether SSH_HOST is provided
-if [ "$SSH_HOST" == "localhost" ]; then
-    SSH_COMMAND="${SSH_HOST}"        # Only use host if localhost
-else
+# Construct the SSH command based on whether SSH_USER is supplied
+if [ -n "$SSH_USER" ]; then
     SSH_COMMAND="${SSH_USER}@${SSH_HOST}"  # Use user@host format
+else
+    SSH_COMMAND="${SSH_HOST}"               # Use host only if user is empty
 fi
 
 # Command to establish an SSH connection with autossh
