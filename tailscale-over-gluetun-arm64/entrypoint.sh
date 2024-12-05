@@ -8,6 +8,17 @@
 # Exit the script immediately if any command fails.
 set -e
 
+# Optional path to a read-only server list
+: "${INITIAL_SERVERS_PATH:=""}"
+
+# If the environment variable INITIAL_SERVERS_PATH is set,
+# create the /gluetun directory and copy the initial servers file.
+if [ -n "$INITIAL_SERVERS_PATH" ]; then
+  echo "Initializing server list from $INITIAL_SERVERS_PATH..."
+  mkdir -p /gluetun
+  cp "$INITIAL_SERVERS_PATH" /gluetun/servers.json
+fi
+
 # Optimize Tailscale performance by enabling UDP Generic Receive Offload (GRO).
 echo "Optimizing Tailscale performance with UDP GRO settings..."
 # Get the network device used for the default route.
