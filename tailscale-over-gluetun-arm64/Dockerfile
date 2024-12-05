@@ -47,6 +47,9 @@ RUN apk update && \
     # Ensure /gluetun is empty.
     rm -rf /gluetun && \
 
+    # Update server lists for ProtonVPN and Mullvad VPN
+    ./gluetun-entrypoint update -maintainer -providers protonvpn,mullvad && \
+
     # Add execution permission to the entrypoint script.
     chmod +x /entrypoint.sh
 
