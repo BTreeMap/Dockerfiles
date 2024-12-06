@@ -8,8 +8,18 @@
 # Exit the script immediately if any command fails.
 set -e
 
-# Optional path to a read-only server list
-: "${INITIAL_SERVERS_PATH:=""}"
+# Environment Variables
+
+# (Optional) Path to an initial server list to be copied into the container.
+INITIAL_SERVERS_PATH="${INITIAL_SERVERS_PATH:-}"
+
+# (Optional) Additional arguments to pass to the tailscaled command.
+# Example: "--tun=userspace-networking"
+TAILSCALED_EXTRA_ARGS="${TAILSCALED_EXTRA_ARGS:-}"
+
+# Additional arguments to pass to the tailscale set command. 
+# Default: "--advertise-exit-node --accept-dns=false --webclient"
+TAILSCALE_EXTRA_ARGS="${TAILSCALE_EXTRA_ARGS:---advertise-exit-node --accept-dns=false --webclient}"
 
 # If the environment variable INITIAL_SERVERS_PATH is set,
 # create the /gluetun directory and copy the initial servers file.
@@ -28,15 +38,18 @@ ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
 
 # Start the Tailscale daemon in the background.
 echo "Starting the Tailscale daemon..."
-/app/tailscaled --statedir=/var/lib/tailscale &
+/app/tailscaled --statedir=/var/lib/tailscale ${TAILSCALED_EXTRA_ARGS} &
 
 # Sleep for 5 seconds to allow the Tailscale daemon to initialize.
 echo "Sleeping for 5 seconds to allow the Tailscale daemon to initialize..."
 sleep 5
 
-# Bring up the Tailscale connection and advertise this node as an exit node.
-echo "Connecting Tailscale and advertising this node as an exit node..."
-/app/tailscale set --advertise-exit-node --accept-dns=false --webclient
+# Apply configuration settings with tailscale set.
+echo "Setting Tailscale configuration..."
+/app/tailscale set ${TAILSCALE_EXTRA_ARGS}
+
+# Bring up the Tailscale connection.
+echo "Connecting Tailscale..."
 /app/tailscale up
 
 # Allow some time (5 seconds) for the Tailscale connection to establish.
