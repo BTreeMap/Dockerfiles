@@ -37,7 +37,7 @@ NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
 ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
 
 # Start the Tailscale daemon in the background.
-echo "Starting the Tailscale daemon..."
+echo "Starting the Tailscale daemon with extra args: ${TAILSCALED_EXTRA_ARGS}"
 /app/tailscaled --statedir=/var/lib/tailscale ${TAILSCALED_EXTRA_ARGS} &
 
 # Sleep for 5 seconds to allow the Tailscale daemon to initialize.
@@ -45,7 +45,7 @@ echo "Sleeping for 5 seconds to allow the Tailscale daemon to initialize..."
 sleep 5
 
 # Apply configuration settings with tailscale set.
-echo "Setting Tailscale configuration..."
+echo "Setting Tailscale configuration with extra args: ${TAILSCALE_EXTRA_ARGS}"
 /app/tailscale set ${TAILSCALE_EXTRA_ARGS}
 
 # Bring up the Tailscale connection.
