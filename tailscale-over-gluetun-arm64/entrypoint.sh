@@ -36,7 +36,8 @@ sleep 5
 
 # Bring up the Tailscale connection and advertise this node as an exit node.
 echo "Connecting Tailscale and advertising this node as an exit node..."
-/app/tailscale up --advertise-exit-node --accept-dns=false --webclient
+/app/tailscale set --advertise-exit-node --accept-dns=false --webclient
+/app/tailscale up
 
 # Allow some time (5 seconds) for the Tailscale connection to establish.
 echo "Sleeping for 5 seconds to allow Tailscale connection to establish..."
