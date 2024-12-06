@@ -3,7 +3,7 @@
 # Tailscale Installation: https://tailscale.com/kb/1031/install-linux
 
 # Use the official Ubuntu 24.04 base image for ARM64 architecture
-FROM --platform=linux/arm64 ubuntu:24.04
+FROM --platform=$TARGETPLATFORM ubuntu:24.04
 
 # Copy the entrypoint script into the container's root directory
 COPY entrypoint.sh /entrypoint.sh

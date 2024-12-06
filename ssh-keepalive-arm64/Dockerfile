@@ -1,5 +1,5 @@
 # Use Alpine 3.20 as the base image for ARM64 architecture
-FROM --platform=linux/arm64 alpine:3.20
+FROM --platform=$TARGETPLATFORM alpine:3.20
 
 # Copy the entrypoint script into the image
 COPY entrypoint.sh /entrypoint.sh

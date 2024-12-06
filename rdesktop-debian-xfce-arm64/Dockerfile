@@ -1,5 +1,5 @@
 # Use the ARM64 version of the rdesktop image based on Debian with XFCE
-FROM --platform=linux/arm64 lscr.io/linuxserver/rdesktop:arm64v8-debian-xfce
+FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:arm64v8-debian-xfce
 
 # Set environment variables for temporary directory and Microsoft packages
 ENV DOCKER_TMP_DIR="/tmp/.docker" 

@@ -8,7 +8,7 @@ ARG TOMCAT_VERSION=8.5
 ARG TOMCAT_JRE=jdk8
 
 # Use official maven image for the build
-FROM --platform=linux/amd64 maven:3-eclipse-temurin-8-focal AS builder
+FROM --platform=$BUILDPLATFORM maven:3-eclipse-temurin-8-focal AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
@@ -61,7 +61,7 @@ RUN mkdir -p "$BUILD_DIR" && cp -a . "$BUILD_DIR"
 RUN /opt/guacamole/bin/build-guacamole.sh "$BUILD_DIR" /opt/guacamole
 
 # For the runtime image, we start with the official Tomcat distribution
-FROM --platform=linux/arm64 tomcat:${TOMCAT_VERSION}-${TOMCAT_JRE}
+FROM --platform=$TARGETPLATFORM tomcat:${TOMCAT_VERSION}-${TOMCAT_JRE}
 
 # Install XMLStarlet for server.xml alterations and unzip for LOGBACK_LEVEL case
 RUN apt-get update -qq \

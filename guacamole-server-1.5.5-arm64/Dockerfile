@@ -4,7 +4,7 @@
 # Use the arm64v8 variant of Alpine as the base image
 ARG ALPINE_BASE_IMAGE=3.18
 
-FROM --platform=linux/arm64 alpine:${ALPINE_BASE_IMAGE} AS builder
+FROM --platform=$TARGETPLATFORM alpine:${ALPINE_BASE_IMAGE} AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
@@ -141,7 +141,7 @@ RUN ${BUILD_DIR}/src/guacd-docker/bin/list-dependencies.sh \
         > ${PREFIX_DIR}/DEPENDENCIES
 
 # Use same Alpine version as the base for the runtime image
-FROM --platform=linux/arm64 alpine:${ALPINE_BASE_IMAGE}
+FROM --platform=$TARGETPLATFORM alpine:${ALPINE_BASE_IMAGE}
 
 #
 # Base directory for installed build artifacts. See also the
