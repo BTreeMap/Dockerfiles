@@ -4,12 +4,16 @@ FROM --platform=linux/arm64 qmcgaw/gluetun:v3
 # Copy the custom entrypoint script into the container.
 COPY entrypoint.sh /entrypoint.sh
 
+# Copy Tailscale binaries from the tailscale image on Docker Hub.
+COPY --from=docker.io/tailscale/tailscale:latest /usr/local/bin/tailscaled /app/tailscaled
+COPY --from=docker.io/tailscale/tailscale:latest /usr/local/bin/tailscale /app/tailscale
+
 # Update the package list, upgrade existing packages, and install necessary dependencies.
 RUN apk update && \
     apk upgrade && \
 
-    # Install Tailscale from the edge community repository without cache to reduce image size.
-    apk add --no-cache --update --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community tailscale && \
+    # Make necessary directories for Tailscale
+    mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale
 
     # Install wget and ethtool, also without cache for image efficiency.
     apk add --no-cache --update -l wget ethtool && \
