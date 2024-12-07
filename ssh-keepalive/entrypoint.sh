@@ -40,7 +40,7 @@ else
 fi
 
 # Command to establish an SSH connection with autossh
-exec autossh -M 30038:32593 -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=60" -o "ServerAliveCountMax=3" -N "${SSH_COMMAND}" -p "${SSH_PORT}"
+exec autossh -M 30038:32593 -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=60" -o "ServerAliveCountMax=3" -N "${SSH_COMMAND}" -p "${SSH_PORT}" || { echo "Error: autossh failed to connect. Please check your SSH configuration and try again." && exit 1; }
 
 # Keep the script running indefinitely to prevent container exit.
 exec tail -f /dev/null
