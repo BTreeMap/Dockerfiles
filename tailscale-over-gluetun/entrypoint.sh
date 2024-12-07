@@ -34,7 +34,7 @@ echo "Optimizing Tailscale performance with UDP GRO settings..."
 # Get the network device used for the default route.
 NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
 # Enable UDP GRO forwarding and disable GRO for other protocols.
-ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
+ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off || echo "Failed to set GRO options on $NETDEV, continuing..."
 
 # Start the Tailscale daemon in the background.
 echo "Starting the Tailscale daemon with extra args: ${TAILSCALED_EXTRA_ARGS}"
