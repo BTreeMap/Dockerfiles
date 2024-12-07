@@ -10,6 +10,14 @@
 # Exit the script immediately if any command fails
 set -e
 
+# (Optional) Additional arguments to pass to the tailscaled command.
+# Example: "--tun=userspace-networking"
+TAILSCALED_EXTRA_ARGS="${TAILSCALED_EXTRA_ARGS:-}"
+
+# Additional arguments to pass to the tailscale set command. 
+# Default: "--advertise-exit-node --accept-dns=false --webclient"
+TAILSCALE_EXTRA_ARGS="${TAILSCALE_EXTRA_ARGS:---advertise-exit-node --accept-dns=false --webclient}"
+
 # Create the /run/dbus directory if it does not already exist
 echo "Creating /run/dbus directory..."
 mkdir -p /run/dbus
@@ -30,16 +38,19 @@ NETDEV=$(ip -o route get 8.8.8.8 | cut -f 5 -d " ")
 ethtool -K $NETDEV rx-udp-gro-forwarding on rx-gro-list off
 
 # Start the Tailscale daemon in the background
-echo "Starting the Tailscale daemon..."
-tailscaled --statedir=/var/lib/tailscale &
+echo "Starting the Tailscale daemon with extra args: ${TAILSCALED_EXTRA_ARGS}"
+tailscaled --statedir=/var/lib/tailscale ${TAILSCALED_EXTRA_ARGS} &
 
 # Sleep for 5 seconds to allow Tailscale daemon to initialize
 echo "Sleeping for 5 seconds to allow the Tailscale daemon to initialize..."
 sleep 5
 
-# Bring up the Tailscale connection and advertise this node as an exit node
-echo "Connecting Tailscale and advertising this node as an exit node..."
-tailscale set --advertise-exit-node --accept-dns=false --webclient
+# Apply configuration settings with tailscale set.
+echo "Setting Tailscale configuration with extra args: ${TAILSCALE_EXTRA_ARGS}"
+tailscale set ${TAILSCALE_EXTRA_ARGS}
+
+# Bring up the Tailscale connection.
+echo "Connecting Tailscale..."
 tailscale up
 
 # Allow some time (5 seconds) for the Tailscale connection to establish
