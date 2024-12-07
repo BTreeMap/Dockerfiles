@@ -65,7 +65,7 @@ jobs:
             echo "Tagging image as: $dir_tag"
 
             # Build the Docker image and tag it with both tags
-            docker buildx build --platform linux/arm64 "$dir" --file "$dockerfile" --tag "$sha_tag" --tag "$dir_tag" --push
+            docker buildx build --platform linux/amd64,linux/arm64 "$dir" --file "$dockerfile" --tag "$sha_tag" --tag "$dir_tag" --push
             
             # Remove the local image to save space
             docker rmi "$sha_tag" "$dir_tag" || true  # Ignore errors if the image is not found
