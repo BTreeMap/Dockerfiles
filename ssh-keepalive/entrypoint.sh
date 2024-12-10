@@ -45,7 +45,7 @@ MAX_INTERVAL=32
 
 while true; do
     # Start autossh and ignore its exit status
-    autossh -M 30038:32593 -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=60" -o "ServerAliveCountMax=3" -N "${SSH_COMMAND}" -p "${SSH_PORT}" || true
+    autossh -M 30038:32593 -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -N "${SSH_COMMAND}" -p "${SSH_PORT}" || true
     
     # If autossh exits, print an error message
     echo "Error: autossh has exited. Retrying in ${RETRY_INTERVAL} seconds..."
