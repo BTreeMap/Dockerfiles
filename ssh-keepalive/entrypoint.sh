@@ -62,7 +62,7 @@ while true; do
     echo "Attempting to establish SSH connection with autossh..."
     
     # Start autossh and ignore its exit status
-    AUTOSSH_POLL=60 autossh -M 57754:54909 -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -N "${SSH_COMMAND}" -p "${SSH_PORT}" || true
+    AUTOSSH_POLL=60 autossh -M 58449 -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -N "${SSH_COMMAND}" -p "${SSH_PORT}" || true
 
     # If autossh exits, print an error message
     echo "Error: autossh has exited. Retrying in ${RETRY_INTERVAL} seconds..."
