@@ -1,5 +1,5 @@
 # Use the ARM64 version of the rdesktop image based on Debian with XFCE
-FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:arm64v8-debian-xfce
+FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:debian-xfce
 
 # Set environment variables for temporary directory and Microsoft packages
 ENV DOCKER_TMP_DIR="/tmp/.docker" 
@@ -27,7 +27,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     echo "**** XFCE tweaks ****" && \
     rm -f /etc/xdg/autostart/xscreensaver.desktop && \
     # Install required packages for functionality
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wget lsb-release git vim && \ 
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wget curl lsb-release git vim && \ 
     # Download the Microsoft package for the current Debian release
     wget https://packages.microsoft.com/config/debian/$(lsb_release -rs)/packages-microsoft-prod.deb -O $MS_PACKAGES_DEB_PATH && \ 
     # Install the Microsoft package
@@ -39,9 +39,11 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     # Ensure the man1 directory exists for manual pages
     mkdir -p /usr/share/man/man1 && \           
     # Install Microsoft OpenJDK 21 for Java applications
-    DEBIAN_FRONTEND=noninteractive apt-get install -y msopenjdk-21 && \          
+    DEBIAN_FRONTEND=noninteractive apt-get install -y msopenjdk-21 && \
+    # Download and install Tailscale using its installation script
+    curl -fsSL https://tailscale.com/install.sh | sh && \
     # Clean up apt cache to reduce image size
-    apt-get clean && \                            
+    apt-get clean && \
     # Remove unnecessary files to reduce final image size
     rm -rf \
         /config/.cache \

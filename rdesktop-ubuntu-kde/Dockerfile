@@ -1,5 +1,5 @@
 # Use the ARM64 version of the rdesktop image based on Ubuntu with KDE
-FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:arm64v8-ubuntu-kde
+FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:ubuntu-kde
 
 # Set environment variables for temporary directory and Microsoft packages
 ENV DOCKER_TMP_DIR="/tmp/.docker" 
@@ -20,7 +20,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     sed -i 's/applications:org.kde.discover.desktop,/applications:org.kde.konsole.desktop,/g' \
     /usr/share/plasma/plasmoids/org.kde.plasma.taskmanager/contents/config/main.xml && \ 
     # Install essential packages required for the setup
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wget lsb-release apt-transport-https git vim && \ 
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wget curl lsb-release apt-transport-https git vim && \ 
     # Get the current Ubuntu version to construct the Microsoft package URL
     ubuntu_release=$(lsb_release -rs) && \ 
     # Download the Microsoft package repository configuration for Ubuntu
@@ -34,7 +34,9 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     # Ensure the man1 directory exists for storing manual pages
     mkdir -p /usr/share/man/man1 && \           
     # Install Microsoft OpenJDK 21
-    DEBIAN_FRONTEND=noninteractive apt-get install -y msopenjdk-21 && \          
+    DEBIAN_FRONTEND=noninteractive apt-get install -y msopenjdk-21 && \
+    # Download and install Tailscale using its installation script
+    curl -fsSL https://tailscale.com/install.sh | sh && \
     # Clean up the apt cache to reduce the final image size
     apt-get clean && \                            
     # Remove unnecessary files to minimize image size
