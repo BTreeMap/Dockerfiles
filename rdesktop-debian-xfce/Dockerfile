@@ -5,6 +5,9 @@ FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:debian-xfce
 ENV DOCKER_TMP_DIR="/tmp/.docker" 
 ENV MS_PACKAGES_DEB_PATH="$DOCKER_TMP_DIR/packages-microsoft-prod.deb" 
 
+# Copy application files and s6-overlay config to container root.
+COPY root/ /
+
 # Create the temporary directory for Docker operations
 RUN mkdir -p $DOCKER_TMP_DIR && \              
     # Update package lists for the apt package manager
