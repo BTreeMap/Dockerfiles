@@ -1,20 +1,27 @@
 #!/usr/bin/with-contenv bash
 
+# Initialize flags for tailscaled
 FLAGS=""
 
+# Check if userspace networking is required
 if ! [ -e /dev/net/tun ]; then
-    FLAGS="$flags --tun=userspace-networking"
+    FLAGS="$FLAGS --tun=userspace-networking"
+    echo "INFO: Using userspace networking for Tailscale"
 fi
 
+# Check if a persistent state directory is defined
 if [ -v TAILSCALE_STATE_DIR ]; then
     FLAGS="$FLAGS --statedir=${TAILSCALE_STATE_DIR}"
 else
-    echo '[!] TAILSCALE_STATE_DIR is not set, this node will be ephemeral.'
+    echo "WARNING: TAILSCALE_STATE_DIR is not set, using ephemeral state"
     FLAGS="$FLAGS --state=mem:"
 fi
 
+# Start tailscaled with the specified flags
 if ! [ -v TAILSCALE_TAILSCALED_LOG ]; then
+    # Redirect output to /dev/null if logging is not configured
     tailscaled $FLAGS 2>&1 > /dev/null
 else
+    # Log tailscaled output to the specified file
     tailscaled $FLAGS
 fi
