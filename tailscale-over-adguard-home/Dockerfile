@@ -9,7 +9,6 @@ RUN apk update && apk upgrade && \
     tzdata \
     iptables \
     iproute2 \
-    ip6tables \
     tini
 
 # Set working directory
