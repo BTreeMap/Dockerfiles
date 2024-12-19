@@ -40,7 +40,7 @@ fi
 sleep 5
 
 # Construct tailscale up arguments
-TAILSCALE_UP_ARGS="--accept-dns=false --webclient"
+TAILSCALE_UP_ARGS="--accept-dns=false"
 
 if [ -n "$TAILSCALE_AUTH_KEY" ]; then
     TAILSCALE_UP_ARGS="$TAILSCALE_UP_ARGS --authkey=${TAILSCALE_AUTH_KEY}"
@@ -54,23 +54,15 @@ if [ -n "$TAILSCALE_EXTRA_ARGS" ]; then
     TAILSCALE_UP_ARGS="$TAILSCALE_UP_ARGS ${TAILSCALE_EXTRA_ARGS}"
 fi
 
+# Run tailscale set with extra arguments
+if [ -n "$TAILSCALE_SET_EXTRA_ARGS" ]; then
+    /usr/local/bin/tailscale set $TAILSCALE_SET_EXTRA_ARGS
+fi
+
 # Run tailscale up
 /usr/local/bin/tailscale up $TAILSCALE_UP_ARGS
 
-# Configure tailscale serve to proxy AdGuard Home web interface
-if [ "$TAILSCALE_SERVE_ENABLED" = "true" ]; then
-    # Ensure AdGuard Home is accessible at localhost:3000
-    # Start AdGuard Home in the background temporarily to ensure the port is open
-    /usr/local/bin/AdGuardHome --no-daemon $ADGUARD_ARGS &
-    sleep 5
-    # Setup tailscale serve
-    /usr/local/bin/tailscale serve --https=443 https://localhost:3000
-
-    # Kill the temporary AdGuardHome process
-    kill %1
-fi
-
-# Construct AdGuardHome arguments
+# Start AdGuard Home in the background
 ADGUARD_ARGS=""
 
 if [ "$ADGUARD_NO_CHECK_UPDATE" = "true" ]; then
@@ -87,5 +79,15 @@ if [ -n "$ADGUARD_EXTRA_ARGS" ]; then
     ADGUARD_ARGS="$ADGUARD_ARGS $ADGUARD_EXTRA_ARGS"
 fi
 
-# Start AdGuard Home in the foreground
-exec /usr/local/bin/AdGuardHome $ADGUARD_ARGS
+/usr/local/bin/AdGuardHome $ADGUARD_ARGS &
+
+# Wait for AdGuard Home to start
+sleep 5
+
+# Configure tailscale serve to proxy AdGuard Home web interface
+if [ "$TAILSCALE_SERVE_ENABLED" = "true" ]; then
+    /usr/local/bin/tailscale serve --https=443 https://localhost:3000
+fi
+
+# Wait indefinitely to keep the container running
+wait
