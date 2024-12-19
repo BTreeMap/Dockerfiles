@@ -86,7 +86,23 @@ sleep 5
 
 # Configure tailscale serve to proxy AdGuard Home web interface
 if [ "$TAILSCALE_SERVE_ENABLED" = "true" ]; then
-    /usr/local/bin/tailscale serve --bg --https=443 https+insecure://localhost:3000
+    LOCAL_PORT=8443
+elif echo "$TAILSCALE_SERVE_ENABLED" | grep -Eq '^[0-9]+$'; then
+    # Check if it's a valid port number
+    if [ "$TAILSCALE_SERVE_ENABLED" -ge 1 ] && [ "$TAILSCALE_SERVE_ENABLED" -le 65535 ]; then
+        LOCAL_PORT="$TAILSCALE_SERVE_ENABLED"
+    else
+        echo "Invalid port number specified in TAILSCALE_SERVE_ENABLED, skipping tailscale serve configuration."
+        LOCAL_PORT=""
+    fi
+else
+    # Invalid value, do not configure tailscale serve
+    echo "TAILSCALE_SERVE_ENABLED is not 'true', 'false', or a valid port number. Skipping tailscale serve configuration."
+    LOCAL_PORT=""
+fi
+
+if [ -n "$LOCAL_PORT" ]; then
+    /usr/local/bin/tailscale serve --bg --https=443 https+insecure://localhost:${LOCAL_PORT}
 fi
 
 # Keep the script running indefinitely to prevent container exit.
