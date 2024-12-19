@@ -16,17 +16,19 @@ RUN apk update && apk upgrade && \
 WORKDIR /opt
 
 # Copy AdGuardHome binary from the official image
-COPY --from=adguard/adguardhome:latest /opt/adguardhome/AdGuardHome /opt/adguardhome/AdGuardHome
+COPY --from=adguard/adguardhome:latest /opt/adguardhome/AdGuardHome /usr/local/bin/AdGuardHome
 
 # Copy Tailscale binaries from the official image
-COPY --from=tailscale/tailscale:latest /usr/local/bin /usr/local/bin
+COPY --from=tailscale/tailscale:latest /usr/local/bin/tailscaled /usr/local/bin/tailscaled
+COPY --from=tailscale/tailscale:latest /usr/local/bin/tailscale /usr/local/bin/tailscale
 
 # Set necessary capabilities for AdGuardHome to bind to privileged ports
-RUN setcap 'cap_net_bind_service=+ep' /opt/adguardhome/AdGuardHome
+RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/AdGuardHome
 
-# Create necessary directories for AdGuardHome and Tailscale
+# Create necessary directories with proper permissions
 RUN mkdir -p /opt/adguardhome/conf /opt/adguardhome/work /var/lib/tailscale && \
-    chmod 700 /var/lib/tailscale
+    chmod 700 /var/lib/tailscale && \
+    chown -R nobody:nogroup /opt/adguardhome /var/lib/tailscale
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
@@ -42,10 +44,12 @@ ENV ADGUARD_CONFIG_PATH="/opt/adguardhome/conf/AdGuardHome.yaml" \
 # Environment variables for Tailscale
 ENV TAILSCALE_AUTH_KEY="" \
     TAILSCALE_HOSTNAME="" \
-    TAILSCALE_EXTRA_ARGS=""
+    TAILSCALE_EXTRA_ARGS="" \
+    TAILSCALED_EXTRA_ARGS="" \
+    TAILSCALED_CUSTOM_STATE_DIR="" \
+    TAILSCALE_SERVE_ENABLED="true"
 
-# Do not expose any ports
-# EXPOSE (none)
+# Expose no ports
 
 # Use Tini to handle init system and signals
 ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
