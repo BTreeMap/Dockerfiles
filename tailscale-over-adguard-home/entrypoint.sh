@@ -86,8 +86,8 @@ sleep 5
 
 # Configure tailscale serve to proxy AdGuard Home web interface
 if [ "$TAILSCALE_SERVE_ENABLED" = "true" ]; then
-    /usr/local/bin/tailscale serve --https=443 https://localhost:3000
+    /usr/local/bin/tailscale serve --bg --https=443 https+insecure://localhost:3000
 fi
 
-# Wait indefinitely to keep the container running
-wait
+# Keep the script running indefinitely to prevent container exit.
+exec tail -f /dev/null
