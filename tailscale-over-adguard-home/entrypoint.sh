@@ -102,7 +102,7 @@ else
 fi
 
 if [ -n "$LOCAL_PORT" ]; then
-    /usr/local/bin/tailscale serve --bg --https=443 https+insecure://localhost:${LOCAL_PORT}
+    /usr/local/bin/tailscale serve --https=443 https+insecure://localhost:${LOCAL_PORT}
 fi
 
 # Keep the script running indefinitely to prevent container exit.
