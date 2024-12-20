@@ -110,12 +110,12 @@ if [ "$TAILSCALE_SERVE_ENABLED" = "true" ]; then
         echo "Serving local ${TAILSCALE_SERVE_PROTOCOL}://localhost:${TAILSCALE_SERVE_LOCAL_PORT} on Tailscale HTTPS port 443"
         /usr/local/bin/tailscale serve --https=443 "${TAILSCALE_SERVE_PROTOCOL}://localhost:${TAILSCALE_SERVE_LOCAL_PORT}" &
     fi
+
+    # Wait for Tailscale serve to start
+    sleep 10
 else
     echo "TAILSCALE_SERVE_ENABLED is not 'true'; skipping Tailscale serve configuration."
 fi
-
-# Wait for Tailscale serve to start
-sleep 10
 
 # Configure Tailscale funnel to expose services to the public Internet
 if [ "$TAILSCALE_FUNNEL_ENABLED" = "true" ]; then
