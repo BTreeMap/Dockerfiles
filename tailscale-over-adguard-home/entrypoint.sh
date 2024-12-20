@@ -60,14 +60,14 @@ if [ -n "$TAILSCALE_EXTRA_ARGS" ]; then
     TAILSCALE_UP_ARGS="$TAILSCALE_UP_ARGS ${TAILSCALE_EXTRA_ARGS}"
 fi
 
-echo "Running tailscale up with arguments: $TAILSCALE_UP_ARGS"
-/usr/local/bin/tailscale up $TAILSCALE_UP_ARGS
-
 # Run tailscale set with extra arguments
 if [ -n "$TAILSCALE_SET_EXTRA_ARGS" ]; then
     echo "Running tailscale set with arguments: $TAILSCALE_SET_EXTRA_ARGS"
     /usr/local/bin/tailscale set $TAILSCALE_SET_EXTRA_ARGS
 fi
+
+echo "Running tailscale up with arguments: $TAILSCALE_UP_ARGS"
+/usr/local/bin/tailscale up $TAILSCALE_UP_ARGS
 
 # Start AdGuard Home in the background
 ADGUARD_ARGS=""
