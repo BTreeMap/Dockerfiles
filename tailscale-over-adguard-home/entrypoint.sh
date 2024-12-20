@@ -95,49 +95,49 @@ echo "Starting AdGuard Home with arguments: $ADGUARD_ARGS"
 # Wait for AdGuard Home to start
 sleep 5
 
-# Configure tailscale serve to proxy services
+# Configure Tailscale serve to proxy services
 if [ "$TAILSCALE_SERVE_ENABLED" = "true" ]; then
-    # Default values if not set
+    # Set default values if not already set
     : "${TAILSCALE_SERVE_LOCAL_PORT:=8443}"
     : "${TAILSCALE_SERVE_PROTOCOL:=https+insecure}"
     
-    echo "Configuring tailscale serve..."
+    echo "Configuring Tailscale serve..."
     
     if [ -n "$TAILSCALE_SERVE_EXTRA_ARGS" ]; then
-        echo "Using custom tailscale serve arguments: $TAILSCALE_SERVE_EXTRA_ARGS"
+        echo "Using custom Tailscale serve arguments: $TAILSCALE_SERVE_EXTRA_ARGS"
         /usr/local/bin/tailscale serve $TAILSCALE_SERVE_EXTRA_ARGS &
     else
         echo "Serving local ${TAILSCALE_SERVE_PROTOCOL}://localhost:${TAILSCALE_SERVE_LOCAL_PORT} on Tailscale HTTPS port 443"
         /usr/local/bin/tailscale serve --https=443 "${TAILSCALE_SERVE_PROTOCOL}://localhost:${TAILSCALE_SERVE_LOCAL_PORT}" &
     fi
 else
-    echo "TAILSCALE_SERVE_ENABLED is not 'true', skipping tailscale serve configuration."
+    echo "TAILSCALE_SERVE_ENABLED is not 'true'; skipping Tailscale serve configuration."
 fi
 
 # Wait for Tailscale serve to start
 sleep 10
 
-# Configure tailscale funnel to expose services to the public internet
+# Configure Tailscale funnel to expose services to the public Internet
 if [ "$TAILSCALE_FUNNEL_ENABLED" = "true" ]; then
-    # Default values if not set
+    # Set default values if not already set
     : "${TAILSCALE_FUNNEL_LOCAL_PORT:=53}"
     : "${TAILSCALE_FUNNEL_PUBLIC_PORT:=853}"
     : "${TAILSCALE_FUNNEL_PROTOCOL:=tls-terminated-tcp}"
     
-    echo "Configuring tailscale funnel..."
+    echo "Configuring Tailscale funnel..."
     
     if [ -n "$TAILSCALE_FUNNEL_EXTRA_ARGS" ]; then
-        echo "Using custom tailscale funnel arguments: $TAILSCALE_FUNNEL_EXTRA_ARGS"
+        echo "Using custom Tailscale funnel arguments: $TAILSCALE_FUNNEL_EXTRA_ARGS"
         /usr/local/bin/tailscale funnel $TAILSCALE_FUNNEL_EXTRA_ARGS &
     else
         echo "Exposing local ${TAILSCALE_FUNNEL_PROTOCOL}://localhost:${TAILSCALE_FUNNEL_LOCAL_PORT} to public port ${TAILSCALE_FUNNEL_PUBLIC_PORT}"
         /usr/local/bin/tailscale funnel --${TAILSCALE_FUNNEL_PROTOCOL}=${TAILSCALE_FUNNEL_PUBLIC_PORT} "tcp://localhost:${TAILSCALE_FUNNEL_LOCAL_PORT}" &
     fi
 else
-    echo "TAILSCALE_FUNNEL_ENABLED is not 'true', skipping tailscale funnel configuration."
+    echo "TAILSCALE_FUNNEL_ENABLED is not 'true'; skipping Tailscale funnel configuration."
 fi
 
 echo "Entrypoint script completed. Waiting for background processes."
 
-# Keep the script running indefinitely to prevent container exit.
+# Keep the script running indefinitely to prevent the container from exiting.
 exec tail -f /dev/null
