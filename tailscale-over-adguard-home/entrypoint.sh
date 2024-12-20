@@ -108,7 +108,7 @@ if [ "$TAILSCALE_SERVE_ENABLED" = "true" ]; then
         /usr/local/bin/tailscale serve $TAILSCALE_SERVE_EXTRA_ARGS &
     else
         echo "Serving local ${TAILSCALE_SERVE_PROTOCOL}://localhost:${TAILSCALE_SERVE_LOCAL_PORT} on Tailscale HTTPS port 443"
-        /usr/local/bin/tailscale serve --bg --https=443 "${TAILSCALE_SERVE_PROTOCOL}://localhost:${TAILSCALE_SERVE_LOCAL_PORT}" &
+        /usr/local/bin/tailscale serve --https=443 "${TAILSCALE_SERVE_PROTOCOL}://localhost:${TAILSCALE_SERVE_LOCAL_PORT}" &
     fi
 else
     echo "TAILSCALE_SERVE_ENABLED is not 'true', skipping tailscale serve configuration."
@@ -128,7 +128,7 @@ if [ "$TAILSCALE_FUNNEL_ENABLED" = "true" ]; then
         /usr/local/bin/tailscale funnel $TAILSCALE_FUNNEL_EXTRA_ARGS &
     else
         echo "Exposing local ${TAILSCALE_FUNNEL_PROTOCOL}://localhost:${TAILSCALE_FUNNEL_LOCAL_PORT} to public port ${TAILSCALE_FUNNEL_PUBLIC_PORT}"
-        /usr/local/bin/tailscale funnel --bg --${TAILSCALE_FUNNEL_PROTOCOL}=${TAILSCALE_FUNNEL_PUBLIC_PORT} "tcp://localhost:${TAILSCALE_FUNNEL_LOCAL_PORT}" &
+        /usr/local/bin/tailscale funnel --${TAILSCALE_FUNNEL_PROTOCOL}=${TAILSCALE_FUNNEL_PUBLIC_PORT} "tcp://localhost:${TAILSCALE_FUNNEL_LOCAL_PORT}" &
     fi
 else
     echo "TAILSCALE_FUNNEL_ENABLED is not 'true', skipping tailscale funnel configuration."
