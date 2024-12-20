@@ -114,6 +114,9 @@ else
     echo "TAILSCALE_SERVE_ENABLED is not 'true', skipping tailscale serve configuration."
 fi
 
+# Wait for Tailscale serve to start
+sleep 10
+
 # Configure tailscale funnel to expose services to the public internet
 if [ "$TAILSCALE_FUNNEL_ENABLED" = "true" ]; then
     # Default values if not set
