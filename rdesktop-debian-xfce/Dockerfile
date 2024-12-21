@@ -3,7 +3,7 @@ FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:debian-xfce
 
 # Set environment variables for temporary directory and Microsoft packages
 ENV DOCKER_TMP_DIR="/tmp/.docker" 
-ENV MS_PACKAGES_DEB_PATH="$DOCKER_TMP_DIR/packages-microsoft-prod.deb" 
+ENV MS_PACKAGES_DEB_PATH="$DOCKER_TMP_DIR/packages-microsoft-prod.deb"
 
 # Copy application files and s6-overlay config to container root.
 COPY root/ /
@@ -56,3 +56,9 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
 
 # Optionally set JAVA_HOME for Java applications
 ENV JAVA_HOME=/usr/lib/jvm/msopenjdk-21         
+
+# Environment variables for Tailscale
+ENV TAILSCALE_ACCEPT_DNS="false" \
+    TAILSCALE_AUTO_UPDATE="false" \
+    TS_BE_EXIT_NODE="false" \
+    TAILSCALE_USE_WEBCLIENT="true"

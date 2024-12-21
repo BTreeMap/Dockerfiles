@@ -51,3 +51,9 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
 
 # Optionally set JAVA_HOME for Java applications
 ENV JAVA_HOME=/usr/lib/jvm/msopenjdk-21
+
+# Environment variables for Tailscale
+ENV TAILSCALE_ACCEPT_DNS="false" \
+    TAILSCALE_AUTO_UPDATE="false" \
+    TS_BE_EXIT_NODE="false" \
+    TAILSCALE_USE_WEBCLIENT="true"
