@@ -46,7 +46,7 @@ ENV TAILSCALE_AUTH_KEY="" \
     TAILSCALE_EXTRA_ARGS="" \
     TAILSCALED_EXTRA_ARGS="" \
     TAILSCALED_CUSTOM_STATE_DIR="" \
-    TAILSCALE_SET_EXTRA_ARGS=""
+    TAILSCALE_SET_EXTRA_ARGS="--webclient"
 
 # Environment variables for Tailscale Serve
 ENV TAILSCALE_SERVE_ENABLED="false" \
