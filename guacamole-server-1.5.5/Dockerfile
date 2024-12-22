@@ -4,6 +4,9 @@
 # Use the arm64v8 variant of Alpine as the base image
 ARG ALPINE_BASE_IMAGE=3.18
 
+# Use the build platform argument
+ARG TARGETPLATFORM
+
 FROM --platform=$TARGETPLATFORM alpine:${ALPINE_BASE_IMAGE} AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
@@ -68,7 +71,11 @@ ARG WITH_LIBWEBSOCKETS='v\d+(\.\d+)+'
 # options are needed)
 #
 
-ARG FREERDP_OPTS="\
+# Allow users to override FREERDP_OPTS via build arguments
+ARG FREERDP_OPTS=""
+
+# Define the common FREERDP_OPTS without the -DWITH_SSE2 option
+ENV FREERDP_OPTS_COMMON="\
     -DBUILTIN_CHANNELS=OFF \
     -DCHANNEL_URBDRC=OFF \
     -DWITH_ALSA=OFF \
@@ -93,7 +100,6 @@ ARG FREERDP_OPTS="\
     -DWITH_SERVER_INTERFACE=OFF \
     -DWITH_SHADOW_MAC=OFF \
     -DWITH_SHADOW_X11=OFF \
-    -DWITH_SSE2=OFF \
     -DWITH_WAYLAND=OFF \
     -DWITH_X11=OFF \
     -DWITH_X264=OFF \
@@ -130,8 +136,35 @@ ARG LIBWEBSOCKETS_OPTS="\
     -DLWS_WITHOUT_TEST_SERVER_EXTPOLL=ON \
     -DLWS_WITH_STATIC=OFF"
 
+# Export TARGETPLATFORM as an environment variable
+ENV TARGETPLATFORM=${TARGETPLATFORM}
+
 # Build guacamole-server and its core protocol library dependencies
-RUN ${BUILD_DIR}/src/guacd-docker/bin/build-all.sh
+RUN set -ex; \
+    \
+    # Check if FREERDP_OPTS is already set
+    if [ -z "${FREERDP_OPTS}" ]; then \
+        # Determine the -DWITH_SSE2 option based on TARGETPLATFORM
+        if [ "${TARGETPLATFORM}" = "linux/amd64" ]; then \
+            DWITH_SSE2="-DWITH_SSE2=ON"; \
+            echo "Enabling SSE2 support for ${TARGETPLATFORM}"; \
+        else \
+            DWITH_SSE2="-DWITH_SSE2=OFF"; \
+            echo "Disabling SSE2 support for ${TARGETPLATFORM}"; \
+        fi; \
+        \
+        # Combine FREERDP_OPTS_COMMON with DWITH_SSE2 to form FREERDP_OPTS
+        FREERDP_OPTS="${FREERDP_OPTS_COMMON} ${DWITH_SSE2}"; \
+    else \
+        echo "Using custom FREERDP_OPTS: ${FREERDP_OPTS}"; \
+    fi; \
+    \
+    echo "Final FREERDP_OPTS: ${FREERDP_OPTS}"; \
+    \
+    export FREERDP_OPTS; \
+    \
+    # Call build-all.sh
+    ${BUILD_DIR}/src/guacd-docker/bin/build-all.sh
 
 # Record the packages of all runtime library dependencies
 RUN ${BUILD_DIR}/src/guacd-docker/bin/list-dependencies.sh \
