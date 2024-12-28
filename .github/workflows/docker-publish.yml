@@ -43,7 +43,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Find Dockerfiles and build images with new naming convention
+      # Find Dockerfiles and build images with new naming conventions
       - name: Build and push Docker images
         run: |
           # Enable multi-platform builds
@@ -55,9 +55,10 @@ jobs:
 
           # Get current date and time
           date_time=$(date '+%Y-%m-%d.%H-%M-%S')
+          date=$(date '+%Y-%m-%d')
 
-          # Get commit hash
-          commit_hash="${{ github.sha }}"
+          # Get commit hash (first 7 characters)
+          commit_hash=$(echo "${{ github.sha }}" | cut -c1-7)
 
           # Base image path
           base_image="${registry_lower}/${image_name_lower}"
@@ -69,19 +70,32 @@ jobs:
             image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
 
             # Construct tags
-            full_tag="${image_name_dir}.${date_time}.${commit_hash}"
-            latest_tag="${image_name_dir}.latest"
+            tags=()
+            tags+=("${base_image}:${image_name_dir}")
+            tags+=("${base_image}:${image_name_dir}.latest")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date}")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date_time}")
+            tags+=("${base_image}:${image_name_dir}.${date}")
+            tags+=("${base_image}:${image_name_dir}.${date_time}")
 
-            echo "Building image for ${base_image}:${full_tag}"
+            echo "Building image for ${tags[0]} with tags:"
+            for tag in "${tags[@]}"; do
+              echo " - $tag"
+            done
 
             # Build the Docker image and tag it with all tags
-            docker buildx build --platform linux/amd64,linux/arm64 \
-              "$dir" --file "$dockerfile" \
-              --tag "${base_image}:${full_tag}" \
-              --tag "${base_image}:${image_name_dir}" \
-              --tag "${base_image}:${latest_tag}" \
-              --push
+            buildx_cmd="docker buildx build --platform linux/amd64,linux/arm64 --push"
+            for tag in "${tags[@]}"; do
+              buildx_cmd+=" --tag $tag"
+            done
+            buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
 
-            # Remove the local images to save space
-            docker rmi "${base_image}:${full_tag}" "${base_image}:${image_name_dir}" "${base_image}:${latest_tag}" || true
+            echo "Running build command: $buildx_cmd"
+            eval $buildx_cmd
+
+            # Remove the local images to save space (ignore errors)
+            for tag in "${tags[@]}"; do
+              docker rmi "$tag" || true
+            done
           done
