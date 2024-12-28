@@ -43,30 +43,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Find Dockerfiles and build images
+      # Find Dockerfiles and build images with new naming convention
       - name: Build and push Docker images
         run: |
+          # Enable multi-platform builds
           docker run --privileged --rm tonistiigi/binfmt --install all
 
           # Convert REGISTRY and IMAGE_NAME to lowercase
           registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
           image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
 
+          # Get current date and time
+          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
+
+          # Get commit hash
+          commit_hash="${{ github.sha }}"
+
+          # Base image path
+          base_image="${registry_lower}/${image_name_lower}"
+
           # Find all Dockerfiles recursively
           find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
             # Get the directory of the Dockerfile
             dir=$(dirname "$dockerfile")
+            image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
 
-            # Construct the image tag using the current commit SHA and the directory name
-            dir_tag="${registry_lower}/${image_name_lower}:$(basename "$dir" | tr '[:upper:]' '[:lower:]')"
-            sha_tag="${dir_tag}-${{ github.sha }}"
+            # Construct tags
+            full_tag="${image_name_dir}.${date_time}.${commit_hash}"
+            latest_tag="${image_name_dir}.latest"
 
-            echo "Building image for $sha_tag"
-            echo "Tagging image as: $dir_tag"
+            echo "Building image for ${base_image}:${full_tag}"
 
-            # Build the Docker image and tag it with both tags
-            docker buildx build --platform linux/amd64,linux/arm64 "$dir" --file "$dockerfile" --tag "$sha_tag" --tag "$dir_tag" --push
-            
-            # Remove the local image to save space
-            docker rmi "$sha_tag" "$dir_tag" || true  # Ignore errors if the image is not found
+            # Build the Docker image and tag it with all tags
+            docker buildx build --platform linux/amd64,linux/arm64 \
+              "$dir" --file "$dockerfile" \
+              --tag "${base_image}:${full_tag}" \
+              --tag "${base_image}:${image_name_dir}" \
+              --tag "${base_image}:${latest_tag}" \
+              --push
+
+            # Remove the local images to save space
+            docker rmi "${base_image}:${full_tag}" "${base_image}:${image_name_dir}" "${base_image}:${latest_tag}" || true
           done
