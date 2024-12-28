@@ -57,8 +57,8 @@ jobs:
           date_time=$(date '+%Y-%m-%d.%H-%M-%S')
           date=$(date '+%Y-%m-%d')
 
-          # Get commit hash (first 7 characters)
-          commit_hash=$(echo "${{ github.sha }}" | cut -c1-7)
+          # Get full commit hash
+          commit_hash="${{ github.sha }}"
 
           # Base image path
           base_image="${registry_lower}/${image_name_lower}"
