@@ -73,11 +73,11 @@ jobs:
             tags=()
             tags+=("${base_image}:${image_name_dir}")
             tags+=("${base_image}:${image_name_dir}.latest")
+            tags+=("${base_image}:${image_name_dir}.${date}")
+            tags+=("${base_image}:${image_name_dir}.${date_time}")
             tags+=("${base_image}:${image_name_dir}.${commit_hash}")
             tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date}")
             tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date_time}")
-            tags+=("${base_image}:${image_name_dir}.${date}")
-            tags+=("${base_image}:${image_name_dir}.${date_time}")
 
             echo "Building image for ${tags[0]} with tags:"
             for tag in "${tags[@]}"; do
