@@ -41,7 +41,7 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Copy the web application from the builder stage to the Nginx HTML directory
-COPY --from=builder /app/webapplication/web/ /usr/share/nginx/html/
+COPY --from=builder /app/web/ /usr/share/nginx/html/
 
 # Expose port 54049
 EXPOSE 54049
