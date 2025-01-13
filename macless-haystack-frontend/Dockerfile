@@ -24,7 +24,8 @@ RUN unzip webapplication.zip && rm webapplication.zip
 FROM nginx:alpine
 
 # Set environment variables (can be overridden at runtime)
-ENV BACKEND_ENDPOINT=http://macless-haystack:6176
+ENV BACKEND_ENDPOINT=http://macless-haystack-backend:6176
+ENV FRONTEND_DOMAIN=http://localhost:54049
 
 # Remove the default Nginx configuration
 RUN rm /etc/nginx/conf.d/default.conf

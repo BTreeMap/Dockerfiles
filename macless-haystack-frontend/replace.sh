@@ -1,10 +1,10 @@
 #!/bin/sh
 
-# Check if BACKEND_ENDPOINT is set; if not, use the default
-BACKEND_ENDPOINT="${BACKEND_ENDPOINT:-http://localhost:6176}"
+# Check if FRONTEND_DOMAIN is set; if not, use the default
+FRONTEND_DOMAIN="${FRONTEND_DOMAIN:-http://localhost:54049}"
 
-# Replace all occurrences of "http://localhost:6176" with the value of BACKEND_ENDPOINT
+# Replace all occurrences of "http://localhost:6176" with "${FRONTEND_DOMAIN}/backend/"
 find /usr/share/nginx/html/ -type f -exec \
-    sed -i "s|http://localhost:6176|${BACKEND_ENDPOINT}|g" {} +
+    sed -i "s|http://localhost:6176|${FRONTEND_DOMAIN}/backend/|g" {} +
 
-echo "Backend endpoint set to ${BACKEND_ENDPOINT} in static files."
+echo "Replaced 'http://localhost:6176' with '${FRONTEND_DOMAIN}/backend/' in static files."

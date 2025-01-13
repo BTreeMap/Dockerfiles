@@ -10,8 +10,8 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Reverse proxy for /proxy to the backend
-    location /proxy/ {
+    # Reverse proxy for /backend/ to the backend endpoint
+    location /backend/ {
         proxy_pass ${BACKEND_ENDPOINT}/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
