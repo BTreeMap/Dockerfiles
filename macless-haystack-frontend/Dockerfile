@@ -17,9 +17,8 @@ RUN curl -L -o webapplication.zip "$DOWNLOAD_URL"
 # Verify the SHA256 hash
 RUN echo "$SHA256_HASH  webapplication.zip" | sha256sum -c -
 
-# Unzip the contents
-RUN unzip webapplication.zip \
-    && rm webapplication.zip
+# Unzip the contents and remove the zip file
+RUN unzip webapplication.zip && rm webapplication.zip
 
 # Stage 2: Runtime - Set up Nginx to serve the application
 FROM nginx:alpine
@@ -34,11 +33,13 @@ RUN rm /etc/nginx/conf.d/default.conf
 RUN mkdir -p /etc/nginx/templates
 
 # Copy the Nginx configuration template into the container
-COPY nginx.conf.template /etc/nginx/templates/nginx.conf.template
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 
-# Copy the entrypoint script into the container
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Copy the replacement script into docker-entrypoint.d
+COPY replace.sh /docker-entrypoint.d/01-replace.sh
+
+# Ensure the replacement script is executable
+RUN chmod +x /docker-entrypoint.d/01-replace.sh
 
 # Copy the web application from the builder stage to the Nginx HTML directory
 COPY --from=builder /app/web/ /usr/share/nginx/html/
@@ -46,6 +47,5 @@ COPY --from=builder /app/web/ /usr/share/nginx/html/
 # Expose port 54049
 EXPOSE 54049
 
-# Use the entrypoint script for dynamic configuration
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["nginx", "-g", "daemon off;"]
+# Use the default entrypoint provided by nginx:alpine
+# The default CMD is already set to ["nginx", "-g", "daemon off;"]
