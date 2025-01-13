@@ -5,20 +5,14 @@ FROM alpine AS builder
 ARG DOWNLOAD_URL=https://github.com/dchristl/macless-haystack/releases/download/v2.2.0/webapplication.zip
 ARG SHA256_HASH=a8cbbfca625afd644ff295613efc195e8138032b59ec7c32b2a0aab901f5c9df
 
-# Install dependencies required for downloading and extracting
-RUN apk add --no-cache curl unzip
-
-# Set the working directory
-WORKDIR /app
-
-# Download the zip file
-RUN curl -L -o webapplication.zip "$DOWNLOAD_URL"
-
-# Verify the SHA256 hash
-RUN echo "$SHA256_HASH  webapplication.zip" | sha256sum -c -
-
-# Unzip the contents and remove the zip file
-RUN unzip webapplication.zip && rm webapplication.zip
+# Install dependencies, download, verify, and extract in a single RUN command to minimize layers
+RUN apk add --no-cache curl unzip \
+    && mkdir /app \
+    && cd /app \
+    && curl -L -o webapplication.zip "$DOWNLOAD_URL" \
+    && echo "$SHA256_HASH  webapplication.zip" | sha256sum -c - \
+    && unzip webapplication.zip \
+    && rm webapplication.zip
 
 # Stage 2: Runtime - Set up Nginx to serve the application
 FROM nginx:alpine
@@ -27,26 +21,19 @@ FROM nginx:alpine
 ENV BACKEND_ENDPOINT=http://macless-haystack-backend:6176
 ENV FRONTEND_DOMAIN=http://localhost:54049
 
-# Remove the default Nginx configuration
-RUN rm /etc/nginx/conf.d/default.conf
-
-# Create a directory for Nginx configuration templates
-RUN mkdir -p /etc/nginx/templates
-
-# Copy the Nginx configuration template into the container
-COPY nginx.conf.template /etc/nginx/templates/default.conf.template
-
-# Copy the replacement script into docker-entrypoint.d
-COPY replace.sh /docker-entrypoint.d/01-replace.sh
-
-# Ensure the replacement script is executable
-RUN chmod +x /docker-entrypoint.d/01-replace.sh
-
 # Copy the web application from the builder stage to the Nginx HTML directory
 COPY --from=builder /app/web/ /usr/share/nginx/html/
+
+# Copy the Nginx configuration template and the replacement script
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY replace.sh /docker-entrypoint.d/01-replace.sh
+
+# Remove the default Nginx configuration and set executable permissions in a single RUN command
+RUN rm /etc/nginx/conf.d/default.conf \
+    && chmod +x /docker-entrypoint.d/01-replace.sh
 
 # Expose port 54049
 EXPOSE 54049
 
 # Use the default entrypoint provided by nginx:alpine
-# The default CMD is already set to ["nginx", "-g", "daemon off;"]
+# No need to specify ENTRYPOINT or CMD as we're using the defaults

@@ -10,7 +10,7 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Reverse proxy for /backend/ to the backend endpoint
+    # Reverse proxy for /backend to the backend endpoint
     location /backend/ {
         proxy_pass ${BACKEND_ENDPOINT}/;
         proxy_set_header Host $host;
