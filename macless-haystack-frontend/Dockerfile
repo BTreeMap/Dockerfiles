@@ -15,7 +15,7 @@ RUN apk add --no-cache curl unzip \
     && rm webapplication.zip
 
 # Stage 2: Runtime - Set up Nginx to serve the application
-FROM nginx:alpine
+FROM nginx:alpine-slim
 
 # Set environment variables (can be overridden at runtime)
 ENV BACKEND_ENDPOINT=http://macless-haystack-backend:6176
@@ -35,5 +35,5 @@ RUN rm /etc/nginx/conf.d/default.conf \
 # Expose port 54049
 EXPOSE 54049
 
-# Use the default entrypoint provided by nginx:alpine
+# Use the default entrypoint provided by nginx:alpine-slim
 # No need to specify ENTRYPOINT or CMD as we're using the defaults
