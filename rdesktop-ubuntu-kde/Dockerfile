@@ -5,15 +5,16 @@ FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:ubuntu-kde
 ENV DOCKER_TMP_DIR="/tmp/.docker" 
 ENV MS_PACKAGES_DEB_PATH="$DOCKER_TMP_DIR/packages-microsoft-prod.deb" 
 
+# Set the apt frontend to non-interactive mode for automated installs
+ARG DEBIAN_FRONTEND=noninteractive
+
 # Copy application files and s6-overlay config to container root.
 COPY root/ /
 
 # Create the temporary directory for Docker operations
 RUN mkdir -p $DOCKER_TMP_DIR && \               
     # Update package lists for the apt package manager
-    apt-get update && \                          
-    # Set the apt frontend to non-interactive mode for automated installs
-    DEBIAN_FRONTEND=noninteractive \             
+    apt-get update && \             
     # Upgrade installed packages to their latest versions
     apt-get upgrade -y && \                      
     # Indicate that KDE tweaks are being applied
@@ -23,7 +24,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     sed -i 's/applications:org.kde.discover.desktop,/applications:org.kde.konsole.desktop,/g' \
     /usr/share/plasma/plasmoids/org.kde.plasma.taskmanager/contents/config/main.xml && \ 
     # Install essential packages required for the setup
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wget curl lsb-release apt-transport-https git vim jq iptables && \ 
+    apt-get install -y wget curl lsb-release apt-transport-https git vim jq iptables && \ 
     # Get the current Ubuntu version to construct the Microsoft package URL
     ubuntu_release=$(lsb_release -rs) && \ 
     # Download the Microsoft package repository configuration for Ubuntu
@@ -37,7 +38,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     # Ensure the man1 directory exists for storing manual pages
     mkdir -p /usr/share/man/man1 && \           
     # Install Microsoft OpenJDK 21
-    DEBIAN_FRONTEND=noninteractive apt-get install -y msopenjdk-21 && \
+    apt-get install -y msopenjdk-21 && \
     # Download and install Tailscale using its installation script
     curl -fsSL https://tailscale.com/install.sh | sh && \
     # Clean up the apt cache to reduce the final image size
