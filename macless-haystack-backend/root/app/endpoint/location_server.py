@@ -242,8 +242,8 @@ def fetch_and_process_data():
             except Exception as ex:
                 logger.error(f"Error processing report: {ex}", exc_info=True)
 
-        # Get the total number of records in reports.db
-        sq3.execute("SELECT COUNT(*) FROM reports")
+        # Get the total number of records in reports.db using rowid
+        sq3.execute("SELECT COUNT(rowid) FROM reports")
         total_records = sq3.fetchone()[0]
         logger.info(f"Total number of data points in reports.db: {total_records}")
 
