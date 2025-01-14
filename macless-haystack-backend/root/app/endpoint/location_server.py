@@ -86,7 +86,10 @@ def fetch_and_process_data():
 
         # Connect to the database
         db_path = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)), "reports.db"
+            os.path.dirname(os.path.realpath(__file__)),
+            "data",
+            "location-server",
+            "reports.db",
         )
         sq3db = sqlite3.connect(db_path, check_same_thread=False)
         sq3 = sq3db.cursor()
@@ -94,7 +97,12 @@ def fetch_and_process_data():
         # Load private keys
         privkeys = {}
         names = {}
-        keys_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "keys")
+        keys_path = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            "data",
+            "location-server",
+            "keys",
+        )
         for keyfile in glob.glob(os.path.join(keys_path, prefix + "*.keys")):
             with open(keyfile) as f:
                 hashed_adv = priv = ""
@@ -244,7 +252,10 @@ def generate_html_map():
 
         # Connect to the database
         db_path = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)), "reports.db"
+            os.path.dirname(os.path.realpath(__file__)),
+            "data",
+            "location-server",
+            "reports.db",
         )
         conn = sqlite3.connect(db_path, check_same_thread=False)
 
@@ -337,7 +348,10 @@ def generate_html_map():
                 m.get_root().html.add_child(folium.Element(title_and_info_html))
 
                 html_output_path = os.path.join(
-                    os.path.dirname(os.path.realpath(__file__)), "map.html"
+                    os.path.dirname(os.path.realpath(__file__)),
+                    "data",
+                    "location-server",
+                    "map.html",
                 )
                 m.save(html_output_path)
                 logger.info(
@@ -363,7 +377,7 @@ def periodic_fetch():
 class CustomHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         # Always serve 'map.html', regardless of the requested path
-        self.path = "/map.html"
+        self.path = "/data/location-server/map.html"
         return SimpleHTTPRequestHandler.do_GET(self)
 
 

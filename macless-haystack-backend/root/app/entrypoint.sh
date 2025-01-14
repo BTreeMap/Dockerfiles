@@ -1,5 +1,7 @@
 #!/bin/bash
 
+mkdir -p /app/endpoint/data/location-server/keys
+
 if python /app/endpoint/check_config.py ; then
     echo "Config file found. Starting both mh_endpoint.py and location_server.py."
 
