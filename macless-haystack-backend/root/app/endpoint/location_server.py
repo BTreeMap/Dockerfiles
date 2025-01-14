@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from folium.plugins import AntPath
 from register import pypush_gsa_icloud
+from datetime import timezone  # Added to handle timezone-aware datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -124,7 +125,7 @@ def fetch_and_process_data():
         for keyfile in key_files:
             with open(keyfile) as f:
                 hashed_adv = priv = ""
-                name = os.path.basename(keyfile)[len(prefix) : -5]
+                name = os.path.basename(keyfile)[len(prefix): -5]
                 for line in f:
                     key = line.rstrip("\n").split(": ")
                     if key[0] == "Private key":
@@ -187,7 +188,7 @@ def fetch_and_process_data():
                 adj = len(data) - 88
 
                 # Adjust data slicing
-                eph_pubkey_bytes = data[5 + adj : 62 + adj]
+                eph_pubkey_bytes = data[5 + adj: 62 + adj]
                 eph_key = ec.EllipticCurvePublicKey.from_encoded_point(
                     ec.SECP224R1(), eph_pubkey_bytes
                 )
@@ -200,16 +201,16 @@ def fetch_and_process_data():
                 )
                 decryption_key = symmetric_key[:16]
                 iv = symmetric_key[16:]
-                enc_data = data[62 + adj : 72 + adj]
-                auth_tag = data[72 + adj :]
+                enc_data = data[62 + adj: 72 + adj]
+                auth_tag = data[72 + adj:]
 
                 decrypted = decrypt(
                     enc_data, algorithms.AES(decryption_key), modes.GCM(iv, auth_tag)
                 )
                 tag = decode_tag(decrypted)
                 tag["timestamp"] = timestamp
-                tag["isodatetime"] = datetime.datetime.utcfromtimestamp(
-                    timestamp
+                tag["isodatetime"] = datetime.datetime.fromtimestamp(
+                    timestamp, tz=timezone.utc
                 ).isoformat()
                 tag["key"] = names[report["id"]]
                 tag["goog"] = (
@@ -284,13 +285,13 @@ def generate_html_map():
 
         if not df.empty:
             # Process the data
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
             df = df.sort_values("timestamp")
 
             df["lat"] = df["lat"].astype(float)
             df["lon"] = df["lon"].astype(float)
             df["datetime"] = df["timestamp"]
-            df["isodatetime"] = df["timestamp"].dt.isoformat()
+            df["isodatetime"] = df["timestamp"].dt.strftime('%Y-%m-%dT%H:%M:%S%z')
             df["time_diff"] = df["timestamp"].diff().dt.total_seconds()
             average_time_diff = df["time_diff"][1:].mean()
             time_diff_total = (
