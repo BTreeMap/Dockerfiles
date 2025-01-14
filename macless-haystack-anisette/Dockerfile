@@ -1,5 +1,7 @@
 FROM dadoum/anisette-v3-server:latest
 
+ARG DEBIAN_FRONTEND=noninteractive
+
 # Switch to root user to perform the upgrade
 USER root
 
