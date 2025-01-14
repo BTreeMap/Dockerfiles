@@ -2,7 +2,6 @@
 
 import base64
 import datetime
-import functools
 import glob
 import hashlib
 import json
@@ -282,16 +281,18 @@ def periodic_fetch():
         time.sleep(INTERVAL)
 
 
-# Custom HTTP handler to serve only map.html
+# Custom HTTP handler to serve files
 class CustomHandler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=state_dir, **kwargs)
+
     def do_GET(self):
-        # Always serve 'map.html', regardless of the requested path
-        self.path = "/map.html"
-        return SimpleHTTPRequestHandler.do_GET(self)
+        # Serve the requested path
+        return super().do_GET()
 
 
 def run_web_server(port=27184):
-    Handler = functools.partial(CustomHandler, directory=state_dir)
+    Handler = CustomHandler
     with HTTPServer(("", port), Handler) as httpd:
         logger.info(f"Serving at port {port}")
         try:
