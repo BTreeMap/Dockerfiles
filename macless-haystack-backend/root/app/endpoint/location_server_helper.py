@@ -86,7 +86,7 @@ def generate_map_for_device(df, device_name, filename):
 
         # Add title and info
         title_and_info_html = f"""
-         <h3 align="center" style="font-size:20px; margin-top:10px;"><b>FindMy Location Mapper - {device_name}</b></h3>
+         <h3 align="center" style="font-size:20px; margin-top:10px;"><b>{device_name} | FindMy Location Mapper</b></h3>
          <div style="position: fixed; bottom: 50px; left: 50px; width: 300px; height: 160px; z-index:9999; font-size:14px; background-color: white; padding: 10px; border-radius: 10px; box-shadow: 0 0 5px rgba(0,0,0,0.5);">
          <b>Location Summary</b><br>
          Device: {device_name}<br>
