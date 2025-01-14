@@ -5,6 +5,9 @@ FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:debian-xfce
 ENV DOCKER_TMP_DIR="/tmp/.docker" 
 ENV MS_PACKAGES_DEB_PATH="$DOCKER_TMP_DIR/packages-microsoft-prod.deb"
 
+# Set the apt frontend to non-interactive mode for automated installs
+ARG DEBIAN_FRONTEND=noninteractive
+
 # Copy application files and s6-overlay config to container root.
 COPY root/ /
 
@@ -15,8 +18,6 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     # Backup the modified exo-open file
     cp /usr/bin/exo-open /usr/bin/exo-open.bak && \
     mv /usr/bin/exo-open-real /usr/bin/exo-open && \
-    # Set the apt frontend to non-interactive mode for automated installs
-    DEBIAN_FRONTEND=noninteractive \
     # Upgrade installed packages to their latest versions
     apt-get upgrade -y && \                      
     # Application tweaks to modify the behavior of the Chromium desktop entry
@@ -30,7 +31,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     echo "**** XFCE tweaks ****" && \
     rm -f /etc/xdg/autostart/xscreensaver.desktop && \
     # Install required packages for functionality
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wget curl lsb-release git vim jq iptables && \ 
+    apt-get install -y wget curl lsb-release git vim jq iptables && \ 
     # Download the Microsoft package for the current Debian release
     wget https://packages.microsoft.com/config/debian/$(lsb_release -rs)/packages-microsoft-prod.deb -O $MS_PACKAGES_DEB_PATH && \ 
     # Install the Microsoft package
@@ -42,7 +43,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     # Ensure the man1 directory exists for manual pages
     mkdir -p /usr/share/man/man1 && \           
     # Install Microsoft OpenJDK 21 for Java applications
-    DEBIAN_FRONTEND=noninteractive apt-get install -y msopenjdk-21 && \
+    apt-get install -y msopenjdk-21 && \
     # Download and install Tailscale using its installation script
     curl -fsSL https://tailscale.com/install.sh | sh && \
     # Clean up apt cache to reduce image size
