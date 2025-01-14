@@ -15,10 +15,14 @@ import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 import config
+import folium
+import pandas as pd
 import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from folium.plugins import AntPath
+from register import pypush_gsa_icloud
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -66,8 +70,6 @@ def getAuth(regenerate=False, second_factor="sms"):
         with open(config.getConfigFile(), "r") as f:
             j = json.load(f)
     else:
-        from register import pypush_gsa_icloud
-
         mobileme = pypush_gsa_icloud.icloud_login_mobileme(
             username=config.USER, password=config.PASS, second_factor=second_factor
         )
@@ -86,7 +88,7 @@ def getAuth(regenerate=False, second_factor="sms"):
 def fetch_and_process_data():
     try:
         # Set default parameters
-        hours = 24
+        hours = 5 * 24
         prefix = ""
         regen = False
         trusteddevice = False
@@ -140,16 +142,11 @@ def fetch_and_process_data():
             regenerate=regen, second_factor="trusted_device" if trusteddevice else "sms"
         )
 
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "FindMyDevice/74 CFNetwork/1210.0.1 Darwin/20.3.0",
-        }
-
         # Make the request
         r = requests.post(
             "https://gateway.icloud.com/acsnservice/fetch",
             auth=(dsid, searchPartyToken),
-            headers=headers,
+            headers=pypush_gsa_icloud.generate_anisette_headers(),
             json=data,
         )
         logger.info(f"{r.status_code}: Response received from fetch service.")
@@ -249,10 +246,6 @@ def fetch_and_process_data():
 
 def generate_html_map():
     try:
-        import folium
-        import pandas as pd
-        from folium.plugins import AntPath
-
         # Connect to the database
         db_path = os.path.join(
             state_dir,
