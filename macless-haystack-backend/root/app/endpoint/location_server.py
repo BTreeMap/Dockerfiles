@@ -19,7 +19,7 @@ import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from location_server_common import logger, state_dir
+from location_server_common import db_path, logger, state_dir
 from location_server_helper import generate_html_map, initialize_database
 from register import pypush_gsa_icloud
 
