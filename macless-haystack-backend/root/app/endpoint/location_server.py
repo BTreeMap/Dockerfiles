@@ -362,14 +362,9 @@ def periodic_fetch():
 # Custom HTTP handler to serve only map.html
 class CustomHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/" or self.path == "/map.html":
-            self.path = "/map.html"
-            return SimpleHTTPRequestHandler.do_GET(self)
-        elif os.path.exists(self.path[1:]):
-            return SimpleHTTPRequestHandler.do_GET(self)
-        else:
-            self.send_error(404, "File not found")
-            return
+        # Always serve 'map.html', regardless of the requested path
+        self.path = "/map.html"
+        return SimpleHTTPRequestHandler.do_GET(self)
 
 
 def run_web_server(port=27184):
