@@ -35,6 +35,13 @@ if not os.path.exists(config.getConfigFile()):
 INTERVAL = int(os.getenv("FINDER_UPDATE_INTERVAL", "300"))
 
 
+state_dir = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)),
+    "data",
+    "location-server",
+)
+
+
 def sha256(data):
     digest = hashlib.new("sha256")
     digest.update(data)
@@ -86,9 +93,7 @@ def fetch_and_process_data():
 
         # Connect to the database
         db_path = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            "data",
-            "location-server",
+            state_dir,
             "reports.db",
         )
         sq3db = sqlite3.connect(db_path, check_same_thread=False)
@@ -98,9 +103,7 @@ def fetch_and_process_data():
         privkeys = {}
         names = {}
         keys_path = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            "data",
-            "location-server",
+            state_dir,
             "keys",
         )
         for keyfile in glob.glob(os.path.join(keys_path, prefix + "*.keys")):
@@ -252,9 +255,7 @@ def generate_html_map():
 
         # Connect to the database
         db_path = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)),
-            "data",
-            "location-server",
+            state_dir,
             "reports.db",
         )
         conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -348,9 +349,7 @@ def generate_html_map():
                 m.get_root().html.add_child(folium.Element(title_and_info_html))
 
                 html_output_path = os.path.join(
-                    os.path.dirname(os.path.realpath(__file__)),
-                    "data",
-                    "location-server",
+                    state_dir,
                     "map.html",
                 )
                 m.save(html_output_path)
