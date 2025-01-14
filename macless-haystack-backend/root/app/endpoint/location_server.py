@@ -36,7 +36,17 @@ if not os.path.exists(config.getConfigFile()):
     sys.exit(1)
 
 # Update interval in seconds (default to 5 minutes)
-INTERVAL = int(os.getenv("FINDER_UPDATE_INTERVAL", "300"))
+INTERVAL = int(os.getenv("LOCATION_SERVER_FINDER_UPDATE_INTERVAL", "300"))
+
+# Get the number of history days from environment variable, default to 7
+__history_days_env = os.getenv("LOCATION_SERVER_HISTORY_DAYS", "7")
+try:
+    HISTORY_DAYS = int(__history_days_env)
+except ValueError:
+    logger.warning(
+        f"Invalid LOCATION_SERVER_HISTORY_DAYS value: {__history_days_env}. Defaulting to 7."
+    )
+    HISTORY_DAYS = 7
 
 
 state_dir = os.path.join(
@@ -256,14 +266,20 @@ def generate_html_map():
         )
         conn = sqlite3.connect(db_path, check_same_thread=False)
 
-        # Compute the timestamp for 7 days ago
-        seven_days_ago = int(
-            (datetime.datetime.now() - datetime.timedelta(days=7)).timestamp()
-        )
-
-        # Read data from 'reports' table where timestamp is greater than or equal to seven_days_ago
-        query = "SELECT * FROM reports WHERE timestamp >= ?"
-        df = pd.read_sql_query(query, conn, params=(seven_days_ago,))
+        if HISTORY_DAYS == 0:
+            # Query all records
+            query = "SELECT * FROM reports"
+            df = pd.read_sql_query(query, conn)
+        else:
+            # Compute the timestamp for 'history_days' days ago
+            history_timestamp = int(
+                (
+                    datetime.datetime.now() - datetime.timedelta(days=HISTORY_DAYS)
+                ).timestamp()
+            )
+            # Read data from 'reports' table where timestamp is greater than or equal to history_timestamp
+            query = "SELECT * FROM reports WHERE timestamp >= ?"
+            df = pd.read_sql_query(query, conn, params=(history_timestamp,))
         conn.close()
 
         if not df.empty:
@@ -361,7 +377,9 @@ def generate_html_map():
             else:
                 logger.info("No data available to plot.")
         else:
-            logger.info("No data available in the database.")
+            logger.info(
+                f"No data available in the database for the last {HISTORY_DAYS} days."
+            )
     except Exception as e:
         logger.error(f"Error generating HTML map: {e}", exc_info=True)
 
