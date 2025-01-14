@@ -19,4 +19,15 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
     }
+
+    # Reverse proxy for /map to the location server endpoint
+    location /map/ {
+        proxy_pass ${LOCATION_SERVER_ENDPOINT}/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        add_header Cache-Control "no-cache, no-store";
+    }
 }
