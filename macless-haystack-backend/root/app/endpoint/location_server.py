@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+import functools
 
 import config
 import folium
@@ -397,12 +398,12 @@ def periodic_fetch():
 class CustomHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         # Always serve 'map.html', regardless of the requested path
-        self.path = "/data/location-server/map.html"
+        self.path = "/map.html"
         return SimpleHTTPRequestHandler.do_GET(self)
 
 
 def run_web_server(port=27184):
-    Handler = CustomHandler
+    Handler = functools.partial(CustomHandler, directory=state_dir)
     with HTTPServer(("", port), Handler) as httpd:
         logger.info(f"Serving at port {port}")
         try:
