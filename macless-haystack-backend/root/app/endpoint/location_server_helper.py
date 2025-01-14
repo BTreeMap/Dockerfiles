@@ -6,7 +6,7 @@ import sqlite3
 import folium
 import pandas as pd
 from folium.plugins import AntPath
-from location_server_common import HISTORY_DAYS, logger, state_dir
+from location_server_common import HISTORY_DAYS, db_path, logger, state_dir
 
 
 def generate_filename(id_short, id_value):
@@ -129,7 +129,6 @@ def generate_index_html(device_map):
 def generate_html_map():
     try:
         # Connect to the database
-        db_path = os.path.join(state_dir, "reports.db")
         conn = sqlite3.connect(db_path, check_same_thread=False)
 
         # Compute the timestamp for 'HISTORY_DAYS' days ago
@@ -137,20 +136,6 @@ def generate_html_map():
             (
                 datetime.datetime.now() - datetime.timedelta(days=HISTORY_DAYS)
             ).timestamp()
-        )
-
-        # Create the index on id_short to optimize the SELECT DISTINCT query
-        conn.execute(
-            """
-        CREATE INDEX IF NOT EXISTS idx_reports_id_short ON reports(id_short)
-        """
-        )
-
-        # Create the index to optimize data retrieval for each device
-        conn.execute(
-            """
-        CREATE INDEX IF NOT EXISTS idx_reports_id_short_timestamp ON reports(id_short, timestamp DESC)
-        """
         )
 
         # Get list of devices
@@ -206,3 +191,68 @@ def generate_html_map():
 
     except Exception as e:
         logger.error(f"Error generating HTML maps: {e}", exc_info=True)
+
+
+def initialize_database():
+    """
+    Initializes the database by creating necessary tables, indexes, and triggers.
+    """
+    # Connect to the database
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    c = conn.cursor()
+
+    # Create the reports table if it does not exist
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS reports (
+        id_short TEXT, timestamp INTEGER, datePublished INTEGER, payload TEXT, 
+        id TEXT, statusCode INTEGER, lat REAL, lon REAL, conf INTEGER,
+        PRIMARY KEY(id_short,timestamp));"""
+    )
+
+    # Create 'rowcount' table
+    c.execute("CREATE TABLE IF NOT EXISTS rowcount(count INTEGER)")
+    # Check if rowcount table is empty
+    c.execute("SELECT COUNT(*) FROM rowcount")
+    rowcount_exists = c.fetchone()[0]
+
+    if not rowcount_exists:
+        # Initialize count with current total number of rows in the reports table
+        c.execute("SELECT COUNT(*) FROM reports")
+        total_rows = c.fetchone()[0]
+        c.execute("INSERT INTO rowcount(count) VALUES (?)", (total_rows,))
+
+    # Create triggers
+    c.execute(
+        """
+    CREATE TRIGGER IF NOT EXISTS reports_insert AFTER INSERT ON reports
+    BEGIN
+        UPDATE rowcount SET count = count + 1;
+    END;
+    """
+    )
+
+    c.execute(
+        """
+    CREATE TRIGGER IF NOT EXISTS reports_delete AFTER DELETE ON reports
+    BEGIN
+        UPDATE rowcount SET count = count - 1;
+    END;
+    """
+    )
+
+    # Create indexes
+    c.execute(
+        """
+    CREATE INDEX IF NOT EXISTS idx_reports_id_short ON reports(id_short)
+    """
+    )
+
+    c.execute(
+        """
+    CREATE INDEX IF NOT EXISTS idx_reports_id_short_timestamp ON reports(id_short, timestamp DESC)
+    """
+    )
+
+    # Commit changes and close connection
+    conn.commit()
+    conn.close()

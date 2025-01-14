@@ -11,6 +11,8 @@ state_dir = os.path.join(
     "location-server",
 )
 
+db_path = os.path.join(state_dir, "reports.db")
+
 # Get the number of history days from environment variable, default to 7
 __history_days_env = os.getenv("LOCATION_SERVER_HISTORY_DAYS", "7")
 try:

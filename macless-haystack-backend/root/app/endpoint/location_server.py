@@ -15,13 +15,12 @@ from datetime import timezone  # Added to handle timezone-aware datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 import config
-import pandas as pd
 import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from location_server_common import logger, state_dir
-from location_server_helper import generate_html_map
+from location_server_helper import generate_html_map, initialize_database
 from register import pypush_gsa_icloud
 
 # Check if the config file exists
@@ -82,14 +81,6 @@ def fetch_and_process_data():
         regen = False
         trusteddevice = False
 
-        # Connect to the database
-        db_path = os.path.join(
-            state_dir,
-            "reports.db",
-        )
-        sq3db = sqlite3.connect(db_path, check_same_thread=False)
-        sq3 = sq3db.cursor()
-
         # Load private keys
         privkeys = {}
         names = {}
@@ -147,43 +138,10 @@ def fetch_and_process_data():
 
         ordered = []
         found = set()
-        sq3.execute(
-            """CREATE TABLE IF NOT EXISTS reports (
-            id_short TEXT, timestamp INTEGER, datePublished INTEGER, payload TEXT, 
-            id TEXT, statusCode INTEGER, lat REAL, lon REAL, conf INTEGER,
-            PRIMARY KEY(id_short,timestamp));"""
-        )
 
-        # Create 'rowcount' table and triggers
-        sq3.execute("CREATE TABLE IF NOT EXISTS rowcount(count INTEGER)")
-
-        # Check if rowcount table is empty
-        sq3.execute("SELECT COUNT(*) FROM rowcount")
-        rowcount_exists = sq3.fetchone()[0]
-
-        if not rowcount_exists:
-            # Initialize count with current total number of rows in the reports table
-            sq3.execute("SELECT COUNT(*) FROM reports")
-            total_rows = sq3.fetchone()[0]
-            sq3.execute("INSERT INTO rowcount(count) VALUES (?)", (total_rows,))
-
-        sq3.execute(
-            """
-        CREATE TRIGGER IF NOT EXISTS reports_insert AFTER INSERT ON reports
-        BEGIN
-            UPDATE rowcount SET count = count + 1;
-        END;
-        """
-        )
-
-        sq3.execute(
-            """
-        CREATE TRIGGER IF NOT EXISTS reports_delete AFTER DELETE ON reports
-        BEGIN
-            UPDATE rowcount SET count = count - 1;
-        END;
-        """
-        )
+        # Connect to the database
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        c = conn.cursor()
 
         for report in res:
             try:
@@ -230,7 +188,7 @@ def fetch_and_process_data():
                 found.add(tag["key"])
                 ordered.append(tag)
 
-                # SQL Injection Mitigation
+                # Insert data into the reports table
                 query = (
                     "INSERT OR REPLACE INTO reports VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
@@ -245,19 +203,19 @@ def fetch_and_process_data():
                     float(tag["lon"]),
                     tag["conf"],
                 )
-                sq3.execute(query, parameters)
+                c.execute(query, parameters)
             except Exception as ex:
                 logger.error(f"Error processing report: {ex}", exc_info=True)
 
         # The triggers will automatically update 'rowcount'
 
         # Get the total number of records in reports.db using O(1) operation
-        sq3.execute("SELECT count FROM rowcount")
-        total_records = sq3.fetchone()[0]
+        c.execute("SELECT count FROM rowcount")
+        total_records = c.fetchone()[0]
         logger.info(f"Total number of data points in reports.db: {total_records}")
 
-        sq3db.commit()
-        sq3db.close()
+        conn.commit()
+        conn.close()
 
         logger.info(f"{len(ordered)} reports processed.")
 
@@ -303,6 +261,9 @@ def run_web_server(port=27184):
 
 
 if __name__ == "__main__":
+    # Initialize the database
+    initialize_database()
+
     # Start the periodic fetch in a background thread
     fetch_thread = threading.Thread(target=periodic_fetch)
     fetch_thread.daemon = True
