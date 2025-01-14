@@ -269,7 +269,7 @@ def generate_html_map():
 
             # Formatting time
             def format_time(seconds):
-                if not seconds:
+                if not seconds or seconds != seconds:  # Check for NaN
                     return "0s"
                 hours = seconds // 3600
                 minutes = (seconds % 3600) // 60
@@ -372,11 +372,10 @@ class CustomHandler(SimpleHTTPRequestHandler):
             return
 
 
-def run_web_server():
-    PORT = 8000
+def run_web_server(port=27184):
     Handler = CustomHandler
-    with HTTPServer(("", PORT), Handler) as httpd:
-        logger.info(f"Serving at port {PORT}")
+    with HTTPServer(("", port), Handler) as httpd:
+        logger.info(f"Serving at port {port}")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
@@ -392,4 +391,5 @@ if __name__ == "__main__":
 
     # Start the web server
     logger.info("Starting web server...")
-    run_web_server()
+    PORT = int(os.getenv("LOCATION_SERVER_PORT", "27184"))
+    run_web_server(port=PORT)
