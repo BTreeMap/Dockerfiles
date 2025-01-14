@@ -256,8 +256,14 @@ def generate_html_map():
         )
         conn = sqlite3.connect(db_path, check_same_thread=False)
 
-        # Read data from 'reports' table
-        df = pd.read_sql_query("SELECT * FROM reports", conn)
+        # Compute the timestamp for 7 days ago
+        seven_days_ago = int(
+            (datetime.datetime.now() - datetime.timedelta(days=7)).timestamp()
+        )
+
+        # Read data from 'reports' table where timestamp is greater than or equal to seven_days_ago
+        query = "SELECT * FROM reports WHERE timestamp >= ?"
+        df = pd.read_sql_query(query, conn, params=(seven_days_ago,))
         conn.close()
 
         if not df.empty:
