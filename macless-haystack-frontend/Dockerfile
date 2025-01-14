@@ -19,6 +19,7 @@ FROM nginx:alpine-slim
 
 # Set environment variables (can be overridden at runtime)
 ENV BACKEND_ENDPOINT=http://macless-haystack-backend:6176
+ENV LOCATION_SERVER_ENDPOINT=http://macless-haystack-backend:27184
 ENV FRONTEND_DOMAIN=http://localhost:54049
 
 # Copy the web application from the builder stage to the Nginx HTML directory
