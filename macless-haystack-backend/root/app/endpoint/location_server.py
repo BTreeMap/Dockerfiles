@@ -108,7 +108,10 @@ def fetch_and_process_data():
             state_dir,
             "keys",
         )
-        for keyfile in glob.glob(os.path.join(keys_path, prefix + "*.keys")):
+        key_files = glob.glob(os.path.join(keys_path, prefix + "*.keys"))
+        if not key_files:
+            logger.warning("No keys found in the keys directory.")
+        for keyfile in key_files:
             with open(keyfile) as f:
                 hashed_adv = priv = ""
                 name = os.path.basename(keyfile)[len(prefix) : -5]
@@ -225,7 +228,7 @@ def fetch_and_process_data():
                 )
                 sq3.execute(query, parameters)
             except Exception as ex:
-                logger.error(f"Error processing report: {ex}")
+                logger.error(f"Error processing report: {ex}", exc_info=True)
 
         sq3db.commit()
         sq3db.close()
