@@ -87,6 +87,8 @@ def build_and_push_image(args):
     return
 
 def main():
+    global logger
+
     logger = init_logger()
 
     # Get environment variables
