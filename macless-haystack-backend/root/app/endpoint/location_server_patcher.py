@@ -127,15 +127,6 @@ if __name__ == "__main__":
                 apply_rowcount_fix  # This is a function that performs the necessary operations
             ],
         ),
-        # You can add more patches here in the future
-        # Patch(
-        #     name="another_patch_name",
-        #     commands=[
-        #         "SQL COMMAND 1",
-        #         "SQL COMMAND 2",
-        #         # Or a function if more complex logic is needed
-        #     ]
-        # ),
     ]
 
     # Apply the patches
