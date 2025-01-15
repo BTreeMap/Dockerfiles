@@ -84,17 +84,17 @@ jobs:
             build_targets+=("$target_name")
 
             # Start building the target content
-            target_content="$target_name:\n"
+            target_content="${target_name}:\n"
             target_content+="\t@echo \"Building image for ${tags[0]} with tags:\"\n"
             for tag in "${tags[@]}"; do
               target_content+="\t@echo \" - $tag\"\n"
             done
 
             # Create a new builder instance
-            target_content+="\tdocker buildx create --use --name ${builder_name}\n"
+            target_content+="\t@docker buildx create --use --name ${builder_name}\n"
 
             # Enable multi-platform builds
-            target_content+="\tdocker run --privileged --rm tonistiigi/binfmt --install all\n"
+            target_content+="\t@docker run --privileged --rm tonistiigi/binfmt --install all\n"
 
             # Build the Docker image and tag it with all tags
             buildx_cmd="docker buildx build --builder ${builder_name} --push --no-cache --platform linux/amd64,linux/arm64"
@@ -103,21 +103,26 @@ jobs:
             done
             buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
 
-            target_content+="\t${buildx_cmd}\n"
+            target_content+="\t@${buildx_cmd}\n"
 
             # Remove the builder instance
-            target_content+="\tdocker buildx rm ${builder_name} || true\n\n"
+            target_content+="\t@docker buildx rm ${builder_name} || true\n\n"
 
             # Append the target content to the makefile_content variable
             makefile_content+="$target_content"
-          done
+          done < <(find . -name 'Dockerfile' | sort -r)
 
           # Now, write the 'all' target to the Makefile
-          echo "all: ${build_targets[@]}" > Makefile
-          echo "" >> Makefile
+          {
+            echo "all: ${build_targets[@]}"
+            echo ""
+            # Append the per-target content to the Makefile
+            printf "$makefile_content"
+          } > Makefile
 
-          # Append the per-target content to the Makefile
-          echo -e "$makefile_content" >> Makefile
+          # Echo the Makefile to the terminal for debugging
+          echo "Generated Makefile:"
+          cat Makefile
 
           # Run the make command with parallel jobs using all available cores
           echo "Starting Docker builds in parallel"
