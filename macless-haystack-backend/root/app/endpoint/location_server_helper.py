@@ -115,63 +115,13 @@ def generate_index_html(device_map):
     try:
         with open(index_html_path, "w") as f:
             f.write(
-                """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Device Maps</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" integrity="sha384-HphS8cQyN+eYiJ5PMbzShG6qZdRtvHPVLPkYb8JwMkmNgaIxrFVDhQe3jIbq3EZ2" crossorigin="anonymous">
-  <style>
-  body {
-    font-family: sans-serif;
-    margin: 0;
-    padding: 20px;
-  }
-
-  h1 {
-    margin-bottom: 16px;
-  }
-
-  .device-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-
-  .device-list-item {
-    margin-bottom: 16px;
-  }
-
-  .device-list-item a {
-    text-decoration: none;
-    color: inherit;
-    display: flex;
-    align-items: center;
-  }
-
-  .device-list-item a:hover {
-    color: #007bff;
-  }
-
-  .device-list-item .material-icons {
-    margin-right: 16px;
-    font-size: 24px;
-    vertical-align: middle;
-  }
-  </style>
-</head>
-<body>
-  <h1>Available Device Maps</h1>
-  <ul class="device-list">
-"""
+                "<!DOCTYPE html>\n<html>\n<head>\n<title>Device Maps</title>\n</head>\n<body>\n"
             )
+            f.write("<h1>Available Device Maps</h1>\n<ul>\n")
             for device_name, filename in device_map.items():
-                f.write(
-                    f'<li class="device-list-item"><a href="maps/{filename}"><span class="material-icons-sharp">location_on</span>{device_name}</a></li>\n'
-                )
+                f.write(f'<li><a href="maps/{filename}">{device_name}</a></li>\n')
             f.write("</ul>\n</body>\n</html>")
-            logger.info(f"'index.html' generated at '{index_html_path}'")
+        logger.info(f"'index.html' generated at '{index_html_path}'")
     except Exception as e:
         logger.error(f"Error generating 'index.html': {e}", exc_info=True)
 
