@@ -113,6 +113,7 @@ def main():
         logger.error("No Dockerfiles found.")
         sys.exit(1)
 
+    dockerfiles.sort(reverse=True)
     logger.info("Found Dockerfiles:")
     for dockerfile in dockerfiles:
         logger.info(f" - {dockerfile}")
