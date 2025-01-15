@@ -54,9 +54,11 @@ jobs:
           # Base image path
           base_image="${registry_lower}/${image_name_lower}"
 
-          # Start writing the Makefile
           echo "Generating Makefile for Docker builds"
-          echo "" > Makefile
+
+          # Initialize variables
+          build_targets=()
+          makefile_content=""
 
           # Find all Dockerfiles recursively
           find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
@@ -78,18 +80,21 @@ jobs:
             target_name="build_${image_name_dir}"
             builder_name="builder_${image_name_dir}"
 
-            # Add the target to the Makefile
-            echo "$target_name:" >> Makefile
-            echo -e "\t@echo \"Building image for ${tags[0]} with tags:\"" >> Makefile
+            # Append the target name to the list of build targets
+            build_targets+=("$target_name")
+
+            # Start building the target content
+            target_content="$target_name:\n"
+            target_content+="\t@echo \"Building image for ${tags[0]} with tags:\"\n"
             for tag in "${tags[@]}"; do
-              echo -e "\t@echo \" - $tag\"" >> Makefile
+              target_content+="\t@echo \" - $tag\"\n"
             done
 
             # Create a new builder instance
-            echo -e "\tdocker buildx create --use --name ${builder_name}" >> Makefile
+            target_content+="\tdocker buildx create --use --name ${builder_name}\n"
 
-            # Enable multi-platform builds (ensure qemu is registered)
-            echo -e "\tdocker run --privileged --rm tonistiigi/binfmt --install all" >> Makefile
+            # Enable multi-platform builds
+            target_content+="\tdocker run --privileged --rm tonistiigi/binfmt --install all\n"
 
             # Build the Docker image and tag it with all tags
             buildx_cmd="docker buildx build --builder ${builder_name} --push --no-cache --platform linux/amd64,linux/arm64"
@@ -98,13 +103,21 @@ jobs:
             done
             buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
 
-            echo -e "\t${buildx_cmd}" >> Makefile
+            target_content+="\t${buildx_cmd}\n"
 
             # Remove the builder instance
-            echo -e "\tdocker buildx rm ${builder_name} || true" >> Makefile
+            target_content+="\tdocker buildx rm ${builder_name} || true\n\n"
 
-            echo "" >> Makefile
+            # Append the target content to the makefile_content variable
+            makefile_content+="$target_content"
           done
+
+          # Now, write the 'all' target to the Makefile
+          echo "all: ${build_targets[@]}" > Makefile
+          echo "" >> Makefile
+
+          # Append the per-target content to the Makefile
+          echo -e "$makefile_content" >> Makefile
 
           # Run the make command with parallel jobs using all available cores
           echo "Starting Docker builds in parallel"
