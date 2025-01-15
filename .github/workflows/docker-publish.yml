@@ -1,4 +1,4 @@
-name: Build and Push Docker Images
+name: Docker
 
 on:
   schedule:
@@ -12,11 +12,9 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  build:
     # Run the job if triggered by a cron job or a push containing the specific commit message
-    if: >
-      github.event_name == 'schedule' ||
-      (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
+    if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,99 +22,89 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Set up BuildKit Docker container builder
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
 
-      - name: Log into ${{ env.REGISTRY }} Registry
-        uses: docker/login-action@v3
+      # Login against a Docker registry except on PR
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Environment Variables
+      # Find Dockerfiles, generate a Makefile, and build images in parallel
+      - name: Generate and Run Makefile to Build and Push Docker Images in Parallel
         run: |
+          #!/bin/bash
           set -e
+
           # Convert REGISTRY and IMAGE_NAME to lowercase
-          echo "Converting REGISTRY and IMAGE_NAME to lowercase"
-          REGISTRY_LOWER=$(echo '${{ env.REGISTRY }}' | tr '[:upper:]' '[:lower:]')
-          echo "REGISTRY_LOWER=$REGISTRY_LOWER" >> $GITHUB_ENV
-          IMAGE_NAME_LOWER=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE_NAME_LOWER=$IMAGE_NAME_LOWER" >> $GITHUB_ENV
+          registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
+          image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
 
           # Get current date and time
-          echo "Getting current date and time"
-          DATE_TIME=$(date '+%Y-%m-%d.%H-%M-%S')
-          echo "DATE_TIME=$DATE_TIME" >> $GITHUB_ENV
-          DATE=$(date '+%Y-%m-%d')
-          echo "DATE=$DATE" >> $GITHUB_ENV
+          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
+          date=$(date '+%Y-%m-%d')
 
           # Get full commit hash
-          echo "Setting COMMIT_HASH to GITHUB_SHA"
-          COMMIT_HASH='${{ github.sha }}'
-          echo "COMMIT_HASH=$COMMIT_HASH" >> $GITHUB_ENV
+          commit_hash="${{ github.sha }}"
 
           # Base image path
-          echo "Constructing BASE_IMAGE"
-          BASE_IMAGE="$REGISTRY_LOWER/$IMAGE_NAME_LOWER"
-          echo "BASE_IMAGE=$BASE_IMAGE" >> $GITHUB_ENV
-
-      - name: Find Dockerfiles
-        id: find_dockerfiles
-        run: |
-          echo "Searching for Dockerfiles"
-          DOCKERFILES=$(find . -name 'Dockerfile' | sort -r)
-          if [ -z "$DOCKERFILES" ]; then
-            echo "No Dockerfiles found."
-            exit 1
-          fi
-          echo "Found Dockerfiles:"
-          echo "$DOCKERFILES"
-          # Write the Dockerfiles into a file to be read in the next step
-          echo "$DOCKERFILES" > dockerfiles.txt
-
-      - name: Generate Makefile
-        run: |
-          set -e
-          echo "Reading Dockerfiles from file"
-          IFS=$'\n' read -d '' -r -a dockerfiles < dockerfiles.txt
-
-          if [ ${#dockerfiles[@]} -eq 0 ]; then
-            echo "No Dockerfiles to process."
-            exit 1
-          fi
+          base_image="${registry_lower}/${image_name_lower}"
 
           echo "Generating Makefile for Docker builds"
 
+          # Set IFS to newline to handle spaces in filenames
+          IFS=$'\n'
+
+          # Read the list of Dockerfiles into an array
+          dockerfiles=($(find . -name 'Dockerfile' | sort -r))
+
+          # Reset IFS to default
+          unset IFS
+
+          # Check if any Dockerfiles were found
+          if [ ${#dockerfiles[@]} -eq 0 ]; then
+            echo "No Dockerfiles found."
+            exit 1
+          fi
+
+          echo "Found Dockerfiles:"
+          printf ' - %s\n' "${dockerfiles[@]}"
+
+          # Initialize variables
           build_targets=()
           makefile_content=""
 
+          # Loop over dockerfiles
           for dockerfile in "${dockerfiles[@]}"; do
             # Get the directory of the Dockerfile
-            dockerfile_dir=$(dirname "$dockerfile")
-            image_variant=$(basename "$dockerfile_dir" | tr '[:upper:]' '[:lower:]')
+            dir=$(dirname "$dockerfile")
+            image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
 
-            # Construct image tags
+            # Construct tags
             tags=()
-            tags+=("${BASE_IMAGE}:${image_variant}")
-            tags+=("${BASE_IMAGE}:${image_variant}.latest")
-            tags+=("${BASE_IMAGE}:${image_variant}.${DATE}")
-            tags+=("${BASE_IMAGE}:${image_variant}.${DATE_TIME}")
-            tags+=("${BASE_IMAGE}:${image_variant}.${COMMIT_HASH}")
-            tags+=("${BASE_IMAGE}:${image_variant}.${COMMIT_HASH}.${DATE}")
-            tags+=("${BASE_IMAGE}:${image_variant}.${COMMIT_HASH}.${DATE_TIME}")
+            tags+=("${base_image}:${image_name_dir}")
+            tags+=("${base_image}:${image_name_dir}.latest")
+            tags+=("${base_image}:${image_name_dir}.${date}")
+            tags+=("${base_image}:${image_name_dir}.${date_time}")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date}")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date_time}")
 
-            # Define target and builder names
-            target_name="build_${image_variant}"
-            builder_name="builder_${image_variant}"
+            # Define the target name
+            target_name="build_${image_name_dir}"
+            builder_name="builder_${image_name_dir}"
 
-            # Append to build targets
+            # Append the target name to the list of build targets
             build_targets+=("$target_name")
 
-            # Build target content
+            # Start building the target content
             target_content="${target_name}:\n"
             target_content+="\t@echo \"Building image for ${tags[0]} with tags:\"\n"
             for tag in "${tags[@]}"; do
@@ -134,29 +122,28 @@ jobs:
             for tag in "${tags[@]}"; do
               buildx_cmd+=" --tag $tag"
             done
-            buildx_cmd+=" \"$dockerfile_dir\" --file \"$dockerfile\""
+            buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
 
             target_content+="\t@${buildx_cmd}\n"
 
             # Remove the builder instance
             target_content+="\t@docker buildx rm ${builder_name} || true\n\n"
 
-            # Append to makefile content
+            # Append the target content to the makefile_content variable
             makefile_content+="$target_content"
           done
 
-          # Write the 'all' target to the Makefile
+          # Now, write the 'all' target to the Makefile
           {
             echo "all: ${build_targets[@]}"
             echo ""
             printf "$makefile_content"
           } > Makefile
 
-          # Output the Makefile for debugging
+          # Echo the Makefile to the terminal for debugging
           echo "Generated Makefile:"
           cat Makefile
 
-      - name: Build and Push Docker Images in Parallel
-        run: |
+          # Run the make command with parallel jobs using all available cores
           echo "Starting Docker builds in parallel"
           make -j $(nproc)
