@@ -10,6 +10,7 @@ import sys
 
 
 def init_logger():
+    """Initializes and returns a logger for the Docker builder."""
     logger = logging.getLogger("docker_builder")
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
@@ -21,15 +22,16 @@ def init_logger():
     return logger
 
 
-def get_env_var(name, default=None):
-    value = os.environ.get(name, default)
+def get_env_var(var_name, default=None):
+    """Retrieves an environment variable, raising an error if not found."""
+    value = os.environ.get(var_name, default)
     if value is None:
-        raise ValueError(f"Environment variable '{name}' is not set")
+        raise ValueError(f"Environment variable '{var_name}' is not set")
     return value
 
 
 class BuildFailureException(Exception):
-    """Raised when the image building process fails."""
+    """Exception raised when the image building process fails."""
 
     def __init__(self, image_name, attempts, error_msg):
         self.image_name = image_name
@@ -40,7 +42,8 @@ class BuildFailureException(Exception):
         return f"Failed to build image '{self.image_name}' after {self.attempts} attempts. Error: {self.error_msg}"
 
 
-def build_and_push_image(args):
+def build_and_push_image(build_args):
+    """Builds and pushes a Docker image, handling retries on failure."""
     (
         dockerfile_path,
         base_image,
@@ -49,22 +52,26 @@ def build_and_push_image(args):
         commit_hash,
         max_retries,
         logger_lock,
-    ) = args
+    ) = build_args
+
+    # Extract directory and construct the image name based on the directory name
     directory_path = os.path.dirname(dockerfile_path)
     image_name_dir = os.path.basename(directory_path).lower()
 
-    # Construct image tags
-    tags = []
-    tags.append(f"{base_image}:{image_name_dir}")
-    tags.append(f"{base_image}:{image_name_dir}.latest")
-    tags.append(f"{base_image}:{image_name_dir}.{date_str}")
-    tags.append(f"{base_image}:{image_name_dir}.{date_time_str}")
-    tags.append(f"{base_image}:{image_name_dir}.{commit_hash}")
-    tags.append(f"{base_image}:{image_name_dir}.{commit_hash}.{date_str}")
-    tags.append(f"{base_image}:{image_name_dir}.{commit_hash}.{date_time_str}")
+    # Constructing image tags based on various criteria
+    tags = [
+        f"{base_image}:{image_name_dir}",
+        f"{base_image}:{image_name_dir}.latest",
+        f"{base_image}:{image_name_dir}.{date_str}",
+        f"{base_image}:{image_name_dir}.{date_time_str}",
+        f"{base_image}:{image_name_dir}.{commit_hash}",
+        f"{base_image}:{image_name_dir}.{commit_hash}.{date_str}",
+        f"{base_image}:{image_name_dir}.{commit_hash}.{date_time_str}",
+    ]
 
     builder_name = f"builder_{image_name_dir}"
 
+    # Prepare the build command
     buildx_command = [
         "docker",
         "buildx",
@@ -80,7 +87,7 @@ def build_and_push_image(args):
         buildx_command.extend(["--tag", tag])
     buildx_command.extend(["--file", dockerfile_path, directory_path])
 
-    # Commands to create and remove builder
+    # Commands to create and remove the Docker builder
     create_builder_command = ["docker", "buildx", "create", "--name", builder_name]
     remove_builder_command = ["docker", "buildx", "rm", builder_name]
 
@@ -88,6 +95,8 @@ def build_and_push_image(args):
         error_msg = "No Error"
         # Create builder
         subprocess.run(create_builder_command, check=True)
+
+        # Retry logic for building the image
         for attempt in range(1, max_retries + 1):
             try:
                 with logger_lock:
@@ -97,7 +106,7 @@ def build_and_push_image(args):
                     for tag in tags:
                         logger.info(f" - {tag}")
                 subprocess.run(buildx_command, check=True)
-                return
+                return  # Exit if build is successful
             except subprocess.CalledProcessError as e:
                 error_msg = str(e)
                 with logger_lock:
@@ -105,15 +114,18 @@ def build_and_push_image(args):
                         f"Build failed for image {tags[0]} on attempt {attempt}/{max_retries}: {e}",
                         exc_info=True,
                     )
+
+        # Log failure after all attempts
         with logger_lock:
             logger.error(
-                f"Failed to build image {tags[0]} after {max_retries} attempts"
+                f"Failed to build image {tags[0]} after {max_retries} attempts."
             )
         raise BuildFailureException(
             image_name=tags[0], attempts=max_retries, error_msg=error_msg
         )
+
     finally:
-        # Remove builder
+        # Cleanup: Remove the Docker builder
         subprocess.run(remove_builder_command, check=False)
 
 
@@ -123,18 +135,18 @@ def main():
     logger = init_logger()
 
     # Get environment variables
-    DOCKER_REGISTRY = get_env_var("DOCKER_REGISTRY").lower()
-    DOCKER_IMAGE_NAME = get_env_var("DOCKER_IMAGE_NAME").lower()
-    MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
-    GITHUB_SHA = get_env_var("GITHUB_SHA")
+    docker_registry = get_env_var("DOCKER_REGISTRY").lower()
+    docker_image_name = get_env_var("DOCKER_IMAGE_NAME").lower()
+    max_retries = int(get_env_var("MAX_RETRIES", "3"))
+    github_sha = get_env_var("GITHUB_SHA")
 
-    # Get current date and time in UTC
-    date_time = datetime.datetime.utcnow()
-    date_str = date_time.strftime("%Y-%m-%d")
-    date_time_str = date_time.strftime("%Y-%m-%d.%H-%M-%S")
+    # Get current date and time in UTC for tagging images
+    current_time = datetime.datetime.now(datetime.timezone.utc)
+    date_str = current_time.strftime("%Y-%m-%d")
+    date_time_str = current_time.strftime("%Y-%m-%d.%H-%M-%S")
 
-    # Base image path
-    base_image = f"{DOCKER_REGISTRY}/{DOCKER_IMAGE_NAME}"
+    # Form the base image path
+    base_image = f"{docker_registry}/{docker_image_name}"
 
     logger.info(f"Starting Docker builds with base image: {base_image}")
 
@@ -149,7 +161,7 @@ def main():
     for dockerfile in dockerfiles:
         logger.info(f" - {dockerfile}")
 
-    # Command to enable binfmt for multi-platform builds
+    # Enable support for multi-platform builds
     enable_binfmt_command = [
         "docker",
         "run",
@@ -159,21 +171,23 @@ def main():
         "--install",
         "all",
     ]
-    # Enable binfmt
+
+    # Execute the command to enable binfmt
     subprocess.run(enable_binfmt_command, check=True)
 
     # Prepare arguments for building images
     args_list = []
     manager = multiprocessing.Manager()
     logger_lock = manager.Lock()
+
     for dockerfile in dockerfiles:
         args = (
             dockerfile,
             base_image,
             date_str,
             date_time_str,
-            GITHUB_SHA,
-            MAX_RETRIES,
+            github_sha,
+            max_retries,
             logger_lock,
         )
         args_list.append(args)
@@ -181,7 +195,7 @@ def main():
     # Use multiprocessing to build images in parallel
     num_processes = multiprocessing.cpu_count()
     logger.info(
-        f"Starting Docker builds in parallel using up to {num_processes} processes"
+        f"Starting Docker builds in parallel using up to {num_processes} processes."
     )
 
     with multiprocessing.Pool(processes=num_processes) as pool:
