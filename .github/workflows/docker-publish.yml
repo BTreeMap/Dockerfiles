@@ -10,13 +10,14 @@ on:
 env:
   DOCKER_REGISTRY: ghcr.io
   DOCKER_IMAGE_NAME: ${{ github.repository }}
+  GITHUB_SHA: ${{ github.sha }}
   MAX_RETRIES: 3
 
 jobs:
   build_and_publish:
     # Run the job if triggered by a scheduled event or a push with a specific commit message
     if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -42,10 +43,8 @@ jobs:
       - name: Set up Python Environment
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
-          python-version: '3.13'
+          python-version: '3.12'
 
       # Run Python script to discover and build Docker images in parallel
       - name: Discover, Build, and Push Docker Images in Parallel
-        env:
-          GITHUB_SHA: ${{ github.sha }}
         run: python .github/scripts/build_docker_images.py
