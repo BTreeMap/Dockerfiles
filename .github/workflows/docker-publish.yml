@@ -40,6 +40,9 @@ jobs:
       # Find Dockerfiles, generate a Makefile, and build images in parallel
       - name: Generate and Run Makefile to Build and Push Docker Images in Parallel
         run: |
+          #!/bin/bash
+          set -e
+
           # Convert REGISTRY and IMAGE_NAME to lowercase
           registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
           image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
@@ -56,12 +59,30 @@ jobs:
 
           echo "Generating Makefile for Docker builds"
 
+          # Set IFS to newline to handle spaces in filenames
+          IFS=$'\n'
+
+          # Read the list of Dockerfiles into an array
+          dockerfiles=($(find . -name 'Dockerfile' | sort -r))
+
+          # Reset IFS to default
+          unset IFS
+
+          # Check if any Dockerfiles were found
+          if [ ${#dockerfiles[@]} -eq 0 ]; then
+            echo "No Dockerfiles found."
+            exit 1
+          fi
+
+          echo "Found Dockerfiles:"
+          printf ' - %s\n' "${dockerfiles[@]}"
+
           # Initialize variables
           build_targets=()
           makefile_content=""
 
-          # Find all Dockerfiles recursively
-          find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
+          # Loop over dockerfiles
+          for dockerfile in "${dockerfiles[@]}"; do
             # Get the directory of the Dockerfile
             dir=$(dirname "$dockerfile")
             image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
@@ -110,13 +131,12 @@ jobs:
 
             # Append the target content to the makefile_content variable
             makefile_content+="$target_content"
-          done < <(find . -name 'Dockerfile' | sort -r)
+          done
 
           # Now, write the 'all' target to the Makefile
           {
             echo "all: ${build_targets[@]}"
             echo ""
-            # Append the per-target content to the Makefile
             printf "$makefile_content"
           } > Makefile
 
