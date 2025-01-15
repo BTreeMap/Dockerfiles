@@ -20,8 +20,8 @@ server {
         proxy_set_header Connection 'upgrade';
     }
 
-    # Reverse proxy for /map to the location server endpoint
-    location /map/ {
+    # Reverse proxy for /device to the location server endpoint
+    location /device/ {
         proxy_pass ${LOCATION_SERVER_ENDPOINT}/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
