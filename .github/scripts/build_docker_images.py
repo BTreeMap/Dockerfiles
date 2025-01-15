@@ -42,7 +42,7 @@ class BuildFailureException(Exception):
         return f"Failed to build image '{self.image_name}' after {self.attempts} attempts. Error: {self.error_msg}"
 
 
-def build_and_push_image(build_args):
+def build_and_push_image(build_args) -> None | BaseException:
     """Builds and pushes a Docker image, handling retries on failure."""
     (
         dockerfile_path,
@@ -107,7 +107,7 @@ def build_and_push_image(build_args):
                         logger.info(f" - {tag}")
                 subprocess.run(buildx_command, check=True)
                 return  # Exit if build is successful
-            except subprocess.CalledProcessError as e:
+            except BaseException as e:
                 error_msg = str(e)
                 with logger_lock:
                     logger.warning(
@@ -120,7 +120,7 @@ def build_and_push_image(build_args):
             logger.error(
                 f"Failed to build image {tags[0]} after {max_retries} attempts."
             )
-        raise BuildFailureException(
+        return BuildFailureException(
             image_name=tags[0], attempts=max_retries, error_msg=error_msg
         )
 
@@ -199,7 +199,18 @@ def main():
     )
 
     with multiprocessing.Pool(processes=num_processes) as pool:
-        pool.map(build_and_push_image, args_list)
+        results = pool.map(build_and_push_image, args_list)
+
+    # Check the results for any failures
+    failed_builds = list(filter(lambda result: result is not None, results))
+
+    if failed_builds:
+        logger.error("Some builds failed:")
+        for failure in failed_builds:
+            logger.error(failure)
+        sys.exit(2)
+    else:
+        logger.info("All builds completed successfully.")
 
 
 if __name__ == "__main__":
