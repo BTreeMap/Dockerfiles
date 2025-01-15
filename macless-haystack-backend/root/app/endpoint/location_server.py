@@ -188,10 +188,14 @@ def fetch_and_process_data():
                 found.add(tag["key"])
                 ordered.append(tag)
 
-                # Insert data into the reports table
-                query = (
-                    "INSERT OR REPLACE INTO reports VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                )
+                # Updated query using ON CONFLICT DO NOTHING
+                query = """
+                INSERT INTO reports (
+                    id_short, timestamp, datePublished, payload, id, 
+                    statusCode, lat, lon, conf
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id_short, timestamp) DO NOTHING;
+                """
                 parameters = (
                     names[report["id"]],
                     timestamp,
