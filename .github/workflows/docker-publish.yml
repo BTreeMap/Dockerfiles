@@ -37,12 +37,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Find Dockerfiles and build images with new naming conventions
-      - name: Build and push Docker images
+      # Find Dockerfiles, generate a Makefile, and build images in parallel
+      - name: Generate and Run Makefile to Build and Push Docker Images in Parallel
         run: |
-          # Enable multi-platform builds
-          docker run --privileged --rm tonistiigi/binfmt --install all
-
           # Convert REGISTRY and IMAGE_NAME to lowercase
           registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
           image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
@@ -56,6 +53,10 @@ jobs:
 
           # Base image path
           base_image="${registry_lower}/${image_name_lower}"
+
+          # Start writing the Makefile
+          echo "Generating Makefile for Docker builds"
+          echo "" > Makefile
 
           # Find all Dockerfiles recursively
           find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
@@ -73,23 +74,38 @@ jobs:
             tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date}")
             tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date_time}")
 
-            echo "Building image for ${tags[0]} with tags:"
+            # Define the target name
+            target_name="build_${image_name_dir}"
+            builder_name="builder_${image_name_dir}"
+
+            # Add the target to the Makefile
+            echo "$target_name:" >> Makefile
+            echo -e "\t@echo \"Building image for ${tags[0]} with tags:\"" >> Makefile
             for tag in "${tags[@]}"; do
-              echo " - $tag"
+              echo -e "\t@echo \" - $tag\"" >> Makefile
             done
 
+            # Create a new builder instance
+            echo -e "\tdocker buildx create --use --name ${builder_name}" >> Makefile
+
+            # Enable multi-platform builds (ensure qemu is registered)
+            echo -e "\tdocker run --privileged --rm tonistiigi/binfmt --install all" >> Makefile
+
             # Build the Docker image and tag it with all tags
-            buildx_cmd="docker buildx build --platform linux/amd64,linux/arm64 --push"
+            buildx_cmd="docker buildx build --builder ${builder_name} --push --no-cache --platform linux/amd64,linux/arm64"
             for tag in "${tags[@]}"; do
               buildx_cmd+=" --tag $tag"
             done
             buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
 
-            echo "Running build command: $buildx_cmd"
-            eval $buildx_cmd
+            echo -e "\t${buildx_cmd}" >> Makefile
 
-            # Remove the local images to save space (ignore errors)
-            for tag in "${tags[@]}"; do
-              docker rmi "$tag" || true
-            done
+            # Remove the builder instance
+            echo -e "\tdocker buildx rm ${builder_name} || true" >> Makefile
+
+            echo "" >> Makefile
           done
+
+          # Run the make command with parallel jobs using all available cores
+          echo "Starting Docker builds in parallel"
+          make -j $(nproc)
