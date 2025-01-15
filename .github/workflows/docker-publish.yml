@@ -1,4 +1,4 @@
-name: Docker
+name: Build and Publish Docker Images
 
 on:
   schedule:
@@ -8,12 +8,13 @@ on:
     branches: [ "main" ]
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  DOCKER_REGISTRY: ghcr.io
+  DOCKER_IMAGE_NAME: ${{ github.repository }}
+  MAX_RETRIES: 3
 
 jobs:
-  build:
-    # Run the job if triggered by a cron job or a push containing the specific commit message
+  build_and_publish:
+    # Run the job if triggered by a scheduled event or a push with a specific commit message
     if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-latest
     permissions:
@@ -22,128 +23,29 @@ jobs:
       id-token: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Set up BuildKit Docker container builder
+      # Set up Docker Buildx (Builder for multi-platform images)
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
 
-      # Login against a Docker registry except on PR
-      - name: Log into registry ${{ env.REGISTRY }}
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+      # Login to Docker Registry
+      - name: Log into Docker Registry ${{ env.DOCKER_REGISTRY }}
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.DOCKER_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Find Dockerfiles, generate a Makefile, and build images in parallel
-      - name: Generate and Run Makefile to Build and Push Docker Images in Parallel
-        run: |
-          #!/bin/bash
-          set -e
+      # Set up Python Environment
+      - name: Set up Python Environment
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.13'
 
-          # Convert REGISTRY and IMAGE_NAME to lowercase
-          registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
-          image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
-
-          # Get current date and time
-          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
-          date=$(date '+%Y-%m-%d')
-
-          # Get full commit hash
-          commit_hash="${{ github.sha }}"
-
-          # Base image path
-          base_image="${registry_lower}/${image_name_lower}"
-
-          echo "Generating Makefile for Docker builds"
-
-          # Set IFS to newline to handle spaces in filenames
-          IFS=$'\n'
-
-          # Read the list of Dockerfiles into an array
-          dockerfiles=($(find . -name 'Dockerfile' | sort -r))
-
-          # Reset IFS to default
-          unset IFS
-
-          # Check if any Dockerfiles were found
-          if [ ${#dockerfiles[@]} -eq 0 ]; then
-            echo "No Dockerfiles found."
-            exit 1
-          fi
-
-          echo "Found Dockerfiles:"
-          printf ' - %s\n' "${dockerfiles[@]}"
-
-          # Initialize variables
-          build_targets=()
-          makefile_content=""
-
-          # Loop over dockerfiles
-          for dockerfile in "${dockerfiles[@]}"; do
-            # Get the directory of the Dockerfile
-            dir=$(dirname "$dockerfile")
-            image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
-
-            # Construct tags
-            tags=()
-            tags+=("${base_image}:${image_name_dir}")
-            tags+=("${base_image}:${image_name_dir}.latest")
-            tags+=("${base_image}:${image_name_dir}.${date}")
-            tags+=("${base_image}:${image_name_dir}.${date_time}")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date}")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date_time}")
-
-            # Define the target name
-            target_name="build_${image_name_dir}"
-            builder_name="builder_${image_name_dir}"
-
-            # Append the target name to the list of build targets
-            build_targets+=("$target_name")
-
-            # Start building the target content
-            target_content="${target_name}:\n"
-            target_content+="\t@echo \"Building image for ${tags[0]} with tags:\"\n"
-            for tag in "${tags[@]}"; do
-              target_content+="\t@echo \" - $tag\"\n"
-            done
-
-            # Create a new builder instance
-            target_content+="\t@docker buildx create --use --name ${builder_name}\n"
-
-            # Enable multi-platform builds
-            target_content+="\t@docker run --privileged --rm tonistiigi/binfmt --install all\n"
-
-            # Build the Docker image and tag it with all tags
-            buildx_cmd="docker buildx build --builder ${builder_name} --push --no-cache --platform linux/amd64,linux/arm64"
-            for tag in "${tags[@]}"; do
-              buildx_cmd+=" --tag $tag"
-            done
-            buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
-
-            target_content+="\t@${buildx_cmd}\n"
-
-            # Remove the builder instance
-            target_content+="\t@docker buildx rm ${builder_name} || true\n\n"
-
-            # Append the target content to the makefile_content variable
-            makefile_content+="$target_content"
-          done
-
-          # Now, write the 'all' target to the Makefile
-          {
-            echo "all: ${build_targets[@]}"
-            echo ""
-            printf "$makefile_content"
-          } > Makefile
-
-          # Echo the Makefile to the terminal for debugging
-          echo "Generated Makefile:"
-          cat Makefile
-
-          # Run the make command with parallel jobs using all available cores
-          echo "Starting Docker builds in parallel"
-          make -j $(nproc)
+      # Run Python script to discover and build Docker images in parallel
+      - name: Discover, Build, and Push Docker Images in Parallel
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: python .github/scripts/build_docker_images.py
