@@ -28,6 +28,18 @@ def get_env_var(name, default=None):
     return value
 
 
+class BuildFailureException(Exception):
+    """Raised when the image building process fails."""
+
+    def __init__(self, image_name, attempts, error_msg):
+        self.image_name = image_name
+        self.attempts = attempts
+        self.error_msg = error_msg
+
+    def __str__(self):
+        return f"Failed to build image '{self.image_name}' after {self.attempts} attempts. Error: {self.error_msg}"
+
+
 def build_and_push_image(args):
     (
         dockerfile_path,
@@ -72,38 +84,37 @@ def build_and_push_image(args):
     create_builder_command = ["docker", "buildx", "create", "--name", builder_name]
     remove_builder_command = ["docker", "buildx", "rm", builder_name]
 
-    attempt = 0
-    while attempt < max_retries:
-        try:
-            attempt += 1
-            with logger_lock:
-                logger.info(
-                    f"Building image for {tags[0]} (attempt {attempt}/{max_retries}) with tags:"
-                )
-                for tag in tags:
-                    logger.info(f" - {tag}")
-            # Create builder
-            subprocess.run(create_builder_command, check=True)
-            # Build and push image
-            subprocess.run(buildx_command, check=True)
-            # Build succeeded, break out of retry loop
-            break
-        except subprocess.CalledProcessError as e:
-            if attempt >= max_retries:
+    try:
+        error_msg = "No Error"
+        # Create builder
+        subprocess.run(create_builder_command, check=True)
+        for attempt in range(1, max_retries + 1):
+            try:
                 with logger_lock:
-                    logger.error(
-                        f"Failed to build image {tags[0]} after {max_retries} attempts"
+                    logger.info(
+                        f"Building image for {tags[0]} (attempt {attempt}/{max_retries}) with tags:"
                     )
-                raise e
-            else:
+                    for tag in tags:
+                        logger.info(f" - {tag}")
+                subprocess.run(buildx_command, check=True)
+                return
+            except subprocess.CalledProcessError as e:
+                error_msg = str(e)
                 with logger_lock:
                     logger.warning(
-                        f"Build failed for image {tags[0]} on attempt {attempt}/{max_retries}, retrying..."
+                        f"Build failed for image {tags[0]} on attempt {attempt}/{max_retries}: {e}",
+                        exc_info=True,
                     )
-        finally:
-            # Remove builder
-            subprocess.run(remove_builder_command, check=True)
-    return
+        with logger_lock:
+            logger.error(
+                f"Failed to build image {tags[0]} after {max_retries} attempts"
+            )
+        raise BuildFailureException(
+            image_name=tags[0], attempts=max_retries, error_msg=error_msg
+        )
+    finally:
+        # Remove builder
+        subprocess.run(remove_builder_command, check=False)
 
 
 def main():
