@@ -51,11 +51,8 @@ def build_and_push_image(args):
     buildx_command.extend(['--file', dockerfile_path, directory_path])
 
     # Commands to create and remove builder
-    create_builder_command = ['docker', 'buildx', 'create', '--use', '--name', builder_name]
+    create_builder_command = ['docker', 'buildx', 'create', '--name', builder_name]
     remove_builder_command = ['docker', 'buildx', 'rm', builder_name]
-
-    # Command to enable binfmt for multi-platform builds
-    enable_binfmt_command = ['docker', 'run', '--privileged', '--rm', 'tonistiigi/binfmt', '--install', 'all']
 
     attempt = 0
     while attempt < max_retries:
@@ -67,8 +64,6 @@ def build_and_push_image(args):
                     logger.info(f" - {tag}")
             # Create builder
             subprocess.run(create_builder_command, check=True)
-            # Enable binfmt
-            subprocess.run(enable_binfmt_command, check=True)
             # Build and push image
             subprocess.run(buildx_command, check=True)
             # Build succeeded, break out of retry loop
@@ -117,6 +112,12 @@ def main():
     logger.info("Found Dockerfiles:")
     for dockerfile in dockerfiles:
         logger.info(f" - {dockerfile}")
+
+    # Command to enable binfmt for multi-platform builds
+    enable_binfmt_command = ['docker', 'run', '--privileged', '--rm', 'tonistiigi/binfmt', '--install', 'all']
+    # Enable binfmt
+    subprocess.run(enable_binfmt_command, check=True)
+
 
     # Prepare arguments for building images
     args_list = []
