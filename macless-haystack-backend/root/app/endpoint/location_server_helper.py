@@ -2,6 +2,7 @@ import datetime
 import hashlib
 import os
 import sqlite3
+from html import escape
 
 import folium
 import pandas as pd
@@ -110,18 +111,144 @@ def generate_map_for_device(df, device_name, filename):
         )
 
 
-def generate_index_html(device_map):
+def generate_index_html(device_map: dict[str, str]):
     index_html_path = os.path.join(state_dir, "index.html")
     try:
-        with open(index_html_path, "w") as f:
+        with open(index_html_path, "w", encoding="utf-8") as f:
+            # Write the HTML content
             f.write(
-                "<!DOCTYPE html>\n<html>\n<head>\n<title>Device Maps</title>\n</head>\n<body>\n"
+                """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Device Maps</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Material Design Components CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/material-components-web@14.0.0/dist/material-components-web.min.css" integrity="sha384-Dv/31bNdy5iSIdT3DbFwGhN3LnetXu2VyL8xFYMqdHvfA1BFqWmoIHum+ocjdjtu" crossorigin="anonymous">
+  <!-- Material Icons -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Material+Icons">
+  <!-- Custom Styles -->
+  <style>
+    /* Layout and Typography */
+    body {
+      margin: 0;
+      font-family: Roboto, sans-serif;
+      font-size: 18px;
+    }
+    .mdc-top-app-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1;
+    }
+    .main-content {
+      padding-top: 64px; /* Height of the top app bar */
+      max-width: 800px;
+      margin: 0 auto;
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    /* Device List Styles */
+    .device-list {
+      padding: 0;
+    }
+    .device-list .mdc-list-item {
+      height: auto; /* Allow height to adjust based on content */
+      align-items: flex-start; /* Align items to the top */
+    }
+    .device-list .mdc-list-item:hover {
+      background-color: #f5f5f5;
+    }
+    .device-list .mdc-list-item__text {
+      font-size: 20px;
+    }
+    .device-list .mdc-list-item__primary-text {
+      line-height: 1.5;
+    }
+    .device-list .mdc-list-item__secondary-text {
+      font-size: 16px;
+      color: gray;
+      line-height: 1.2;
+    }
+    .device-list a {
+      text-decoration: none;
+      color: inherit;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .device-list .mdc-list-item__meta {
+      font-size: 24px;
+      align-self: center;
+    }
+    /* Responsive Typography */
+    .page-title {
+      text-align: center;
+      margin-top: 32px;
+      margin-bottom: 32px;
+      font-size: 28px;
+    }
+    @media (min-width: 600px) {
+      .page-title {
+        font-size: 32px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top App Bar -->
+  <header class="mdc-top-app-bar mdc-top-app-bar--fixed">
+    <div class="mdc-top-app-bar__row">
+      <section class="mdc-top-app-bar__section mdc-top-app-bar__section--center">
+        <span class="mdc-top-app-bar__title">Device Maps</span>
+      </section>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <h1 class="page-title mdc-typography--headline5">Available Device Maps</h1>
+    <ul class="device-list mdc-list" aria-label="Available Device Maps">
+"""
             )
-            f.write("<h1>Available Device Maps</h1>\n<ul>\n")
+            # Generate the list of device maps
             for device_name, filename in device_map.items():
-                f.write(f'<li><a href="maps/{filename}">{device_name}</a></li>\n')
-            f.write("</ul>\n</body>\n</html>")
-        logger.info(f"'index.html' generated at '{index_html_path}'")
+                # Use html.escape to prevent XSS in device_name
+                escaped_device_name = escape(device_name)
+                basename = filename.rsplit(".", maxsplit=1)[0]
+                f.write(
+                    f"""      <li class="mdc-list-item">
+        <span class="mdc-list-item__ripple"></span>
+        <a href="maps/{filename}" class="mdc-list-item__text">
+          <span class="mdc-list-item__primary-text">{escaped_device_name}</span>
+          <span class="mdc-list-item__secondary-text">{basename}</span>
+        </a>
+        <span class="mdc-list-item__meta material-icons" aria-hidden="true">chevron_right</span>
+      </li>
+"""
+                )
+            # Close the HTML tags
+            f.write(
+                """    </ul>
+  </main>
+
+  <!-- Material Design Components JS -->
+  <script src="https://cdn.jsdelivr.net/npm/material-components-web@14.0.0/dist/material-components-web.min.js" integrity="sha384-NQs9Lm2CZqPDbiQog4Tl9+s+LYnPbrwOF7kGY1ks7rl5A7rJypS6Cuqt6HFYtPC+" crossorigin="anonymous"></script>
+  <script>
+    // Initialize Material Design Components
+    mdc.topAppBar.MDCTopAppBar.attachTo(document.querySelector('.mdc-top-app-bar'));
+    const listItems = document.querySelectorAll('.mdc-list-item');
+    listItems.forEach((listItem) => {
+      mdc.ripple.MDCRipple.attachTo(listItem);
+    });
+  </script>
+</body>
+</html>
+"""
+            )
+            logger.info(f"'index.html' generated at '{index_html_path}'")
     except Exception as e:
         logger.error(f"Error generating 'index.html': {e}", exc_info=True)
 
