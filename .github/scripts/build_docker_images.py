@@ -208,7 +208,7 @@ def main():
         logger.error("Some builds failed:")
         for failure in failed_builds:
             logger.error(failure)
-        sys.exit(2)
+        sys.exit(1)
     else:
         logger.info("All builds completed successfully.")
 
