@@ -1,13 +1,32 @@
-server {
-    listen 39602;
+http {
+    # Enable the gunzip module
+    gunzip on;
 
-    location / {
-        proxy_pass ${BACKEND_SERVER};
-        proxy_set_header Host ${HOST_HEADER};
+    server {
+        listen 39602;
 
-        # Enable response modification
-        sub_filter '</head>' '<script>${JS_INJECT_CODE}</script></head>';
-        sub_filter_once on;
-        sub_filter_types text/html;
+        location / {
+            proxy_pass $BACKEND_SERVER;
+            proxy_set_header Host $HOST_HEADER;
+
+            # Enable response modification
+            sub_filter '</head>' '<script>$JS_INJECT_CODE</script></head>';
+            sub_filter_once on;
+            sub_filter_types text/html;
+        }
+    }
+
+    server {
+        listen 26782;
+
+        location / {
+            proxy_pass $BACKEND_SERVER_ALT;
+            proxy_set_header Host $HOST_HEADER_ALT;
+
+            # Enable response modification
+            sub_filter 'window.location.hostname' '$JS_INJECT_CODE_ALT';
+            sub_filter_once off;
+            sub_filter_types application/javascript application/x-javascript text/javascript;
+        }
     }
 }
