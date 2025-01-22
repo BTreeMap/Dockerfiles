@@ -3,6 +3,7 @@ server {
     location / {
         proxy_pass $BACKEND_SERVER_39602;
         proxy_set_header Host $HOST_HEADER_39602;
+        proxy_set_header Accept-Encoding "";
         # Enable response modification
         sub_filter '</head>' '<script>$JS_INJECT_CODE_39602</script></head>';
         sub_filter_once on;
