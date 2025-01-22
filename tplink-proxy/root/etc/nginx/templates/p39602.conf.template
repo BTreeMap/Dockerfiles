@@ -6,6 +6,5 @@ server {
         # Enable response modification
         sub_filter '</head>' '<script>$JS_INJECT_CODE_39602</script></head>';
         sub_filter_once on;
-        sub_filter_types text/html;
     }
 }
