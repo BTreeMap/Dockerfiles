@@ -1,0 +1,11 @@
+server {
+    listen 26782;
+    location / {
+        proxy_pass $BACKEND_SERVER_26782;
+        proxy_set_header Host $HOST_HEADER_26782;
+        # Enable response modification
+        sub_filter 'window.location.hostname' '$JS_INJECT_CODE_26782';
+        sub_filter_once off;
+        sub_filter_types application/javascript application/x-javascript text/javascript;
+    }
+}
