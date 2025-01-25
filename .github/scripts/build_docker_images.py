@@ -15,7 +15,7 @@ class BuildResult:
     image_name: str
     success: bool
     attempts: int
-    error_msg: str = None
+    error_msg: str | None = None
 
 
 def init_logger():
