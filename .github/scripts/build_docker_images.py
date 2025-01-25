@@ -7,6 +7,15 @@ import multiprocessing
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
+
+
+@dataclass
+class BuildResult:
+    image_name: str
+    success: bool
+    attempts: int
+    error_msg: str = None
 
 
 def init_logger():
@@ -30,7 +39,7 @@ def get_env_var(var_name, default=None):
     return value
 
 
-def build_and_push_image(build_args) -> None | dict:
+def build_and_push_image(build_args) -> BuildResult:
     """Builds and pushes a Docker image, handling retries on failure."""
     (
         dockerfile_path,
@@ -94,7 +103,11 @@ def build_and_push_image(build_args) -> None | dict:
                     for tag in tags:
                         logger.info(f" - {tag}")
                 subprocess.run(buildx_command, check=True)
-                return  # Exit if build is successful
+                return BuildResult(
+                    image_name=tags[0],
+                    success=True,
+                    attempts=attempt,
+                )  # Exit if build is successful
             except BaseException as e:
                 error_msg = str(e)
                 with logger_lock:
@@ -108,7 +121,12 @@ def build_and_push_image(build_args) -> None | dict:
             logger.error(
                 f"Failed to build image {tags[0]} after {max_retries} attempts."
             )
-        return {"image_name": tags[0], "attempts": max_retries, "error_msg": error_msg}
+        return BuildResult(
+            image_name=tags[0],
+            success=False,
+            attempts=max_retries,
+            error_msg=error_msg,
+        )
 
     finally:
         # Cleanup: Remove the Docker builder
@@ -188,13 +206,13 @@ def main():
         results = pool.map(build_and_push_image, args_list)
 
     # Check the results for any failures
-    failed_builds = [result for result in results if result is not None]
+    failed_builds = list(filter(lambda result: not result.success, results))
 
     if failed_builds:
         logger.error("Some builds failed:")
         for failure in failed_builds:
             logger.error(
-                f"Failed to build image '{failure['image_name']}' after {failure['attempts']} attempts. Error: {failure['error_msg']}"
+                f"Failed to build image '{failure.image_name}' after {failure.attempts} attempts. Error: {failure.error_msg}"
             )
         sys.exit(1)
     else:
