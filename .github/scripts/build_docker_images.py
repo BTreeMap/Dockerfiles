@@ -30,20 +30,7 @@ def get_env_var(var_name, default=None):
     return value
 
 
-class BuildFailureException(Exception):
-    """Exception raised when the image building process fails."""
-
-    def __init__(self, image_name, attempts, error_msg):
-        super().__init__(error_msg)  # Call parent constructor with the error message
-        self.image_name = image_name
-        self.attempts = attempts
-        self.error_msg = error_msg
-
-    def __str__(self):
-        return f"Failed to build image '{self.image_name}' after {self.attempts} attempts. Error: {self.error_msg}"
-
-
-def build_and_push_image(build_args) -> None | BaseException:
+def build_and_push_image(build_args) -> None | dict:
     """Builds and pushes a Docker image, handling retries on failure."""
     (
         dockerfile_path,
@@ -121,9 +108,7 @@ def build_and_push_image(build_args) -> None | BaseException:
             logger.error(
                 f"Failed to build image {tags[0]} after {max_retries} attempts."
             )
-        return BuildFailureException(
-            image_name=tags[0], attempts=max_retries, error_msg=error_msg
-        )
+        return {"image_name": tags[0], "attempts": max_retries, "error_msg": error_msg}
 
     finally:
         # Cleanup: Remove the Docker builder
@@ -203,12 +188,14 @@ def main():
         results = pool.map(build_and_push_image, args_list)
 
     # Check the results for any failures
-    failed_builds = list(filter(lambda result: result is not None, results))
+    failed_builds = [result for result in results if result is not None]
 
     if failed_builds:
         logger.error("Some builds failed:")
         for failure in failed_builds:
-            logger.error(failure)
+            logger.error(
+                f"Failed to build image '{failure['image_name']}' after {failure['attempts']} attempts. Error: {failure['error_msg']}"
+            )
         sys.exit(1)
     else:
         logger.info("All builds completed successfully.")
