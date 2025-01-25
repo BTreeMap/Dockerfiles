@@ -34,6 +34,7 @@ class BuildFailureException(Exception):
     """Exception raised when the image building process fails."""
 
     def __init__(self, image_name, attempts, error_msg):
+        super().__init__(error_msg)  # Call parent constructor with the error message
         self.image_name = image_name
         self.attempts = attempts
         self.error_msg = error_msg
