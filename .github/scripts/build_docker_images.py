@@ -39,6 +39,45 @@ def get_env_var(var_name, default=None):
     return value
 
 
+def collect_system_metrics():
+    """Collects system metrics including processes, CPU, memory, and disk usage."""
+    metrics = {}
+    try:
+        processes = subprocess.check_output(
+            ["ps", "aux"], stderr=subprocess.STDOUT, timeout=5
+        ).decode()
+        metrics["processes"] = processes
+    except Exception as e:
+        metrics["processes_error"] = str(e)
+
+    try:
+        # Using 'top' in batch mode to get CPU usage
+        cpu = subprocess.check_output(
+            ["top", "-bn1"], stderr=subprocess.STDOUT, timeout=5
+        ).decode()
+        metrics["cpu"] = cpu
+    except Exception as e:
+        metrics["cpu_error"] = str(e)
+
+    try:
+        memory = subprocess.check_output(
+            ["free", "-m"], stderr=subprocess.STDOUT, timeout=5
+        ).decode()
+        metrics["memory"] = memory
+    except Exception as e:
+        metrics["memory_error"] = str(e)
+
+    try:
+        disk = subprocess.check_output(
+            ["df", "-h"], stderr=subprocess.STDOUT, timeout=5
+        ).decode()
+        metrics["disk"] = disk
+    except Exception as e:
+        metrics["disk_error"] = str(e)
+
+    return metrics
+
+
 def build_and_push_image(build_args) -> BuildResult:
     """Builds and pushes a Docker image, handling retries on failure."""
     (
@@ -213,6 +252,37 @@ def main():
         for failure in failed_builds:
             logger.error(
                 f"Failed to build image '{failure.image_name}' after {failure.attempts} attempts. Error: {failure.error_msg}"
+            )
+        # Collect system metrics
+        logger.error("Collecting system metrics due to build failures:")
+        metrics = collect_system_metrics()
+        if "processes" in metrics:
+            logger.error("Running Processes:\n%s", metrics["processes"])
+        else:
+            logger.error(
+                "Failed to collect running processes: %s",
+                metrics.get("processes_error", "Unknown error"),
+            )
+        if "cpu" in metrics:
+            logger.error("CPU Usage:\n%s", metrics["cpu"])
+        else:
+            logger.error(
+                "Failed to collect CPU usage: %s",
+                metrics.get("cpu_error", "Unknown error"),
+            )
+        if "memory" in metrics:
+            logger.error("Memory Usage:\n%s", metrics["memory"])
+        else:
+            logger.error(
+                "Failed to collect memory usage: %s",
+                metrics.get("memory_error", "Unknown error"),
+            )
+        if "disk" in metrics:
+            logger.error("Disk Usage:\n%s", metrics["disk"])
+        else:
+            logger.error(
+                "Failed to collect disk usage: %s",
+                metrics.get("disk_error", "Unknown error"),
             )
         sys.exit(1)
     else:
