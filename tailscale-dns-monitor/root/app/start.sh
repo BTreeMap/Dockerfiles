@@ -1,58 +1,77 @@
 #!/bin/sh
 
-# Exit the script immediately if any command fails.
 set -e
 
-# Ensure the TAILSCALE_AUTHKEY environment variable is set.
-if [ -z "$TAILSCALE_AUTHKEY" ]; then
-    echo "[$(date)] Error: TAILSCALE_AUTHKEY environment variable is not set."
-    exit 1
-fi
-
-# Optimize Tailscale performance by enabling UDP Generic Receive Offload (GRO).
-echo "[$(date)] Optimizing network settings for Tailscale..."
-NETDEV=$(ip -o route get 8.8.8.8 | grep -oP '(?<=dev\s)\w+')
-if ethtool -K $NETDEV rx-udp-gro-forwarding on > /dev/null 2>&1; then
-    echo "[$(date)] Network optimization on device '$NETDEV' succeeded."
-else
-    echo "[$(date)] Warning: Unable to set GRO on '$NETDEV'. Proceeding without optimization."
-fi
-
-# Start the Tailscale daemon in the background.
-echo "[$(date)] Starting the Tailscale daemon..."
-/app/tailscaled --state=mem: --tun=userspace-networking &
-TAILSCALED_PID=$!
-
-# Function to clean up background processes
-cleanup() {
-    echo "[$(date)] Cleaning up background processes..."
-    kill $TAILSCALED_PID
-    exit
+# Function to check if TUN device is available
+check_tun_device() {
+    if [ -c /dev/net/tun ]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
-# Trap signals to ensure cleanup
-trap cleanup INT TERM
+echo "Starting entrypoint script..."
 
-# Sleep briefly to allow the Tailscale daemon to initialize.
-echo "[$(date)] Waiting for Tailscale daemon to initialize..."
-sleep 5
+# Start tailscaled with appropriate options
+TAILSCALED_ARGS=""
 
-# Bring up the Tailscale network interface.
-echo "[$(date)] Bringing up Tailscale interface..."
-if /app/tailscale up \
-    --authkey="${TAILSCALE_AUTHKEY}" \
-    --hostname="dns-query-container" \
-    --accept-dns=false; then
-    echo "[$(date)] Tailscale interface is up."
+if [ -n "$TAILSCALED_CUSTOM_STATE_DIR" ]; then
+    TAILSCALED_STATE_DIR="$TAILSCALED_CUSTOM_STATE_DIR"
 else
-    echo "[$(date)] Error: Failed to bring up Tailscale interface."
-    cleanup
+    TAILSCALED_STATE_DIR="/var/lib/tailscale"
 fi
 
-# Sleep briefly to allow the Tailscale connection to establish.
-echo "[$(date)] Waiting for Tailscale connection to establish..."
+TAILSCALED_ARGS="$TAILSCALED_ARGS --statedir=$TAILSCALED_STATE_DIR"
+
+if check_tun_device; then
+    echo "TUN device is available."
+else
+    echo "TUN device is not available, using userspace networking."
+    TAILSCALED_ARGS="$TAILSCALED_ARGS --tun=userspace-networking"
+fi
+
+if [ -n "$TAILSCALED_EXTRA_ARGS" ]; then
+    echo "Adding extra tailscaled arguments: $TAILSCALED_EXTRA_ARGS"
+    TAILSCALED_ARGS="$TAILSCALED_ARGS $TAILSCALED_EXTRA_ARGS"
+fi
+
+echo "Starting tailscaled with arguments: $TAILSCALED_ARGS"
+/app/tailscaled $TAILSCALED_ARGS &
+
+# Wait for tailscaled to start
 sleep 5
+
+# Construct tailscale up arguments
+TAILSCALE_UP_ARGS="--accept-dns=false"
+
+if [ -n "$TAILSCALE_AUTH_KEY" ]; then
+    echo "Using Tailscale auth key."
+    TAILSCALE_UP_ARGS="$TAILSCALE_UP_ARGS --authkey=${TAILSCALE_AUTH_KEY}"
+fi
+
+if [ -n "$TAILSCALE_HOSTNAME" ]; then
+    echo "Setting Tailscale hostname to $TAILSCALE_HOSTNAME"
+    TAILSCALE_UP_ARGS="$TAILSCALE_UP_ARGS --hostname=${TAILSCALE_HOSTNAME}"
+fi
+
+if [ -n "$TAILSCALE_EXTRA_ARGS" ]; then
+    echo "Adding extra tailscale up arguments: $TAILSCALE_EXTRA_ARGS"
+    TAILSCALE_UP_ARGS="$TAILSCALE_UP_ARGS ${TAILSCALE_EXTRA_ARGS}"
+fi
+
+# Run tailscale set with extra arguments
+if [ -n "$TAILSCALE_SET_EXTRA_ARGS" ]; then
+    echo "Running tailscale set with arguments: $TAILSCALE_SET_EXTRA_ARGS"
+    /app/tailscale set $TAILSCALE_SET_EXTRA_ARGS
+fi
+
+echo "Running tailscale up with arguments: $TAILSCALE_UP_ARGS"
+/app/tailscale up $TAILSCALE_UP_ARGS
 
 # Start the DNS querying script.
 echo "[$(date)] Starting DNS querying script..."
 exec /app/dns_query.sh
+
+# Keep the script running indefinitely to prevent the container from exiting.
+exec tail -f /dev/null

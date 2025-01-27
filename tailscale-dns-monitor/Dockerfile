@@ -27,5 +27,13 @@ COPY --from=tailscale/tailscale:stable \
     /usr/local/bin/tailscale \
     /app/
 
+# Environment variables for Tailscale
+ENV TAILSCALE_AUTH_KEY="" \
+    TAILSCALE_HOSTNAME="" \
+    TAILSCALE_EXTRA_ARGS="" \
+    TAILSCALED_EXTRA_ARGS="" \
+    TAILSCALED_CUSTOM_STATE_DIR="" \
+    TAILSCALE_SET_EXTRA_ARGS="--webclient"
+
 # Set the entrypoint
 CMD ["/app/start.sh"]
