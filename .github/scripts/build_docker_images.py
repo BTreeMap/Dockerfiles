@@ -16,6 +16,7 @@ class BuildResult:
     success: bool
     attempts: int
     error_msg: str | None = None
+    system_metrics: dict | None = None
 
 
 def init_logger():
@@ -78,8 +79,11 @@ def collect_system_metrics():
     return metrics
 
 
-def log_system_metrics(metrics: dict):
+def log_system_metrics(metrics: dict | None = None):
     """Logs system metrics using the global logger with error handling."""
+    if not metrics:
+        return
+
     if "processes" in metrics:
         logger.error("Running Processes:\n%s", metrics["processes"])
     else:
@@ -200,6 +204,7 @@ def build_and_push_image(build_args) -> BuildResult:
             success=False,
             attempts=max_retries,
             error_msg=error_msg,
+            system_metrics=collect_system_metrics(),
         )
 
     finally:
@@ -288,10 +293,8 @@ def main():
             logger.error(
                 f"Failed to build image '{failure.image_name}' after {failure.attempts} attempts. Error: {failure.error_msg}"
             )
-        # Collect and log system metrics
-        logger.error("Collecting system metrics due to build failures:")
-        metrics = collect_system_metrics()
-        log_system_metrics(metrics)
+            logger.error("Collected system metrics after the failed build:")
+            log_system_metrics(failure.system_metrics)
         sys.exit(1)
     else:
         logger.info("All builds completed successfully.")
