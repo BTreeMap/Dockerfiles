@@ -4,10 +4,10 @@
 REFRESH_DURATION="${REFRESH_DURATION:-600}"
 
 # Set default DNS servers file path
-DNS_SERVERS_FILE="${DNS_SERVERS_FILE:-/app/dns_servers.txt}"
+DNS_SERVERS_FILE="${DNS_SERVERS_FILE:-/data/dns_servers.txt}"
 
 # Set default domains file path
-DOMAINS_FILE="${DOMAINS_FILE:-/app/domains.txt}"
+DOMAINS_FILE="${DOMAINS_FILE:-/data/domains.txt}"
 
 # Check if the DNS servers file exists; if not, create it with default values
 if [ ! -f "$DNS_SERVERS_FILE" ]; then

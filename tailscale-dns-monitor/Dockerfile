@@ -14,11 +14,8 @@ RUN apk update && \
 # Create application directory
 WORKDIR /app
 
-# Copy application scripts and configuration files
-COPY dns_query.sh /app/dns_query.sh
-COPY domains.txt /app/domains.txt
-COPY dns_servers.txt /app/dns_servers.txt
-COPY start.sh /app/start.sh
+# Copy root filesystem
+COPY root/ /
 
 # Make scripts executable
 RUN chmod +x /app/dns_query.sh /app/start.sh
