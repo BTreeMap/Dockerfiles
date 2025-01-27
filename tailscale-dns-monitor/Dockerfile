@@ -1,7 +1,8 @@
-# Use the latest Alpine Linux image as the base
+# Base image - lightweight Alpine Linux for minimal container size
 FROM alpine:latest
 
-# Install packages, create directories, and clean up in a single layer
+# System setup: Update, install dependencies, create directories, and clean cache
+# Combined layers reduce image size and improve build efficiency
 RUN apk update && \
     apk upgrade --no-cache && \
     apk add --no-cache \
@@ -14,20 +15,20 @@ RUN apk update && \
     mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale && \
     rm -rf /var/cache/apk/*
 
-# Set the working directory
+# Set default container working directory for script execution
 WORKDIR /app
 
-# Copy root filesystem and set permissions
+# Copy application files and make scripts executable
 COPY root/ /
 RUN chmod +x /app/dns_query.sh /app/start.sh
 
-# Copy Tailscale binaries in a single layer
+# Import Tailscale binaries directly from official image for reliability
 COPY --from=tailscale/tailscale:stable \
     /usr/local/bin/tailscaled \
     /usr/local/bin/tailscale \
     /app/
 
-# Environment variables for Tailscale
+# Tailscale configuration environment variables
 ENV TAILSCALE_AUTH_KEY="" \
     TAILSCALE_HOSTNAME="" \
     TAILSCALE_EXTRA_ARGS="" \
@@ -35,5 +36,10 @@ ENV TAILSCALE_AUTH_KEY="" \
     TAILSCALED_CUSTOM_STATE_DIR="" \
     TAILSCALE_SET_EXTRA_ARGS="--webclient"
 
-# Set the entrypoint
+# DNS monitoring configuration variables
+ENV REFRESH_DURATION="600" \
+    DNS_SERVERS_FILE="/data/dns_servers.txt" \
+    DOMAINS_FILE="/data/domains.txt"
+
+# Container entrypoint - starts both Tailscale and monitoring services
 CMD ["/app/start.sh"]
