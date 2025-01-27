@@ -22,7 +22,7 @@ COPY root/ /
 RUN chmod +x /app/dns_query.sh /app/start.sh
 
 # Copy Tailscale binaries in a single layer
-COPY --from=tailscale/tailscale:latest \
+COPY --from=tailscale/tailscale:stable \
     /usr/local/bin/tailscaled \
     /usr/local/bin/tailscale \
     /app/

@@ -18,8 +18,8 @@ WORKDIR /opt
 COPY --from=adguard/adguardhome:latest /opt/adguardhome/AdGuardHome /usr/local/bin/AdGuardHome
 
 # Copy Tailscale binaries from the official image
-COPY --from=tailscale/tailscale:latest /usr/local/bin/tailscaled /usr/local/bin/tailscaled
-COPY --from=tailscale/tailscale:latest /usr/local/bin/tailscale /usr/local/bin/tailscale
+COPY --from=tailscale/tailscale:stable /usr/local/bin/tailscaled /usr/local/bin/tailscaled
+COPY --from=tailscale/tailscale:stable /usr/local/bin/tailscale /usr/local/bin/tailscale
 
 # Set necessary capabilities for AdGuardHome to bind to privileged ports
 RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/AdGuardHome
