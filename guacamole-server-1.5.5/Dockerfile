@@ -2,7 +2,7 @@
 # Reference: https://github.com/apache/guacamole-server/blob/1.5.5/Dockerfile
 
 # Use the arm64v8 variant of Alpine as the base image
-ARG ALPINE_BASE_IMAGE=3.18
+ARG ALPINE_BASE_IMAGE=3.21
 
 # Use the build platform argument
 ARG TARGETPLATFORM
