@@ -1,0 +1,95 @@
+name: Docker
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+    - cron: '0 17 * * *'
+  push:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    # Run the job if triggered by a cron job or a push containing the specific commit message
+    if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Set up BuildKit Docker container builder
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+
+      # Login against a Docker registry except on PR
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Find Dockerfiles and build images with new naming conventions
+      - name: Build and push Docker images
+        run: |
+          # Enable multi-platform builds
+          docker run --privileged --rm tonistiigi/binfmt --install all
+
+          # Convert REGISTRY and IMAGE_NAME to lowercase
+          registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
+          image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+
+          # Get current date and time
+          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
+          date=$(date '+%Y-%m-%d')
+
+          # Get full commit hash
+          commit_hash="${{ github.sha }}"
+
+          # Base image path
+          base_image="${registry_lower}/${image_name_lower}"
+
+          # Find all Dockerfiles recursively
+          find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
+            # Get the directory of the Dockerfile
+            dir=$(dirname "$dockerfile")
+            image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
+
+            # Construct tags
+            tags=()
+            tags+=("${base_image}:${image_name_dir}")
+            tags+=("${base_image}:${image_name_dir}.latest")
+            tags+=("${base_image}:${image_name_dir}.${date}")
+            tags+=("${base_image}:${image_name_dir}.${date_time}")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date}")
+            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date_time}")
+
+            echo "Building image for ${tags[0]} with tags:"
+            for tag in "${tags[@]}"; do
+              echo " - $tag"
+            done
+
+            # Build the Docker image and tag it with all tags
+            buildx_cmd="docker buildx build --platform linux/amd64,linux/arm64 --push"
+            for tag in "${tags[@]}"; do
+              buildx_cmd+=" --tag $tag"
+            done
+            buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
+
+            echo "Running build command: $buildx_cmd"
+            eval $buildx_cmd
+
+            # Remove the local images to save space (ignore errors)
+            for tag in "${tags[@]}"; do
+              docker rmi "$tag" || true
+            done
+          done
