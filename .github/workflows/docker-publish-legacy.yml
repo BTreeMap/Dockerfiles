@@ -1,4 +1,4 @@
-name: Docker
+name: Build and Publish Docker Images (Legacy)
 
 on:
   schedule:
@@ -55,7 +55,7 @@ jobs:
           commit_hash="${{ github.sha }}"
 
           # Base image path
-          base_image="${registry_lower}/${image_name_lower}"
+          base_image="${registry_lower}/${image_name_lower}.legacy-build"
 
           # Find all Dockerfiles recursively
           find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
