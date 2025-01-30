@@ -13,7 +13,8 @@ ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
 
 # Install build dependencies
-RUN apk add --no-cache                \
+RUN sed -i 's/^#\(http.*community\)/\1/' /etc/apk/repositories && \
+    apk add --no-cache                \
         autoconf                      \
         automake                      \
         build-base                    \
