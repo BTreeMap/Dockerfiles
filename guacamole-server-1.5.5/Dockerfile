@@ -2,7 +2,7 @@
 # Reference: https://github.com/apache/guacamole-server/blob/1.5.5/Dockerfile
 
 # Use Alpine as the base image
-ARG ALPINE_BASE_IMAGE=3.21
+ARG ALPINE_BASE_IMAGE=3.18
 
 # Use the build platform argument
 ARG TARGETPLATFORM
@@ -13,8 +13,7 @@ ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
 
 # Install build dependencies
-RUN sed -i 's/^#\(http.*community\)/\1/' /etc/apk/repositories && \
-    apk add --no-cache                \
+RUN apk add --no-cache                \
         autoconf                      \
         automake                      \
         build-base                    \
