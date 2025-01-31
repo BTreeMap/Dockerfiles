@@ -4,13 +4,13 @@
 REFRESH_DURATION="${REFRESH_DURATION:-600}"
 
 # Set default DNS servers file path
-DNS_SERVERS_FILE="${DNS_SERVERS_FILE:-/data/dns_servers.txt}"
+DNS_SERVERS_FILE="${DNS_SERVERS_FILE:-/home/ark/dns_servers.txt}"
 
 # Set default domains file path
-DOMAINS_FILE="${DOMAINS_FILE:-/data/domains.txt}"
+DOMAINS_FILE="${DOMAINS_FILE:-/home/ark/domains.txt}"
 
 # Set default DNS over HTTPS servers file path
-DNS_OVER_HTTPS_SERVERS_FILE="${DNS_OVER_HTTPS_SERVERS_FILE:-/data/dns_over_https_servers.txt}"
+DNS_OVER_HTTPS_SERVERS_FILE="${DNS_OVER_HTTPS_SERVERS_FILE:-/home/ark/dns_over_https_servers.txt}"
 
 # Check if the DNS servers file exists; if not, create it with default values
 if [ ! -f "$DNS_SERVERS_FILE" ]; then
@@ -79,61 +79,58 @@ generate_dns_query() {
     qtype="$2"
     output_file="$3"
 
-    # Generate a random ID (two bytes)
+    # Generate transaction ID (2 bytes)
     id_hex=$(openssl rand -hex 2)
-    id=$(printf '\\x%s\\x%s' "${id_hex:0:2}" "${id_hex:2:2}")
 
     # Flags: standard query (0x0100), recursion desired
-    flags=$(printf '\\x01\\x00')
+    flags_hex="0100"
 
-    # QDCOUNT: number of questions (1)
-    qdcount=$(printf '\\x00\\x01')
-
-    # ANCOUNT, NSCOUNT, ARCOUNT: zero
-    ancount=$(printf '\\x00\\x00')
-    nscount=$(printf '\\x00\\x00')
-    arcount=$(printf '\\x00\\x00')
+    # Counts
+    qdcount_hex="0001"  # Number of questions
+    ancount_hex="0000"
+    nscount_hex="0000"
+    arcount_hex="0000"
 
     # Build QNAME
-    qname=""
+    qname_hex=""
     oldIFS="$IFS"
     IFS='.'
     set -- $domain
     IFS="$oldIFS"
-    for label in "$@"; do
+    for label; do
         length=${#label}
         length_hex=$(printf '%02x' "$length")
-        length_byte=$(printf '\\x%s' "$length_hex")
-        qname="${qname}${length_byte}${label}"
+        # Convert label to hex
+        label_hex=$(echo -n "$label" | xxd -p)
+        qname_hex="${qname_hex}${length_hex}${label_hex}"
     done
-    # Terminate QNAME with zero-length label (zero byte)
-    qname="${qname}$(printf '\\x00')"
+    # Terminate QNAME with zero-length label (00)
+    qname_hex="${qname_hex}00"
 
     # QTYPE
     case "$qtype" in
-        A) qtype_code=$(printf '\\x00\\x01') ;;
-        AAAA) qtype_code=$(printf '\\x00\\x1c') ;;
-        HTTPS|TYPE65) qtype_code=$(printf '\\x00\\x41') ;;
+        A) qtype_hex="0001" ;;
+        AAAA) qtype_hex="001c" ;;
+        HTTPS|TYPE65) qtype_hex="0041" ;;
         *) echo "Unknown query type: $qtype"; return 1 ;;
     esac
 
     # QCLASS: IN (0x0001)
-    qclass=$(printf '\\x00\\x01')
+    qclass_hex="0001"
 
-    # Combine all parts and write directly to output file
-    {
-        printf '%b' "$id$flags$qdcount$ancount$nscount$arcount"
-        printf '%b' "$qname"
-        printf '%b' "$qtype_code$qclass"
-    } > "$output_file"
+    # Combine all hex parts
+    query_hex="${id_hex}${flags_hex}${qdcount_hex}${ancount_hex}${nscount_hex}${arcount_hex}${qname_hex}${qtype_hex}${qclass_hex}"
+
+    # Convert hex to binary and write to output file
+    echo "$query_hex" | xxd -r -p > "$output_file"
 }
 
 # Function to parse DNS response and check for success
 parse_dns_response() {
     response_file="$1"
 
-    # Read the flags (byte 3 and 4)
-    flags_bytes=$(dd bs=1 skip=2 count=2 if="$response_file" 2>/dev/null | xxd -p | tr -d '\n')
+    # Read bytes 3 and 4 (flags)
+    flags_bytes=$(dd bs=1 skip=2 count=2 if="$response_file" 2>/dev/null | xxd -p)
     flags_byte2="${flags_bytes:2:2}"
 
     # Convert to decimal
@@ -205,9 +202,9 @@ query_dns_over_https() {
 while true; do
     echo "[$(date)] Starting DNS query cycle..."
 
-    # Read DNS servers and domains, skipping empty lines
-    dns_servers=$(grep -v '^\s*$' "$DNS_SERVERS_FILE")
-    domains=$(grep -v '^\s*$' "$DOMAINS_FILE")
+    # Read DNS servers and domains, skipping empty lines and comments
+    dns_servers=$(grep -v '^[[:space:]]*$' "$DNS_SERVERS_FILE" | grep -v '^#')
+    domains=$(grep -v '^[[:space:]]*$' "$DOMAINS_FILE" | grep -v '^#')
 
     # For each DNS server
     for dns_server in $dns_servers; do
@@ -217,17 +214,24 @@ while true; do
         done
     done
 
-    # Read DNS over HTTPS servers, skipping empty lines
+    # Read DNS over HTTPS servers, skipping empty lines and comments
     if [ -f "$DNS_OVER_HTTPS_SERVERS_FILE" ]; then
-        dns_over_https_servers=$(grep -v '^\s*$' "$DNS_OVER_HTTPS_SERVERS_FILE")
+        dns_over_https_servers=$(grep -v '^[[:space:]]*$' "$DNS_OVER_HTTPS_SERVERS_FILE" | grep -v '^#')
     else
         dns_over_https_servers=""
     fi
 
     # For each DNS over HTTPS server
-    echo "$dns_over_https_servers" | while IFS=' ' read -r protocol hostname port ip path; do
-        # Skip if line is empty
-        if [ -z "$protocol" ]; then continue; fi
+    echo "$dns_over_https_servers" | while read line; do
+        # Skip if line is empty or a comment
+        if [ -z "$line" ]; then continue; fi
+        # Parse the line into variables
+        protocol=$(echo "$line" | awk '{print $1}')
+        hostname=$(echo "$line" | awk '{print $2}')
+        port=$(echo "$line" | awk '{print $3}')
+        ip=$(echo "$line" | awk '{print $4}')
+        path=$(echo "$line" | awk '{print $5}')
+
         # For each domain
         for domain in $domains; do
             query_dns_over_https "$protocol" "$hostname" "$port" "$ip" "$path" "$domain"
