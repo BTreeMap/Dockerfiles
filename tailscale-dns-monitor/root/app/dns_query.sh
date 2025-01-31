@@ -78,7 +78,7 @@ generate_dns_query() {
     output_file="$3"
 
     # Generate transaction ID (2 bytes)
-    id_hex=$(openssl rand -hex 2)
+    id_hex=$(dd if=/dev/urandom bs=1 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n')
 
     # Flags: standard query (0x0100), recursion desired
     flags_hex="0100"
