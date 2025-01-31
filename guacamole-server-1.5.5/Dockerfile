@@ -1,7 +1,7 @@
 # Dockerfile for guacamole-server
 # Reference: https://github.com/apache/guacamole-server/blob/1.5.5/Dockerfile
 
-# Use the arm64v8 variant of Alpine as the base image
+# Use Alpine as the base image
 ARG ALPINE_BASE_IMAGE=3.18
 
 # Use the build platform argument
