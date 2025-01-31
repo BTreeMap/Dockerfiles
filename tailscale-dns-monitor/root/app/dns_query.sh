@@ -39,8 +39,8 @@ fi
 
 # Function to perform DNS queries with error handling
 query_dns() {
-    local dns_server="$1"
-    local domain="$2"
+    dns_server="$1"
+    domain="$2"
 
     echo "[$(date)] Starting queries to DNS server '$dns_server' for domain '$domain'"
 
@@ -75,70 +75,72 @@ query_dns() {
 
 # Function to generate DNS query in wire format
 generate_dns_query() {
-    local domain="$1"
-    local qtype="$2"
-    local output_file="$3"
+    domain="$1"
+    qtype="$2"
+    output_file="$3"
 
-    # Generate a random ID
-    local id_hex
+    # Generate a random ID (two bytes)
     id_hex=$(openssl rand -hex 2)
-    local id="\x${id_hex:0:2}\x${id_hex:2:2}"
+    id=$(printf '\\x%s\\x%s' "${id_hex:0:2}" "${id_hex:2:2}")
 
-    # Flags: standard query, recursion desired (0x0100)
-    local flags="\x01\x00"
+    # Flags: standard query (0x0100), recursion desired
+    flags=$(printf '\\x01\\x00')
 
     # QDCOUNT: number of questions (1)
-    local qdcount="\x00\x01"
+    qdcount=$(printf '\\x00\\x01')
 
     # ANCOUNT, NSCOUNT, ARCOUNT: zero
-    local ancount="\x00\x00"
-    local nscount="\x00\x00"
-    local arcount="\x00\x00"
+    ancount=$(printf '\\x00\\x00')
+    nscount=$(printf '\\x00\\x00')
+    arcount=$(printf '\\x00\\x00')
 
     # Build QNAME
-    local qname=""
-    IFS='.' read -ra labels <<< "$domain"
-    for label in "${labels[@]}"; do
-        local len=${#label}
-        qname="${qname}$(printf "\\x%02x" "$len")$label"
+    qname=""
+    oldIFS="$IFS"
+    IFS='.'
+    set -- $domain
+    IFS="$oldIFS"
+    for label in "$@"; do
+        length=${#label}
+        length_hex=$(printf '%02x' "$length")
+        length_byte=$(printf '\\x%s' "$length_hex")
+        qname="${qname}${length_byte}${label}"
     done
-    # Terminate QNAME with zero length
-    qname="${qname}\x00"
+    # Terminate QNAME with zero-length label (zero byte)
+    qname="${qname}$(printf '\\x00')"
 
     # QTYPE
-    declare -A qtypes
-    qtypes=( ["A"]="\x00\x01" ["AAAA"]="\x00\x1c" ["HTTPS"]="\x00\x41" ["TYPE65"]="\x00\x41" )
-
-    # Get the QTYPE code
-    local qtype_code="${qtypes[$qtype]}"
-    if [ -z "$qtype_code" ]; then
-        echo "Unknown query type: $qtype"
-        return 1
-    fi
+    case "$qtype" in
+        A) qtype_code=$(printf '\\x00\\x01') ;;
+        AAAA) qtype_code=$(printf '\\x00\\x1c') ;;
+        HTTPS|TYPE65) qtype_code=$(printf '\\x00\\x41') ;;
+        *) echo "Unknown query type: $qtype"; return 1 ;;
+    esac
 
     # QCLASS: IN (0x0001)
-    local qclass="\x00\x01"
+    qclass=$(printf '\\x00\\x01')
 
-    # Combine all parts
-    local query="${id}${flags}${qdcount}${ancount}${nscount}${arcount}${qname}${qtype_code}${qclass}"
-
-    # Write to output file
-    printf "$query" > "$output_file"
+    # Combine all parts and write directly to output file
+    {
+        printf '%b' "$id$flags$qdcount$ancount$nscount$arcount"
+        printf '%b' "$qname"
+        printf '%b' "$qtype_code$qclass"
+    } > "$output_file"
 }
 
 # Function to parse DNS response and check for success
 parse_dns_response() {
-    local response_file="$1"
+    response_file="$1"
 
-    # Read the fourth byte (byte offset 3, zero-based indexing)
-    local flags_byte2_hex
-    flags_byte2_hex=$(xxd -s 3 -l 1 -p "$response_file")
+    # Read the flags (byte 3 and 4)
+    flags_bytes=$(dd bs=1 skip=2 count=2 if="$response_file" 2>/dev/null | xxd -p | tr -d '\n')
+    flags_byte2="${flags_bytes:2:2}"
 
     # Convert to decimal
-    local flags_byte2_dec=$((16#$flags_byte2_hex))
+    flags_byte2_dec=$((16#$flags_byte2))
 
     # Get RCODE (lower 4 bits)
-    local rcode=$((flags_byte2_dec & 0x0F))
+    rcode=$((flags_byte2_dec & 0x0F))
 
     if [ "$rcode" -eq 0 ]; then
         return 0  # Success
@@ -149,23 +151,21 @@ parse_dns_response() {
 
 # Function to perform DNS over HTTPS queries
 query_dns_over_https() {
-    local protocol="$1"
-    local hostname="$2"
-    local port="$3"
-    local ip="$4"
-    local path="$5"
-    local domain="$6"
+    protocol="$1"
+    hostname="$2"
+    port="$3"
+    ip="$4"
+    path="$5"
+    domain="$6"
 
     echo "[$(date)] Starting queries to DNS over HTTPS server '$hostname' for domain '$domain'"
 
     # Query types to test
-    local query_types=("A" "AAAA" "HTTPS")
+    query_types="A AAAA HTTPS"
 
-    for qtype in "${query_types[@]}"; do
+    for qtype in $query_types; do
         echo "[$(date)] Querying $qtype record..."
         # Create temporary files
-        local query_file
-        local response_file
         query_file=$(mktemp)
         response_file=$(mktemp)
 
@@ -177,7 +177,7 @@ query_dns_over_https() {
         fi
 
         # Construct URL
-        local url="$protocol://$hostname:$port$path"
+        url="$protocol://$hostname:$port$path"
 
         # Use curl to send the query
         if curl -s --fail -o "$response_file" --data-binary "@$query_file" \
