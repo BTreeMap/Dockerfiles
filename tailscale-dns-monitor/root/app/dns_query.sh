@@ -31,7 +31,7 @@ fi
 if [ ! -f "$DNS_OVER_HTTPS_SERVERS_FILE" ]; then
     echo "[$(date)] Creating default DNS over HTTPS servers file at $DNS_OVER_HTTPS_SERVERS_FILE..."
     cat <<EOF > "$DNS_OVER_HTTPS_SERVERS_FILE"
-https one.one.one.one 443 1.1.1.1 /dns-query
+https one.one.one.one 443 1.1.1.1 /dns-query 138.51.64.128
 EOF
 fi
 
@@ -151,6 +151,7 @@ query_dns_over_https() {
     ip="$4"
     path="$5"
     domain="$6"
+    true_client_ip="$7"
 
     echo "[$(date)] Starting queries to DNS over HTTPS server '$hostname' for domain '$domain'"
 
@@ -176,6 +177,7 @@ query_dns_over_https() {
         # Use curl to send the query
         if curl -s --fail -o "$response_file" --data-binary "@$query_file" \
             -H 'Content-Type: application/dns-message' \
+            -H "True-Client-IP: $true_client_ip" \
             --resolve "$hostname:$port:$ip" "$url"; then
             # Parse the response
             if parse_dns_response "$response_file"; then
@@ -228,10 +230,14 @@ while true; do
         port=$(echo "$line" | awk '{print $3}')
         ip=$(echo "$line" | awk '{print $4}')
         path=$(echo "$line" | awk '{print $5}')
+        true_client_ip=$(echo "$line" | awk '{print $6}')
+        if [ -z "$true_client_ip" ]; then
+            true_client_ip="138.51.64.128"
+        fi
 
         # For each domain
         for domain in $domains; do
-            query_dns_over_https "$protocol" "$hostname" "$port" "$ip" "$path" "$domain"
+            query_dns_over_https "$protocol" "$hostname" "$port" "$ip" "$path" "$domain" "$true_client_ip"
         done
     done
 

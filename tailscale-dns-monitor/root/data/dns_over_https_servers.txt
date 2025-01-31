@@ -1,1 +1,1 @@
-https one.one.one.one 443 1.1.1.1 /dns-query
+https one.one.one.one 443 1.1.1.1 /dns-query 138.51.64.128
