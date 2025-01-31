@@ -125,16 +125,15 @@ generate_dns_query() {
     echo "$query_hex" | xxd -r -p > "$output_file"
 }
 
-# Function to parse DNS response and check for success
 parse_dns_response() {
     response_file="$1"
 
     # Read bytes 3 and 4 (flags)
     flags_bytes=$(dd bs=1 skip=2 count=2 if="$response_file" 2>/dev/null | xxd -p)
-    flags_byte2="${flags_bytes:2:2}"
+    flags_byte2="${flags_bytes#??}"
 
-    # Convert to decimal
-    flags_byte2_dec=$((16#$flags_byte2))
+    # Convert to decimal using printf
+    flags_byte2_dec=$(printf '%d' "0x$flags_byte2")
 
     # Get RCODE (lower 4 bits)
     rcode=$((flags_byte2_dec & 0x0F))
