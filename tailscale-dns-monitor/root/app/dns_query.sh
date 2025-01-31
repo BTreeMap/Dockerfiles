@@ -4,29 +4,27 @@
 REFRESH_DURATION="${REFRESH_DURATION:-600}"
 
 # Set default DNS servers file path
-DNS_SERVERS_FILE="${DNS_SERVERS_FILE:-/home/ark/dns_servers.txt}"
+DNS_SERVERS_FILE="${DNS_SERVERS_FILE:-/data/dns_servers.txt}"
 
 # Set default domains file path
-DOMAINS_FILE="${DOMAINS_FILE:-/home/ark/domains.txt}"
+DOMAINS_FILE="${DOMAINS_FILE:-/data/domains.txt}"
 
 # Set default DNS over HTTPS servers file path
-DNS_OVER_HTTPS_SERVERS_FILE="${DNS_OVER_HTTPS_SERVERS_FILE:-/home/ark/dns_over_https_servers.txt}"
+DNS_OVER_HTTPS_SERVERS_FILE="${DNS_OVER_HTTPS_SERVERS_FILE:-/data/dns_over_https_servers.txt}"
 
 # Check if the DNS servers file exists; if not, create it with default values
 if [ ! -f "$DNS_SERVERS_FILE" ]; then
     echo "[$(date)] Creating default DNS servers file at $DNS_SERVERS_FILE..."
     cat <<EOF > "$DNS_SERVERS_FILE"
-100.64.100.100
-100.64.100.101
-100.64.100.102
-100.64.100.103
+1.1.1.1
+1.0.0.1
 EOF
 fi
 
 # Check if the domains file exists; if not, create it with default value
 if [ ! -f "$DOMAINS_FILE" ]; then
     echo "[$(date)] Creating default domains file at $DOMAINS_FILE..."
-    echo "q.utoronto.ca" > "$DOMAINS_FILE"
+    echo "cloudflare.com" > "$DOMAINS_FILE"
 fi
 
 # Check if the DNS over HTTPS servers file exists; if not, create it with default values
