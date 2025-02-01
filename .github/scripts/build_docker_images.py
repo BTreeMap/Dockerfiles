@@ -133,7 +133,6 @@ def build_and_push_image(build_args) -> BuildResult:
         commit_hash,
         max_retries,
         logger_lock,
-        docker_platform,
     ) = build_args
 
     # Derive image name from parent directory of Dockerfile
@@ -142,13 +141,13 @@ def build_and_push_image(build_args) -> BuildResult:
 
     # Construct tags with multiple variants for deployment flexibility
     tags = [
-        f"{base_image}:{image_name_dir}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.latest.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{date_str}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{date_time_str}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{commit_hash}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{commit_hash}.{date_str}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{commit_hash}.{date_time_str}.{docker_platform}",
+        f"{base_image}:{image_name_dir}",
+        f"{base_image}:{image_name_dir}.latest",
+        f"{base_image}:{image_name_dir}.{date_str}",
+        f"{base_image}:{image_name_dir}.{date_time_str}",
+        f"{base_image}:{image_name_dir}.{commit_hash}",
+        f"{base_image}:{image_name_dir}.{commit_hash}.{date_str}",
+        f"{base_image}:{image_name_dir}.{commit_hash}.{date_time_str}",
     ]
 
     builder_name = f"builder_{image_name_dir}"
@@ -163,7 +162,7 @@ def build_and_push_image(build_args) -> BuildResult:
         "--builder",
         builder_name,
         "--platform",
-        f"linux/{docker_platform}",
+        "linux/amd64,linux/arm64",
     ]
     for tag in tags:
         buildx_command.extend(["--tag", tag])
@@ -223,7 +222,6 @@ def main():
     # Configuration from environment variables
     docker_registry = get_env_var("DOCKER_REGISTRY").lower()
     docker_image_name = get_env_var("DOCKER_IMAGE_NAME").lower()
-    docker_platform = get_env_var("DOCKER_PLATFORM", "amd64").lower()
     max_retries = int(get_env_var("MAX_RETRIES", "3"))
     github_sha = get_env_var("GITHUB_SHA")
 
@@ -247,6 +245,19 @@ def main():
     for dockerfile in dockerfiles:
         logger.info(f"  - {dockerfile}")
 
+    # Enable multi-architecture build support
+    logger.info("Enabling multi-platform build support using QEMU")
+    enable_binfmt_command = [
+        "docker",
+        "run",
+        "--privileged",
+        "--rm",
+        "tonistiigi/binfmt",
+        "--install",
+        "all",
+    ]
+    subprocess.run(enable_binfmt_command, check=True)
+
     # Prepare parallel build arguments
     args_list = []
     manager = multiprocessing.Manager()
@@ -261,7 +272,6 @@ def main():
             github_sha,
             max_retries,
             logger_lock,
-            docker_platform,
         )
         args_list.append(args)
 
