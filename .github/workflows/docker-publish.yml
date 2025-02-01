@@ -105,7 +105,7 @@ jobs:
       - name: Discover, Build, and Push Docker Images in Parallel
         run: python .github/scripts/build_docker_images.py
         env:
-          DOCKER_PLATFORM: amd64
+          DOCKER_PLATFORM: arm64
           DATE_STR: ${{ needs.setup-timestamp.outputs.date }}
           DATE_TIME_STR: ${{ needs.setup-timestamp.outputs.date_time }}
 
