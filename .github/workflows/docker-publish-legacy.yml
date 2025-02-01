@@ -80,7 +80,7 @@ jobs:
             done
 
             # Build the Docker image and tag it with all tags
-            buildx_cmd="docker buildx build --platform linux/amd64,linux/arm64 --push"
+            buildx_cmd="docker buildx build --platform linux/amd64 --push"
             for tag in "${tags[@]}"; do
               buildx_cmd+=" --tag $tag"
             done
