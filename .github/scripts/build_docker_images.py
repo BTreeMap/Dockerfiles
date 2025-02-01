@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import datetime
 import glob
 import logging
 import multiprocessing
@@ -228,9 +227,8 @@ def main():
     github_sha = get_env_var("GITHUB_SHA")
 
     # Timestamping for image tags
-    current_time = datetime.datetime.now(datetime.timezone.utc)
-    date_str = current_time.strftime("%Y-%m-%d")
-    date_time_str = current_time.strftime("%Y-%m-%d.%H-%M-%S")
+    date_str = get_env_var("DATE_STR")
+    date_time_str = get_env_var("DATE_TIME_STR")
     base_image = f"{docker_registry}/{docker_image_name}"
 
     logger.info(f"Initializing build process with base image path: {base_image}")
