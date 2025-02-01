@@ -12,8 +12,23 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  setup-timestamp:
+    if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
+    runs-on: ubuntu-24.04
+    outputs:
+      date: ${{ steps.timestamp.outputs.date }}
+      date_time: ${{ steps.timestamp.outputs.date_time }}
+    steps:
+      - name: Generate build timestamp
+        id: timestamp
+        run: |
+          date=$(date '+%Y-%m-%d')
+          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
+          echo "date=$date" >> $GITHUB_OUTPUT
+          echo "date_time=$date_time" >> $GITHUB_OUTPUT
+
   build-amd64:
-    # Run the job if triggered by a cron job or a push containing the specific commit message
+    needs: setup-timestamp
     if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04
     permissions:
@@ -37,63 +52,53 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Find Dockerfiles and build images with new naming conventions
       - name: Build and push Docker images
         run: |
-          # Convert REGISTRY and IMAGE_NAME to lowercase
           registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
           image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
-
-          # Get current date and time
-          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
-          date=$(date '+%Y-%m-%d')
-
-          # Get full commit hash
           commit_hash="${{ github.sha }}"
+          
+          # Use timestamp from setup job
+          date="${{ needs.setup-timestamp.outputs.date }}"
+          date_time="${{ needs.setup-timestamp.outputs.date_time }}"
 
-          # Base image path
           base_image="${registry_lower}/${image_name_lower}"
 
-          # Find all Dockerfiles recursively
           find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
-            # Get the directory of the Dockerfile
             dir=$(dirname "$dockerfile")
             image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
             image_name_dir="${image_name_dir}.legacy-build"
 
-            # Construct tags
-            tags=()
-            tags+=("${base_image}:${image_name_dir}.amd64")
-            tags+=("${base_image}:${image_name_dir}.latest.amd64")
-            tags+=("${base_image}:${image_name_dir}.${date}.amd64")
-            tags+=("${base_image}:${image_name_dir}.${date_time}.amd64")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}.amd64")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date}.amd64")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date_time}.amd64")
+            tags=(
+              "${base_image}:${image_name_dir}.amd64"
+              "${base_image}:${image_name_dir}.latest.amd64"
+              "${base_image}:${image_name_dir}.${date}.amd64"
+              "${base_image}:${image_name_dir}.${date_time}.amd64"
+              "${base_image}:${image_name_dir}.${commit_hash}.amd64"
+              "${base_image}:${image_name_dir}.${commit_hash}.${date}.amd64"
+              "${base_image}:${image_name_dir}.${commit_hash}.${date_time}.amd64"
+            )
 
             echo "Building image for ${tags[0]} with tags:"
             for tag in "${tags[@]}"; do
               echo " - $tag"
             done
 
-            # Build the Docker image and tag it with all tags
             buildx_cmd="docker buildx build --platform linux/amd64 --push"
             for tag in "${tags[@]}"; do
               buildx_cmd+=" --tag $tag"
             done
             buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
 
-            echo "Running build command: $buildx_cmd"
             eval $buildx_cmd
 
-            # Remove the local images to save space (ignore errors)
             for tag in "${tags[@]}"; do
               docker rmi "$tag" || true
             done
           done
 
   build-arm64:
-    # Run the job if triggered by a cron job or a push containing the specific commit message
+    needs: setup-timestamp
     if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04-arm
     permissions:
@@ -116,67 +121,55 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Find Dockerfiles and build images with new naming conventions
       - name: Build and push Docker images
         run: |
-          # Convert REGISTRY and IMAGE_NAME to lowercase
           registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
           image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
-
-          # Get current date and time
-          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
-          date=$(date '+%Y-%m-%d')
-
-          # Get full commit hash
           commit_hash="${{ github.sha }}"
+          
+          # Use timestamp from setup job
+          date="${{ needs.setup-timestamp.outputs.date }}"
+          date_time="${{ needs.setup-timestamp.outputs.date_time }}"
 
-          # Base image path
           base_image="${registry_lower}/${image_name_lower}"
 
-          # Find all Dockerfiles recursively
           find . -name 'Dockerfile' | sort -r | while IFS= read -r dockerfile; do
-            # Get the directory of the Dockerfile
             dir=$(dirname "$dockerfile")
             image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
             image_name_dir="${image_name_dir}.legacy-build"
 
-            # Construct tags
-            tags=()
-            tags+=("${base_image}:${image_name_dir}.arm64")
-            tags+=("${base_image}:${image_name_dir}.latest.arm64")
-            tags+=("${base_image}:${image_name_dir}.${date}.arm64")
-            tags+=("${base_image}:${image_name_dir}.${date_time}.arm64")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}.arm64")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date}.arm64")
-            tags+=("${base_image}:${image_name_dir}.${commit_hash}.${date_time}.arm64")
+            tags=(
+              "${base_image}:${image_name_dir}.arm64"
+              "${base_image}:${image_name_dir}.latest.arm64"
+              "${base_image}:${image_name_dir}.${date}.arm64"
+              "${base_image}:${image_name_dir}.${date_time}.arm64"
+              "${base_image}:${image_name_dir}.${commit_hash}.arm64"
+              "${base_image}:${image_name_dir}.${commit_hash}.${date}.arm64"
+              "${base_image}:${image_name_dir}.${commit_hash}.${date_time}.arm64"
+            )
 
             echo "Building image for ${tags[0]} with tags:"
             for tag in "${tags[@]}"; do
               echo " - $tag"
             done
 
-            # Build the Docker image and tag it with all tags
             buildx_cmd="docker buildx build --platform linux/arm64 --push"
             for tag in "${tags[@]}"; do
               buildx_cmd+=" --tag $tag"
             done
             buildx_cmd+=" \"$dir\" --file \"$dockerfile\""
 
-            echo "Running build command: $buildx_cmd"
             eval $buildx_cmd
 
-            # Remove the local images to save space (ignore errors)
             for tag in "${tags[@]}"; do
               docker rmi "$tag" || true
             done
           done
 
   create-manifest:
-    # Run the job if triggered by a cron job or a push containing the specific commit message
+    needs: [setup-timestamp, build-amd64, build-arm64]
     if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04
-    needs: [build-amd64, build-arm64]
     permissions:
       packages: write
       id-token: write
@@ -193,16 +186,17 @@ jobs:
         run: |
           registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
           image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
-          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
-          date=$(date '+%Y-%m-%d')
           commit_hash="${{ github.sha }}"
+          
+          # Use timestamp from setup job
+          date="${{ needs.setup-timestamp.outputs.date }}"
+          date_time="${{ needs.setup-timestamp.outputs.date_time }}"
 
           find . -name 'Dockerfile' | sort -r | while read -r dockerfile; do
             dir=$(dirname "$dockerfile")
             image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
             image_name_dir="${image_name_dir}.legacy-build"
 
-            # Base tags without architecture suffix
             base_tags=(
               "${image_name_dir}"
               "${image_name_dir}.latest"
@@ -218,7 +212,6 @@ jobs:
               arm64_tag="${registry_lower}/${image_name_lower}:${base_tag}.arm64"
               manifest_tag="${registry_lower}/${image_name_lower}:${base_tag}"
 
-              echo "Creating manifest for $manifest_tag"
               docker manifest create $manifest_tag --amend $amd64_tag --amend $arm64_tag
               docker manifest push $manifest_tag
             done
