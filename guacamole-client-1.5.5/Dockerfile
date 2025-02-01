@@ -9,7 +9,7 @@ ARG TOMCAT_JRE=jdk8
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Use official maven image for the build
-FROM --platform=$BUILDPLATFORM maven:3-eclipse-temurin-8-focal AS builder
+FROM --platform=$BUILDPLATFORM maven:3-eclipse-temurin-11-focal AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
