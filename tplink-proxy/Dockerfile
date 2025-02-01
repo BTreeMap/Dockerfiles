@@ -1,8 +1,8 @@
 FROM nginx:alpine-slim
 
 # Environment variables for the main backend server (Port 39602)
-ENV BACKEND_SERVER_39602="http://192.168.0.105:80"
-ENV HOST_HEADER_39602="192.168.0.105"
+ENV BACKEND_SERVER_39602="http://192.168.1.1:80"
+ENV HOST_HEADER_39602="192.168.1.1"
 ENV JS_INJECT_CODE_39602="var MULTI_DOMAIN_SUPPORT=true;"
 
 # Environment variables for the alternate backend server (Port 26782)
