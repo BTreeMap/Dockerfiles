@@ -118,17 +118,17 @@ jobs:
       id-token: write
     steps:
       # Login against a Docker registry except on PR
-      - name: Log into registry ${{ env.REGISTRY }}
+      - name: Log into registry ${{ env.DOCKER_REGISTRY }}
         uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.DOCKER_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push manifests
         run: |
-          registry_lower=$(echo "${{ env.REGISTRY }}" | tr '[:upper:]' '[:lower:]')
-          image_name_lower=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          registry_lower=$(echo "${{ env.DOCKER_REGISTRY }}" | tr '[:upper:]' '[:lower:]')
+          image_name_lower=$(echo "${{ env.DOCKER_IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
           commit_hash="${{ github.sha }}"
           
           # Use timestamp from setup job
