@@ -138,7 +138,6 @@ jobs:
           find . -name 'Dockerfile' | sort -r | while read -r dockerfile; do
             dir=$(dirname "$dockerfile")
             image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
-            image_name_dir="${image_name_dir}.legacy-build"
 
             base_tags=(
               "${image_name_dir}"
