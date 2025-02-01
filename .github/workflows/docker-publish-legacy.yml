@@ -13,6 +13,7 @@ env:
 
 jobs:
   setup-timestamp:
+    # Run the job if triggered by a scheduled event or a push with a specific commit message
     if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04
     outputs:
@@ -29,7 +30,6 @@ jobs:
 
   build-amd64:
     needs: setup-timestamp
-    if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -99,7 +99,6 @@ jobs:
 
   build-arm64:
     needs: setup-timestamp
-    if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -168,7 +167,6 @@ jobs:
 
   create-manifest:
     needs: [setup-timestamp, build-amd64, build-arm64]
-    if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04
     permissions:
       packages: write
