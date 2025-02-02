@@ -62,8 +62,8 @@ echo "Starting the Cloudflare WARP service and accepting terms of service..."
 warp-svc --accept-tos &
 
 # Allow the daemons to initialize by sleeping for an additional 5 seconds
-echo "Sleeping for 5 seconds to allow WARP service to initialize..."
-sleep 5
+echo "Sleeping for 10 seconds to allow WARP service to initialize..."
+sleep 10
 
 # Disable qlog debugging for the Warp client to reduce logging verbosity
 echo "Disabling qlog debugging for Warp client..."
