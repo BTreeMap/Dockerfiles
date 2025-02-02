@@ -84,7 +84,7 @@ jobs:
               echo " - $tag"
             done
 
-            buildx_cmd="docker buildx build --push"
+            buildx_cmd="docker buildx build --platform linux/amd64 --push"
             for tag in "${tags[@]}"; do
               buildx_cmd+=" --tag $tag"
             done
@@ -152,7 +152,7 @@ jobs:
               echo " - $tag"
             done
 
-            buildx_cmd="docker buildx build --push"
+            buildx_cmd="docker buildx build --platform linux/arm64 --push"
             for tag in "${tags[@]}"; do
               buildx_cmd+=" --tag $tag"
             done
