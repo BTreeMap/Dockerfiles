@@ -161,8 +161,6 @@ def build_and_push_image(build_args) -> BuildResult:
         "--no-cache",
         "--builder",
         builder_name,
-        "--platform",
-        f"linux/{docker_platform}",
     ]
     for tag in tags:
         buildx_command.extend(["--tag", tag])
