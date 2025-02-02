@@ -18,6 +18,17 @@ class ManifestResult:
     error_msg: str | None = None
 
 
+@dataclass
+class DigestResult:
+    """Tracks the outcome of retrieving a platform-specific digest."""
+
+    image_tag: str
+    platform: str
+    success: bool
+    digest: str | None = None
+    error_msg: str | None = None
+
+
 def init_logger():
     """Initializes and configures a logger."""
     logger = logging.getLogger("docker_manifest_creator")
@@ -39,6 +50,33 @@ def get_env_var(var_name, default=None):
     return value
 
 
+import json  # Ensure this is imported at the top of your script
+
+
+def get_platform_digest(image_tag, platform, logger):
+    inspect_cmd = ["docker", "manifest", "inspect", image_tag]
+    try:
+        output = subprocess.check_output(inspect_cmd, text=True)
+        manifest = json.loads(output)
+        for m in manifest.get("manifests", []):
+            if m.get("platform", {}).get("architecture") == platform:
+                digest = m.get("digest")
+                return DigestResult(
+                    image_tag=image_tag, platform=platform, success=True, digest=digest
+                )
+        error_msg = f"No digest found for platform '{platform}' in image '{image_tag}'"
+        logger.error(error_msg)
+        return DigestResult(
+            image_tag=image_tag, platform=platform, success=False, error_msg=error_msg
+        )
+    except Exception as e:
+        error_msg = f"Failed to get digest for image '{image_tag}': {e}"
+        logger.error(error_msg)
+        return DigestResult(
+            image_tag=image_tag, platform=platform, success=False, error_msg=error_msg
+        )
+
+
 def create_and_push_manifest(
     base_image: str,
     base_tag: str,
@@ -51,23 +89,26 @@ def create_and_push_manifest(
     manifest_tag = f"{base_image}:{base_tag}"
 
     # Retrieve the digest for each architecture-specific image
-    def get_platform_digest(image_tag, platform):
-        inspect_cmd = ["docker", "manifest", "inspect", image_tag]
-        try:
-            output = subprocess.check_output(inspect_cmd, text=True)
-            manifest = json.loads(output)
-            for m in manifest.get("manifests", []):
-                if m.get("platform", {}).get("architecture") == platform:
-                    return m.get("digest")
-            raise ValueError(
-                f"No digest found for platform '{platform}' in image '{image_tag}'"
-            )
-        except Exception as e:
-            logger.error(f"Failed to get digest for image '{image_tag}': {e}")
-            raise
+    amd64_digest_result = get_platform_digest(amd64_tag, "amd64", logger)
+    arm64_digest_result = get_platform_digest(arm64_tag, "arm64", logger)
 
-    amd64_digest = get_platform_digest(amd64_tag, "amd64")
-    arm64_digest = get_platform_digest(arm64_tag, "arm64")
+    # Check if digest retrieval was successful for both architectures
+    if not amd64_digest_result.success or not arm64_digest_result.success:
+        error_msgs = []
+        if amd64_digest_result.error_msg:
+            error_msgs.append(amd64_digest_result.error_msg)
+        if arm64_digest_result.error_msg:
+            error_msgs.append(arm64_digest_result.error_msg)
+        combined_error_msg = "; ".join(error_msgs)
+        logger.error(
+            f"Failed to get digests for manifest '{manifest_tag}': {combined_error_msg}"
+        )
+        return ManifestResult(
+            image_name=manifest_tag, success=False, error_msg=combined_error_msg
+        )
+
+    amd64_digest = amd64_digest_result.digest
+    arm64_digest = arm64_digest_result.digest
 
     manifest_create_cmd = [
         "docker",
