@@ -6,7 +6,6 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass
@@ -41,7 +40,6 @@ def get_env_var(var_name, default=None):
 
 def create_and_push_manifest(
     base_image: str,
-    image_name_dir: str,
     base_tag: str,
     logger: logging.Logger,
     max_retries: int,
@@ -124,7 +122,6 @@ def main():
         for base_tag in base_tags:
             result = create_and_push_manifest(
                 base_image=base_image,
-                image_name_dir=image_name_dir,
                 base_tag=base_tag,
                 logger=logger,
                 max_retries=max_retries,

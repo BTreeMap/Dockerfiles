@@ -113,44 +113,30 @@ jobs:
       packages: write
       id-token: write
     steps:
-      # Login against a Docker registry except on PR
-      - name: Log into registry ${{ env.DOCKER_REGISTRY }}
-        uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Set up Docker Buildx (Builder for multi-platform images)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      # Login to Docker Registry
+      - name: Log into Docker Registry ${{ env.DOCKER_REGISTRY }}
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ${{ env.DOCKER_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create and push manifests
-        run: |
-          registry_lower=$(echo "${{ env.DOCKER_REGISTRY }}" | tr '[:upper:]' '[:lower:]')
-          image_name_lower=$(echo "${{ env.DOCKER_IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
-          commit_hash="${{ github.sha }}"
-          
-          # Use timestamp from setup job
-          date="${{ needs.setup-timestamp.outputs.date }}"
-          date_time="${{ needs.setup-timestamp.outputs.date_time }}"
+      # Set up Python Environment
+      - name: Set up Python Environment
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
 
-          find . -name 'Dockerfile' | sort -r | while read -r dockerfile; do
-            dir=$(dirname "$dockerfile")
-            image_name_dir=$(basename "$dir" | tr '[:upper:]' '[:lower:]')
-
-            base_tags=(
-              "${image_name_dir}"
-              "${image_name_dir}.latest"
-              "${image_name_dir}.${date}"
-              "${image_name_dir}.${date_time}"
-              "${image_name_dir}.${commit_hash}"
-              "${image_name_dir}.${commit_hash}.${date}"
-              "${image_name_dir}.${commit_hash}.${date_time}"
-            )
-
-            for base_tag in "${base_tags[@]}"; do
-              amd64_tag="${registry_lower}/${image_name_lower}:${base_tag}.amd64"
-              arm64_tag="${registry_lower}/${image_name_lower}:${base_tag}.arm64"
-              manifest_tag="${registry_lower}/${image_name_lower}:${base_tag}"
-
-              docker manifest create $manifest_tag --amend $amd64_tag --amend $arm64_tag
-              docker manifest push $manifest_tag
-            done
-          done
+      - name: Create and Push Docker Manifests
+        run: python .github/scripts/create_docker_manifests.py
+        env:
+          DATE_STR: ${{ needs.setup-timestamp.outputs.date }}
+          DATE_TIME_STR: ${{ needs.setup-timestamp.outputs.date_time }}
+          MAX_RETRIES: ${{ env.MAX_RETRIES }}
