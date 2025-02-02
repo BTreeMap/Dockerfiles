@@ -71,7 +71,9 @@ def create_and_push_manifest(
             logger.info(f"Successfully pushed manifest '{manifest_tag}'")
             return ManifestResult(image_name=manifest_tag, success=True)
         except subprocess.CalledProcessError as e:
-            logger.error(f"Attempt {attempt} failed for manifest '{manifest_tag}': {e}")
+            logger.warning(
+                f"Attempt {attempt} failed for manifest '{manifest_tag}': {e}"
+            )
             error_msg = str(e)
     logger.error(
         f"Failed to create and push manifest '{manifest_tag}' after {max_retries} attempts"
