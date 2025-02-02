@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import glob
+import json
 import logging
 import os
 import subprocess
@@ -49,22 +50,41 @@ def create_and_push_manifest(
     arm64_tag = f"{base_image}:{base_tag}.arm64"
     manifest_tag = f"{base_image}:{base_tag}"
 
+    # Retrieve the digest for each architecture-specific image
+    def get_platform_digest(image_tag, platform):
+        inspect_cmd = ["docker", "manifest", "inspect", image_tag]
+        try:
+            output = subprocess.check_output(inspect_cmd, text=True)
+            manifest = json.loads(output)
+            for m in manifest.get("manifests", []):
+                if m.get("platform", {}).get("architecture") == platform:
+                    return m.get("digest")
+            raise ValueError(
+                f"No digest found for platform '{platform}' in image '{image_tag}'"
+            )
+        except Exception as e:
+            logger.error(f"Failed to get digest for image '{image_tag}': {e}")
+            raise
+
+    amd64_digest = get_platform_digest(amd64_tag, "amd64")
+    arm64_digest = get_platform_digest(arm64_tag, "arm64")
+
     manifest_create_cmd = [
         "docker",
         "manifest",
         "create",
         manifest_tag,
         "--amend",
-        amd64_tag,
+        f"{amd64_tag}@{amd64_digest}",
         "--amend",
-        arm64_tag,
+        f"{arm64_tag}@{arm64_digest}",
     ]
     manifest_push_cmd = ["docker", "manifest", "push", manifest_tag]
 
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(
-                f"Creating manifest '{manifest_tag}' using tags '{amd64_tag}' and '{arm64_tag}' (Attempt {attempt}/{max_retries})"
+                f"Creating manifest '{manifest_tag}' using digests '{amd64_digest}' and '{arm64_digest}' (Attempt {attempt}/{max_retries})"
             )
             subprocess.run(manifest_create_cmd, check=True)
             subprocess.run(manifest_push_cmd, check=True)
