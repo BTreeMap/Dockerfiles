@@ -3,9 +3,11 @@
 import glob
 import json
 import logging
+import multiprocessing
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 
 
@@ -30,12 +32,13 @@ class DigestResult:
 
 
 def init_logger():
-    """Initializes and configures a logger."""
-    logger = logging.getLogger("docker_manifest_creator")
+    """Initializes and configures a logger for each process."""
+    logger = logging.getLogger(f"docker_manifest_creator_{os.getpid()}")
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
-        "[%(asctime)s][%(levelname)s] %(message)s", datefmt="%Y-%m-%d.%H-%M-%S"
+        "[%(asctime)s][%(levelname)s][PID %(process)d] %(message)s",
+        datefmt="%Y-%m-%d.%H-%M-%S",
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
@@ -50,31 +53,53 @@ def get_env_var(var_name, default=None):
     return value
 
 
-import json  # Ensure this is imported at the top of your script
-
-
-def get_platform_digest(image_tag, platform, logger):
+def get_platform_digest(
+    image_tag, platform, logger: logging.Logger, max_retries=3, delay_between_retries=2
+):
     inspect_cmd = ["docker", "manifest", "inspect", image_tag]
-    try:
-        output = subprocess.check_output(inspect_cmd, text=True)
-        manifest = json.loads(output)
-        for m in manifest.get("manifests", []):
-            if m.get("platform", {}).get("architecture") == platform:
-                digest = m.get("digest")
-                return DigestResult(
-                    image_tag=image_tag, platform=platform, success=True, digest=digest
-                )
-        error_msg = f"No digest found for platform '{platform}' in image '{image_tag}'"
-        logger.error(error_msg)
-        return DigestResult(
-            image_tag=image_tag, platform=platform, success=False, error_msg=error_msg
-        )
-    except Exception as e:
-        error_msg = f"Failed to get digest for image '{image_tag}': {e}"
-        logger.error(error_msg)
-        return DigestResult(
-            image_tag=image_tag, platform=platform, success=False, error_msg=error_msg
-        )
+
+    error_msg = "Unknown error"
+    for attempt in range(1, max_retries + 1):
+        try:
+            output = subprocess.check_output(inspect_cmd, text=True)
+            manifest = json.loads(output)
+
+            for m in manifest.get("manifests", []):
+                if m.get("platform", {}).get("architecture") == platform:
+                    digest = m.get("digest")
+                    logger.info(
+                        f"Retrieved digest for platform '{platform}' in image '{image_tag}': {digest}"
+                    )
+                    return DigestResult(
+                        image_tag=image_tag,
+                        platform=platform,
+                        success=True,
+                        digest=digest,
+                    )
+
+            error_msg = (
+                f"No digest found for platform '{platform}' in image '{image_tag}'"
+            )
+            logger.warning(error_msg)
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Attempt {attempt}/{max_retries}: Failed to inspect image '{image_tag}': {e}"
+            logger.warning(error_msg)
+        except Exception as e:
+            error_msg = f"Attempt {attempt}/{max_retries}: Unexpected error for image '{image_tag}': {e}"
+            logger.warning(error_msg)
+
+        if attempt < max_retries:
+            logger.info(
+                f"Retrying digest retrieval for '{image_tag}' in {delay_between_retries} seconds..."
+            )
+            time.sleep(delay_between_retries)
+
+    return DigestResult(
+        image_tag=image_tag,
+        platform=platform,
+        success=False,
+        error_msg=error_msg,
+    )
 
 
 def create_and_push_manifest(
@@ -82,6 +107,7 @@ def create_and_push_manifest(
     base_tag: str,
     logger: logging.Logger,
     max_retries: int,
+    delay_between_retries: int = 2,
 ):
     """Creates and pushes a Docker manifest for a single tag."""
     amd64_tag = f"{base_image}:{base_tag}.amd64"
@@ -89,8 +115,12 @@ def create_and_push_manifest(
     manifest_tag = f"{base_image}:{base_tag}"
 
     # Retrieve the digest for each architecture-specific image
-    amd64_digest_result = get_platform_digest(amd64_tag, "amd64", logger)
-    arm64_digest_result = get_platform_digest(arm64_tag, "arm64", logger)
+    amd64_digest_result = get_platform_digest(
+        amd64_tag, "amd64", logger, max_retries, delay_between_retries
+    )
+    arm64_digest_result = get_platform_digest(
+        arm64_tag, "arm64", logger, max_retries, delay_between_retries
+    )
 
     # Check if digest retrieval was successful for both architectures
     if not amd64_digest_result.success or not arm64_digest_result.success:
@@ -122,6 +152,7 @@ def create_and_push_manifest(
     ]
     manifest_push_cmd = ["docker", "manifest", "push", manifest_tag]
 
+    error_msg = "Unknown error"
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(
@@ -132,14 +163,31 @@ def create_and_push_manifest(
             logger.info(f"Successfully pushed manifest '{manifest_tag}'")
             return ManifestResult(image_name=manifest_tag, success=True)
         except subprocess.CalledProcessError as e:
-            logger.warning(
-                f"Attempt {attempt} failed for manifest '{manifest_tag}': {e}"
+            error_msg = f"Attempt {attempt} failed for manifest '{manifest_tag}': {e}"
+            logger.warning(error_msg)
+        if attempt < max_retries:
+            logger.info(
+                f"Retrying manifest creation for '{manifest_tag}' in {delay_between_retries} seconds..."
             )
-            error_msg = str(e)
+            time.sleep(delay_between_retries)
     logger.error(
         f"Failed to create and push manifest '{manifest_tag}' after {max_retries} attempts"
     )
     return ManifestResult(image_name=manifest_tag, success=False, error_msg=error_msg)
+
+
+def create_and_push_manifest_in_process(
+    base_image, base_tag, max_retries, delay_between_retries
+):
+    """Wrapper function to create and push manifest in a separate process."""
+    logger = init_logger()
+    return create_and_push_manifest(
+        base_image=base_image,
+        base_tag=base_tag,
+        logger=logger,
+        max_retries=max_retries,
+        delay_between_retries=delay_between_retries,
+    )
 
 
 def main():
@@ -149,6 +197,7 @@ def main():
     docker_registry = get_env_var("DOCKER_REGISTRY").lower()
     docker_image_name = get_env_var("DOCKER_IMAGE_NAME").lower()
     max_retries = int(get_env_var("MAX_RETRIES", "3"))
+    delay_between_retries = int(get_env_var("DELAY_BETWEEN_RETRIES", "2"))
     github_sha = get_env_var("GITHUB_SHA")
     date_str = get_env_var("DATE_STR")
     date_time_str = get_env_var("DATE_TIME_STR")
@@ -165,7 +214,7 @@ def main():
     dockerfiles.sort(reverse=True)
     logger.info(f"Found {len(dockerfiles)} Dockerfiles:")
 
-    failed_manifests = []
+    tasks = []
 
     for dockerfile in dockerfiles:
         dir_path = os.path.dirname(dockerfile)
@@ -183,15 +232,17 @@ def main():
         ]
 
         for base_tag in base_tags:
-            result = create_and_push_manifest(
-                base_image=base_image,
-                base_tag=base_tag,
-                logger=logger,
-                max_retries=max_retries,
-            )
+            task_args = (base_image, base_tag, max_retries, delay_between_retries)
+            tasks.append(task_args)
 
-            if not result.success:
-                failed_manifests.append(result)
+    # Use multiprocessing Pool to run create_and_push_manifest in parallel
+    num_processes = multiprocessing.cpu_count()
+    logger.info(f"Running tasks in parallel with {num_processes} processes.")
+
+    with multiprocessing.Pool(processes=num_processes) as pool:
+        results = pool.starmap(create_and_push_manifest_in_process, tasks)
+
+    failed_manifests = [result for result in results if not result.success]
 
     if failed_manifests:
         logger.error("Some manifests failed to create:")
