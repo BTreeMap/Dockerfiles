@@ -43,7 +43,7 @@ echo "Starting tailscaled with arguments: $TAILSCALED_ARGS"
 sleep 5
 
 # Construct tailscale up arguments
-TAILSCALE_UP_ARGS="--accept-dns=false"
+TAILSCALE_UP_ARGS="--accept-dns=false --accept-routes=false"
 
 if [ -n "$TAILSCALE_AUTH_KEY" ]; then
     echo "Using Tailscale auth key."

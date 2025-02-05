@@ -18,8 +18,8 @@ INITIAL_SERVERS_PATH="${INITIAL_SERVERS_PATH:-}"
 TAILSCALED_EXTRA_ARGS="${TAILSCALED_EXTRA_ARGS:-}"
 
 # Additional arguments to pass to the tailscale set command. 
-# Default: "--advertise-exit-node --accept-dns=false --webclient"
-TAILSCALE_EXTRA_ARGS="${TAILSCALE_EXTRA_ARGS:---advertise-exit-node --accept-dns=false --webclient}"
+# Default: "--advertise-exit-node --accept-dns=false --accept-routes=false --webclient"
+TAILSCALE_EXTRA_ARGS="${TAILSCALE_EXTRA_ARGS:---advertise-exit-node --accept-dns=false --accept-routes=false --webclient}"
 
 # If the environment variable INITIAL_SERVERS_PATH is set,
 # create the /gluetun directory and copy the initial servers file.

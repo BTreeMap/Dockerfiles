@@ -15,8 +15,8 @@ set -e
 TAILSCALED_EXTRA_ARGS="${TAILSCALED_EXTRA_ARGS:-}"
 
 # Additional arguments to pass to the tailscale set command. 
-# Default: "--advertise-exit-node --accept-dns=false --webclient"
-TAILSCALE_EXTRA_ARGS="${TAILSCALE_EXTRA_ARGS:---advertise-exit-node --accept-dns=false --webclient}"
+# Default: "--advertise-exit-node --accept-dns=false --accept-routes=false --webclient"
+TAILSCALE_EXTRA_ARGS="${TAILSCALE_EXTRA_ARGS:---advertise-exit-node --accept-dns=false --accept-routes=false --webclient}"
 
 # Create the /run/dbus directory if it does not already exist
 echo "Creating /run/dbus directory..."
