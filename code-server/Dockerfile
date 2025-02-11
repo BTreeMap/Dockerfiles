@@ -6,6 +6,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PGID=1000 \
     TZ=America/Toronto \
     DEFAULT_WORKSPACE=/config/workspace \
+    FNM_DIR=/opt/fnm \
+    RUSTUP_HOME=/opt/rustup \
+    CARGO_HOME=/opt/cargo
 
 # Combine all RUN commands into one to minimize layers
 RUN set -ex && \
@@ -24,12 +27,14 @@ RUN set -ex && \
         wget \
     \
     # Install Fast Node Manager (fnm) and Node.js version 22
-    curl -fsSL https://fnm.vercel.app/install | bash && \
-    . /config/.bashrc && \
-    fnm install 22 && \
+    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir $FNM_DIR && \
+    echo "PATH=\"$FNM_DIR:\$PATH\"" >> /etc/environment && \
+    $FNM_DIR/fnm install --lts --fnm-dir=$FNM_DIR && \
+    $FNM_DIR/fnm env | sed 's/^export //' >> /etc/environment && \
     \
     # Install Rust using rustup
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    echo "PATH=\"$CARGO_HOME/bin:\$PATH\"" >> /etc/environment && \
     \
     # Install Microsoft's OpenJDK 21
     wget https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
@@ -44,6 +49,7 @@ RUN set -ex && \
     \
     # Remove temporary and unnecessary files
     rm -rf \
+        /config/* \
         /tmp/* \
         /var/tmp/*
 
