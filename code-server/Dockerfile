@@ -7,6 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=America/Toronto \
     DEFAULT_WORKSPACE=/config/workspace \
     FNM_DIR=/opt/fnm \
+    FNM_MULTISHELL_PATH=/opt/fnm/multishells \
     RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo
 
@@ -19,12 +20,12 @@ RUN set -ex && \
     \
     # Install necessary packages
     apt-get install -y --no-install-recommends \
-        apt-transport-https && \
+        apt-transport-https \
         build-essential \
         curl \
         lsb-release \
         unzip \
-        wget \
+        wget && \
     \
     # Install Fast Node Manager (fnm) and Node.js version 22
     curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir $FNM_DIR && \
