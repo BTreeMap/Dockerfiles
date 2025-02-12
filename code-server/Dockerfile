@@ -49,6 +49,7 @@ RUN set -ex && \
         python3-pip \
         unzip \
         wget && \
+    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
@@ -64,7 +65,8 @@ RUN set -ex && \
     chmod +x /etc/profile.d/fnm.sh && \
     echo "export PATH=\"$FNM_DIR:\$PATH\"" >> /etc/profile.d/fnm.sh && \
     $FNM_DIR/fnm install --lts --fnm-dir=$FNM_DIR && \
-    echo 'eval "$($FNM_DIR/fnm env)"' >> /etc/profile.d/fnm.sh
+    echo 'eval "$($FNM_DIR/fnm env)"' >> /etc/profile.d/fnm.sh && \
+    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
@@ -78,7 +80,8 @@ RUN set -ex && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
     echo '#!/bin/sh' > /etc/profile.d/rust.sh && \
     chmod +x /etc/profile.d/rust.sh && \
-    echo "export PATH=\"$CARGO_HOME/bin:\$PATH\"" >> /etc/profile.d/rust.sh
+    echo "export PATH=\"$CARGO_HOME/bin:\$PATH\"" >> /etc/profile.d/rust.sh && \
+    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
@@ -94,6 +97,7 @@ RUN set -ex && \
     rm packages-microsoft-prod.deb && \
     apt-get update && \
     apt-get install -y --no-install-recommends msopenjdk-21 && \
+    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
