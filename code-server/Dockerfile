@@ -11,6 +11,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo
 
+# Environment variables for Tailscale
+ENV TAILSCALE_AUTHKEY="" \
+    TAILSCALE_HOSTNAME=code-server \
+    TAILSCALE_USE_SSH=false \
+    TAILSCALE_ACCEPT_DNS=true \
+    TAILSCALE_AUTO_UPDATE=false \
+    TS_BE_EXIT_NODE=false \
+    TAILSCALE_USE_WEBCLIENT=true \
+    TAILSCALE_STATE_DIR=/config/tailscale \
+    TAILSCALE_SERVE_MODE=https \
+    TAILSCALE_SERVE_PORT=8443
+
 # Copy application files and s6-overlay config to container root
 COPY root/ /
 
