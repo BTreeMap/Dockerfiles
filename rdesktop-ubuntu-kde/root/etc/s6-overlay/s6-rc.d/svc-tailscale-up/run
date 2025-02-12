@@ -53,7 +53,7 @@ fi
 
 # Enable auto-update
 if [ -v TAILSCALE_AUTO_UPDATE ]; then
-    tailscale set --auto-update=${TAILSCALE_AUTO_UPDATE}"
+    tailscale set --auto-update=${TAILSCALE_AUTO_UPDATE}
 fi
 
 # Configure Tailscale to serve or funnel traffic
