@@ -24,6 +24,9 @@ RUN set -ex && \
         build-essential \
         curl \
         lsb-release \
+        python-is-python3 \
+        python3 \
+        python3-pip \
         unzip \
         wget && \
     \
