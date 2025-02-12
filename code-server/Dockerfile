@@ -24,6 +24,7 @@ RUN set -ex && \
         bind9-dnsutils \
         build-essential \
         curl \
+        git \
         iputils-ping \
         lsb-release \
         mtr \
