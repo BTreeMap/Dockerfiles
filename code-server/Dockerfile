@@ -27,15 +27,19 @@ RUN set -ex && \
         unzip \
         wget && \
     \
-    # Install Fast Node Manager (fnm) and Node.js version 22
+    # Install Fast Node Manager (fnm) and Node.js
     curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir $FNM_DIR && \
-    echo "PATH=\"$FNM_DIR:\$PATH\"" >> /etc/environment && \
+    echo '#!/bin/sh' > /etc/profile.d/fnm.sh && \
+    chmod +x /etc/profile.d/fnm.sh && \
+    echo "export PATH=\"$FNM_DIR:\$PATH\"" >> /etc/profile.d/fnm.sh && \
     $FNM_DIR/fnm install --lts --fnm-dir=$FNM_DIR && \
-    $FNM_DIR/fnm env | sed 's/^export //' >> /etc/environment && \
+    $FNM_DIR/fnm env >> /etc/profile.d/fnm.sh && \
     \
     # Install Rust using rustup
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    echo "PATH=\"$CARGO_HOME/bin:\$PATH\"" >> /etc/environment && \
+    echo '#!/bin/sh' > /etc/profile.d/rust.sh && \
+    chmod +x /etc/profile.d/rust.sh && \
+    echo "export PATH=\"$CARGO_HOME/bin:\$PATH\"" >> /etc/profile.d/rust.sh && \
     \
     # Install Microsoft's OpenJDK 21
     wget https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
