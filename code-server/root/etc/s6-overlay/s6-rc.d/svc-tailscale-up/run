@@ -30,7 +30,7 @@ fi
 if [ -v TAILSCALE_ACCEPT_DNS ]; then
     FLAGS="${FLAGS} --accept-dns=${TAILSCALE_ACCEPT_DNS}"
     if [ "${TAILSCALE_ACCEPT_DNS}" = "true" ]; then
-        sed -i 's/^nameserver .*/nameserver 100.100.100.100/' /etc/resolv.conf
+        python3 /opt/code-server-scripts/modify_resolv_conf.py --nameserver 100.100.100.100
     fi
 fi
 
