@@ -21,9 +21,12 @@ RUN set -ex && \
     # Install necessary packages
     apt-get install -y --no-install-recommends \
         apt-transport-https \
+        bind9-dnsutils \
         build-essential \
         curl \
+        iputils-ping \
         lsb-release \
+        mtr \
         python-is-python3 \
         python3 \
         python3-pip \
