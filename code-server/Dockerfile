@@ -36,7 +36,7 @@ RUN set -ex && \
     chmod +x /etc/profile.d/fnm.sh && \
     echo "export PATH=\"$FNM_DIR:\$PATH\"" >> /etc/profile.d/fnm.sh && \
     $FNM_DIR/fnm install --lts --fnm-dir=$FNM_DIR && \
-    $FNM_DIR/fnm env >> /etc/profile.d/fnm.sh && \
+    echo 'eval "$($FNM_DIR/fnm env)"' >> /etc/profile.d/fnm.sh && \
     \
     # Install Rust using rustup
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
