@@ -11,6 +11,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo
 
+# Copy application files and s6-overlay config to container root
+COPY root/ /
+
 # Combine all RUN commands into one to minimize layers
 RUN set -ex && \
     \
@@ -54,6 +57,9 @@ RUN set -ex && \
     rm packages-microsoft-prod.deb && \
     apt-get update && \
     apt-get install -y --no-install-recommends msopenjdk-21 && \
+    \
+    # Install Tailscale
+    curl -fsSL https://tailscale.com/install.sh | sh && \
     \
     # Clean up APT when done
     apt-get clean && \
