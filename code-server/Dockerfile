@@ -12,7 +12,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/opt/cargo
 
 # Environment variables for Tailscale
-ENV TAILSCALE_AUTHKEY="" \
+ENV TAILSCALE_ENABLED=true \
+    TAILSCALE_AUTHKEY="" \
     TAILSCALE_HOSTNAME=code-server \
     TAILSCALE_USE_SSH=false \
     TAILSCALE_ACCEPT_DNS=true \

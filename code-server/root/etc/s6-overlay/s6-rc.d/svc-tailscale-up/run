@@ -1,5 +1,11 @@
 #!/usr/bin/with-contenv bash
 
+# Check if Tailscale is enabled
+if [ "${TAILSCALE_ENABLED}" = "false" ]; then
+    echo "Tailscale is disabled. Exiting."
+    exit 0
+fi
+
 FLAGS=""
 
 # Set the Tailscale authentication key if provided
