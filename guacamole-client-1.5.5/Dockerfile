@@ -62,7 +62,7 @@ RUN mkdir -p "$BUILD_DIR" && cp -a . "$BUILD_DIR"
 RUN /opt/guacamole/bin/build-guacamole.sh "$BUILD_DIR" /opt/guacamole
 
 # For the runtime image, we start with the official Tomcat distribution
-FROM --platform=$TARGETPLATFORM tomcat:${TOMCAT_VERSION}-${TOMCAT_JRE}
+FROM tomcat:${TOMCAT_VERSION}-${TOMCAT_JRE}
 
 # Install XMLStarlet for server.xml alterations and unzip for LOGBACK_LEVEL case
 RUN apt-get update -qq \

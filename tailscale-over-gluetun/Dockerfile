@@ -1,5 +1,5 @@
 # Use the latest version of the gluetun image, targeting the ARM64 architecture.
-FROM --platform=$TARGETPLATFORM qmcgaw/gluetun:v3
+FROM qmcgaw/gluetun:v3
 
 # Copy the custom entrypoint script into the container.
 COPY entrypoint.sh /entrypoint.sh

@@ -1,5 +1,5 @@
 # Use the ARM64 version of the rdesktop image based on Ubuntu with KDE
-FROM --platform=$TARGETPLATFORM lscr.io/linuxserver/rdesktop:ubuntu-kde
+FROM lscr.io/linuxserver/rdesktop:ubuntu-kde
 
 # Set environment variables for temporary directory and Microsoft packages
 ENV DOCKER_TMP_DIR="/tmp/.docker" 
