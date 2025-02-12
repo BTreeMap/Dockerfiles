@@ -1,5 +1,11 @@
 #!/usr/bin/with-contenv bash
 
+# Check if Tailscale is enabled
+if [ "${TAILSCALE_ENABLED}" = "false" ]; then
+    echo "Tailscale is disabled. Exiting."
+    exit 0
+fi
+
 FLAGS=""
 
 # Set the Tailscale authentication key if provided
@@ -25,11 +31,6 @@ if [ -v TAILSCALE_ACCEPT_DNS ]; then
     FLAGS="${FLAGS} --accept-dns=${TAILSCALE_ACCEPT_DNS}"
 fi
 
-# Enable auto-update
-if [ -v TAILSCALE_AUTO_UPDATE ]; then
-    FLAGS="${FLAGS} --auto-update=${TAILSCALE_AUTO_UPDATE}"
-fi
-
 # Configure Tailscale to act as an exit node if requested
 # Note: This requires approval in the Tailscale admin console
 if [ -v TAILSCALE_BE_EXIT_NODE ]; then
@@ -50,11 +51,16 @@ if [ -v TAILSCALE_USE_WEBCLIENT ]; then
     tailscale set --webclient=${TAILSCALE_USE_WEBCLIENT}
 fi
 
+# Enable auto-update
+if [ -v TAILSCALE_AUTO_UPDATE ]; then
+    tailscale set --auto-update=${TAILSCALE_AUTO_UPDATE}"
+fi
+
 # Configure Tailscale to serve or funnel traffic
 if [ -v TAILSCALE_SERVE_PORT ] && [ -v TAILSCALE_SERVE_MODE ]; then
     if [ -v TAILSCALE_FUNNEL ]; then
-        tailscale funnel --bg --"${TAILSCALE_SERVE_MODE}"=443 http://localhost:"${TAILSCALE_SERVE_PORT}"
+        tailscale funnel --"${TAILSCALE_SERVE_MODE}"=443 http://localhost:"${TAILSCALE_SERVE_PORT}" &
     else
-        tailscale serve --bg --"${TAILSCALE_SERVE_MODE}"=443 http://localhost:"${TAILSCALE_SERVE_PORT}"
+        tailscale serve --"${TAILSCALE_SERVE_MODE}"=443 http://localhost:"${TAILSCALE_SERVE_PORT}" &
     fi
 fi
