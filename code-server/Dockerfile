@@ -47,6 +47,10 @@ RUN set -ex && \
         python-is-python3 \
         python3 \
         python3-pip \
+        python3-poetry \
+        python3-requests \
+        python3-setuptools \
+        python3-wheel \
         unzip \
         wget && \
     \
