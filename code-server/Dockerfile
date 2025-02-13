@@ -44,20 +44,21 @@ RUN set -ex && \
         iputils-ping \
         lsb-release \
         mtr \
+        pipx \
         python-is-python3 \
-        python3 \
+        python3-full \
         python3-pip \
-        python3-poetry \
-        python3-requests \
-        python3-setuptools \
-        python3-wheel \
         unzip \
         wget && \
-    \
-    pip install --no-cache-dir --break-system-packages \
+    pipx ensurepath --global && \
+    pipx install --global \
         black \
         isort \
-        numpy && \
+        numpy \
+        poetry \
+        requests \
+        setuptools \
+        wheel && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
