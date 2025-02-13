@@ -53,16 +53,16 @@ RUN set -ex && \
         python-is-python3 \
         python3-full \
         python3-pip \
+        python3-requests \
+        python3-setuptools \
+        python3-venv \
         unzip \
         wget && \
     pipx ensurepath && \
     pipx install \
         black \
         isort \
-        numpy \
         poetry \
-        requests \
-        setuptools \
         wheel && \
     \
     # Remove temporary and unnecessary files
