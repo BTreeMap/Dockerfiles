@@ -24,6 +24,11 @@ ENV TAILSCALE_ENABLED=true \
     TAILSCALE_SERVE_MODE=https \
     TAILSCALE_SERVE_PORT=8443
 
+# Environment variables for pipx
+ARG PIPX_HOME=/opt/pipx \
+    PIPX_BIN_DIR=/usr/local/bin \
+    PIPX_MAN_DIR=/usr/local/share/man
+
 # Copy application files and s6-overlay config to container root
 COPY root/ /
 
@@ -50,8 +55,8 @@ RUN set -ex && \
         python3-pip \
         unzip \
         wget && \
-    pipx ensurepath --global && \
-    pipx install --global \
+    pipx ensurepath && \
+    pipx install \
         black \
         isort \
         numpy \
