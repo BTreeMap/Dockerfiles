@@ -54,6 +54,11 @@ RUN set -ex && \
         unzip \
         wget && \
     \
+    pip install --no-cache-dir --break-system-packages \
+        black \
+        isort \
+        numpy && \
+    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
