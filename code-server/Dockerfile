@@ -63,14 +63,18 @@ RUN set -ex && \
     /opt/shared-venv/bin/pip install --no-cache-dir \
         aiodns \
         aiohttp \
+        black \
         cryptography \
         Django \
         Flask \
+        httpx \
+        isort \
         numpy \
         openai \
         pandas \
         pydantic \
         python-dotenv \
+        PyYAML \
         requests \
         websockets && \
     \
