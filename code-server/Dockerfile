@@ -51,15 +51,31 @@ RUN set -ex && \
         mtr \
         pipx \
         python-is-python3 \
-        python3-full \
+        python3 \
         python3-pip \
-        python3-requests \
         python3-setuptools \
         python3-venv \
         unzip \
         wget && \
-    pipx ensurepath && \
-    pipx install \
+    \
+    # Install some packages using pip
+    python3 -m venv /opt/shared-venv && \
+    /opt/shared-venv/bin/pip install --no-cache-dir \
+        aiodns \
+        aiohttp \
+        cryptography \
+        Django \
+        Flask \
+        numpy \
+        openai \
+        pandas \
+        pydantic \
+        python-dotenv \
+        requests \
+        websockets && \
+    \
+    # Install some packages using pipx
+    pipx install --pip-args='--no-cache-dir' \
         black \
         isort \
         poetry \
