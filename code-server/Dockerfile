@@ -51,7 +51,7 @@ RUN set -ex && \
         mtr \
         pipx \
         python-is-python3 \
-        python3 \
+        python3-full \
         python3-pip \
         python3-setuptools \
         python3-venv \
