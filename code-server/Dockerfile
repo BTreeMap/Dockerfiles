@@ -58,39 +58,6 @@ RUN set -ex && \
         unzip \
         wget && \
     \
-    # Install some packages using pip
-    python3 -m venv /opt/shared-venv && \
-    /opt/shared-venv/bin/pip install --no-cache-dir \
-        aiodns \
-        aiohttp \
-        beautifulsoup4 \
-        black \
-        cryptography \
-        Django \
-        Flask \
-        httpx \
-        isort \
-        matplotlib \
-        numpy \
-        openai \
-        pandas \
-        pydantic \
-        python-dotenv \
-        PyYAML \
-        requests \
-        scikit-learn \
-        scipy \
-        sympy \
-        ujson \
-        websockets && \
-    \
-    # Install some packages using pipx
-    pipx install --pip-args='--no-cache-dir' \
-        black \
-        isort \
-        poetry \
-        wheel && \
-    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
@@ -150,6 +117,48 @@ RUN set -ex && \
     \
     # Install Tailscale
     curl -fsSL https://tailscale.com/install.sh | sh && \
+    \
+    # Remove temporary and unnecessary files
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* \
+        /config/* \
+        /tmp/* \
+        /var/tmp/*
+
+RUN set -ex && \
+    \
+    # Install some Python packages using pip
+    python3 -m venv /opt/shared-venv && \
+    /opt/shared-venv/bin/pip install --no-cache-dir \
+        aiodns \
+        aiohttp \
+        beautifulsoup4 \
+        black \
+        cryptography \
+        Django \
+        Flask \
+        httpx \
+        isort \
+        matplotlib \
+        numpy \
+        openai \
+        pandas \
+        pydantic \
+        python-dotenv \
+        PyYAML \
+        requests \
+        scikit-learn \
+        scipy \
+        sympy \
+        ujson \
+        websockets && \
+    \
+    # Install some Python applications using pipx
+    pipx install --pip-args='--no-cache-dir' \
+        black \
+        isort \
+        poetry \
+        wheel && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
