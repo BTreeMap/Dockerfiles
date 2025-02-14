@@ -128,7 +128,7 @@ RUN set -ex && \
 RUN set -ex && \
     \
     # Install some Python packages using pip
-    python3 -m venv /opt/shared-venv && \
+    python3 -m venv /opt/shared-venv --upgrade-deps && \
     /opt/shared-venv/bin/pip install --no-cache-dir \
         aiodns \
         aiohttp \
