@@ -63,12 +63,14 @@ RUN set -ex && \
     /opt/shared-venv/bin/pip install --no-cache-dir \
         aiodns \
         aiohttp \
+        beautifulsoup4 \
         black \
         cryptography \
         Django \
         Flask \
         httpx \
         isort \
+        matplotlib \
         numpy \
         openai \
         pandas \
@@ -76,6 +78,10 @@ RUN set -ex && \
         python-dotenv \
         PyYAML \
         requests \
+        scikit-learn \
+        scipy \
+        sympy \
+        ujson \
         websockets && \
     \
     # Install some packages using pipx
