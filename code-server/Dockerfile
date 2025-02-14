@@ -143,6 +143,7 @@ RUN set -ex && \
         numpy \
         openai \
         pandas \
+        pillow \
         pydantic \
         python-dotenv \
         PyYAML \
