@@ -134,6 +134,7 @@ RUN set -ex && \
         aiohttp \
         beautifulsoup4 \
         black \
+        click \
         cryptography \
         Django \
         Flask \
@@ -162,10 +163,10 @@ RUN set -ex && \
     # Install some Python applications using pipx
     pipx install --pip-args='--no-cache-dir' \
         black \
+        httpie \
         isort \
         poetry \
-        wheel \
-        yt-dlp && \
+        wheel && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
