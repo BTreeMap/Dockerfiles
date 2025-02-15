@@ -144,7 +144,11 @@ RUN set -ex && \
         openai \
         pandas \
         pillow \
+        psycopg[binary] \
         pydantic \
+        pymongo \
+        pytest \
+        python-dateutil \
         python-dotenv \
         PyYAML \
         requests \
