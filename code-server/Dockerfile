@@ -148,6 +148,7 @@ RUN set -ex && \
         python-dotenv \
         PyYAML \
         requests \
+        scapy \
         scikit-learn \
         scipy \
         sympy \
@@ -159,7 +160,8 @@ RUN set -ex && \
         black \
         isort \
         poetry \
-        wheel && \
+        wheel \
+        yt-dlp && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
