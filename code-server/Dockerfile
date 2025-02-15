@@ -138,7 +138,7 @@ RUN set -ex && \
         cryptography \
         Django \
         Flask \
-        httpx \
+        httpx[brotli,http2,socks,zstd] \
         isort \
         matplotlib \
         numpy \
@@ -153,7 +153,7 @@ RUN set -ex && \
         python-dotenv \
         python-telegram-bot \
         PyYAML \
-        requests \
+        requests[socks] \
         scapy \
         scikit-learn \
         scipy \
