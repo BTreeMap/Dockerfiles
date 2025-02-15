@@ -151,6 +151,7 @@ RUN set -ex && \
         pytest \
         python-dateutil \
         python-dotenv \
+        python-telegram-bot \
         PyYAML \
         requests \
         scapy \
