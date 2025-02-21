@@ -41,6 +41,7 @@ RUN set -ex && \
     \
     # Install necessary packages
     apt-get install -y --no-install-recommends \
+        7zip \
         apt-transport-https \
         bind9-dnsutils \
         build-essential \
