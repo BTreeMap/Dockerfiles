@@ -141,6 +141,7 @@ RUN set -ex && \
         Flask \
         httpx[brotli,http2,socks,zstd] \
         isort \
+        jupyter \
         matplotlib \
         numpy \
         openai \
