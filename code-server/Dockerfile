@@ -51,6 +51,7 @@ RUN set -ex && \
         lsb-release \
         mtr \
         pipx \
+        proot \
         python-is-python3 \
         python3-full \
         python3-pip \
