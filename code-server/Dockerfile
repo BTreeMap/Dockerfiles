@@ -46,6 +46,10 @@ RUN LDFLAGS="${LDFLAGS} -static" make -C src proot GIT=false && \
     mkdir -p dist && \
     cp src/proot dist/
 
+# =============================================================================
+# Main image - Using LinuxServer's code-server as the base image
+# code-server provides VS Code in the browser with a full development environment
+# =============================================================================
 FROM lscr.io/linuxserver/code-server:latest
 
 # Set environment variables
