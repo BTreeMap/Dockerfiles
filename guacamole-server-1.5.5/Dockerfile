@@ -11,6 +11,7 @@ FROM alpine:${ALPINE_BASE_IMAGE} AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
+ENV GUACAMOLE_REPOSITORY=https://github.com/BTreeMap/guacamole-server-2025-02-26-archive.git
 
 # Install build dependencies
 RUN apk add --no-cache                \
@@ -39,7 +40,7 @@ RUN apk add --no-cache                \
 
 # Clone the repository and checkout the specified tag
 WORKDIR $GUACAMOLE_SOURCE_DIR
-RUN git clone --depth 1 --branch $GUACAMOLE_VERSION https://github.com/apache/guacamole-server.git
+RUN git clone --depth 1 --branch $GUACAMOLE_VERSION $GUACAMOLE_REPOSITORY
 WORKDIR $GUACAMOLE_SOURCE_DIR/guacamole-server
 
 # Copy source to container for sake of build

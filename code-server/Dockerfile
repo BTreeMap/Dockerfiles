@@ -6,6 +6,7 @@ FROM gcc:7.4.0 AS proot_builder
 
 # Specify the proot version to ensure reproducible builds
 ARG PROOT_VERSION=v5.4.0
+ARG PROOT_REPOSITORY=https://github.com/BTreeMap/proot-2025-02-26-archive.git
 
 # Install required build dependencies:
 # - git: For source code retrieval
@@ -31,7 +32,7 @@ RUN apt-get update -qq && \
 
 # Clone the specific version of proot from GitHub
 # Using --depth 1 to minimize download size (shallow clone)
-RUN git clone --depth 1 --branch $PROOT_VERSION https://github.com/proot-me/proot /proot
+RUN git clone --depth 1 --branch $PROOT_VERSION $PROOT_REPOSITORY /proot
 
 # Set the working directory for build operations
 WORKDIR /proot

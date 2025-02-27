@@ -13,6 +13,7 @@ FROM --platform=$BUILDPLATFORM maven:3-eclipse-temurin-11-focal AS builder
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
+ENV GUACAMOLE_REPOSITORY=https://github.com/BTreeMap/guacamole-client-2025-02-26-archive.git
 
 RUN apt-get update              \
     && apt-get upgrade -y       \
@@ -20,7 +21,7 @@ RUN apt-get update              \
 
 # Clone the repository and checkout the specified tag
 WORKDIR $GUACAMOLE_SOURCE_DIR
-RUN git clone --depth 1 --branch $GUACAMOLE_VERSION https://github.com/apache/guacamole-client.git
+RUN git clone --depth 1 --branch $GUACAMOLE_VERSION $GUACAMOLE_REPOSITORY
 WORKDIR $GUACAMOLE_SOURCE_DIR/guacamole-client
 
 # Use Mozilla's Firefox PPA (newer Ubuntu lacks a "firefox-esr" package and
