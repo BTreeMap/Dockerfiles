@@ -36,9 +36,6 @@ RUN git clone --depth 1 --branch $PROOT_VERSION https://github.com/proot-me/proo
 # Set the working directory for build operations
 WORKDIR /proot
 
-# Compile proot with the 'care' utility (creates portable archives of programs)
-RUN make -C src proot care
-
 # Compile a static version of proot for maximum portability
 # Static linking ensures the binary can run without external dependencies
 # The resulting binary will be copied to the final image
