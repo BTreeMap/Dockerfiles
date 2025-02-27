@@ -40,7 +40,7 @@ RUN apk add --no-cache                \
 
 # Clone the repository and checkout the specified tag
 WORKDIR $GUACAMOLE_SOURCE_DIR
-RUN git clone --depth 1 --branch $GUACAMOLE_VERSION $GUACAMOLE_REPOSITORY
+RUN git clone --depth 1 --branch $GUACAMOLE_VERSION $GUACAMOLE_REPOSITORY $GUACAMOLE_SOURCE_DIR/guacamole-server
 WORKDIR $GUACAMOLE_SOURCE_DIR/guacamole-server
 
 # Copy source to container for sake of build
