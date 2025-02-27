@@ -14,5 +14,8 @@
         {
             "text": "Explicitly mention language-specific implementations (e.g., 'Applied Rust ownership pattern' or 'Used Python context managers') aligned with each file's tech stack."
         },
+        {
+            "text": "Add 'run-ci' on a new line at the end of the commit message body (separated by an empty line) for all changes by default. When in doubt, always include 'run-ci'. Only omit for changes that exclusively modify documentation or comments with absolutely no code, configuration, or dependency changes."
+        }
     ],
 }
