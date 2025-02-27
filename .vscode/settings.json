@@ -1,0 +1,18 @@
+{
+    "github.copilot.chat.edits.codesearch.enabled": true,
+    "github.copilot.selectedCompletionModel": "gpt-4o-copilot",
+    "github.copilot.chat.commitMessageGeneration.instructions": [
+        {
+            "text": "Structure commit messages as '<type>(<scope>): <brief description>' with type being feat/fix/docs/chore, and scope indicating 2+ parent directories (e.g., 'feat(data-parser): Add CSV validation')."
+        },
+        {
+            "text": "Explicitly list file-specific changes using concise bullet points in the message body (e.g., '- config_loader.py: Implement environment-aware parsing' or '- utils.rs: Add error propagation helpers')."
+        },
+        {
+            "text": "For multi-file modifications, group changes by functional relationship: 'Core updates: logger.cpp (Add timestamps), log_formatter.h (ISO-8601 compliance)'. Limit to 1 line per logical change set."
+        },
+        {
+            "text": "Explicitly mention language-specific implementations (e.g., 'Applied Rust ownership pattern' or 'Used Python context managers') aligned with each file's tech stack."
+        },
+    ],
+}

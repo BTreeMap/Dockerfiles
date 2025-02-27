@@ -1,3 +1,51 @@
+# =============================================================================
+# Builder stage for proot - Used to compile the proot binary from source
+# proot allows for containerized chroot-like functionality without root privileges
+# =============================================================================
+FROM gcc:7.4.0 as proot_builder
+
+# Specify the proot version to ensure reproducible builds
+ARG PROOT_VERSION=v5.4.0
+
+# Install required build dependencies:
+# - git: For source code retrieval
+# - clang-tools: For static analysis during build
+# - libarchive-dev: For archive manipulation support
+# - libtalloc-dev: For memory allocation pooling
+# - Other tools for building, testing and documentation
+RUN apt-get update -qq && \
+    apt-get upgrade -qq && \
+    apt-get install -qq \
+    git \
+    clang-tools-6.0 \
+    curl \
+    docutils-common \
+    gdb \
+    lcov \
+    libarchive-dev \
+    libtalloc-dev \
+    strace \
+    swig \
+    uthash-dev \
+    xsltproc
+
+# Clone the specific version of proot from GitHub
+# Using --depth 1 to minimize download size (shallow clone)
+RUN git clone --depth 1 --branch $PROOT_VERSION https://github.com/proot-me/proot /proot
+
+# Set the working directory for build operations
+WORKDIR /proot
+
+# Compile proot with the 'care' utility (creates portable archives of programs)
+RUN make -C src proot care
+
+# Compile a static version of proot for maximum portability
+# Static linking ensures the binary can run without external dependencies
+# The resulting binary will be copied to the final image
+RUN LDFLAGS="${LDFLAGS} -static" make -C src proot GIT=false && \
+    mkdir -p dist && \
+    cp src/proot dist/
+
 FROM lscr.io/linuxserver/code-server:latest
 
 # Set environment variables
@@ -32,6 +80,10 @@ ARG PIPX_HOME=/opt/pipx \
 # Copy application files and s6-overlay config to container root
 COPY root/ /
 
+# Copy the proot binary from the proot_builder stage to /usr/local/bin/proot in the current stage
+# This allows us to use proot for creating a virtualized filesystem environment without full root privileges
+COPY --from=proot_builder /proot/dist/proot /usr/local/bin/proot
+
 # Combine RUN commands into logical groups to minimize layers and improve caching
 RUN set -ex && \
     \
@@ -51,7 +103,6 @@ RUN set -ex && \
         lsb-release \
         mtr \
         pipx \
-        proot \
         python-is-python3 \
         python3-full \
         python3-pip \
