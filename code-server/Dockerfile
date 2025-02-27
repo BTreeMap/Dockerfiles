@@ -2,7 +2,7 @@
 # Builder stage for proot - Used to compile the proot binary from source
 # proot allows for containerized chroot-like functionality without root privileges
 # =============================================================================
-FROM gcc:7.4.0 as proot_builder
+FROM gcc:7.4.0 AS proot_builder
 
 # Specify the proot version to ensure reproducible builds
 ARG PROOT_VERSION=v5.4.0
