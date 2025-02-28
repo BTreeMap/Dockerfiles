@@ -12,24 +12,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=America/Toronto \
     DEFAULT_WORKSPACE=/config/workspace
 
-# Environment variables for Tailscale
-ENV TAILSCALE_ENABLED=true \
-    TAILSCALE_AUTHKEY="" \
-    TAILSCALE_HOSTNAME=code-server \
-    TAILSCALE_USE_SSH=false \
-    TAILSCALE_ACCEPT_DNS=true \
-    TAILSCALE_AUTO_UPDATE=false \
-    TS_BE_EXIT_NODE=false \
-    TAILSCALE_USE_WEBCLIENT=true \
-    TAILSCALE_STATE_DIR=/config/tailscale \
-    TAILSCALE_SERVE_MODE=https \
-    TAILSCALE_SERVE_PORT=8443
-
-# Environment variables for pipx
-ARG PIPX_HOME=/opt/pipx \
-    PIPX_BIN_DIR=/usr/local/bin \
-    PIPX_MAN_DIR=/usr/local/share/man
-
 # Combine RUN commands into logical groups to minimize layers and improve caching
 RUN set -ex && \
     \
@@ -140,6 +122,24 @@ ENV FNM_DIR=/opt/fnm \
     RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
     PATH=/opt/racket/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
+
+# Environment variables for Tailscale
+ENV TAILSCALE_ENABLED=true \
+    TAILSCALE_AUTHKEY="" \
+    TAILSCALE_HOSTNAME=code-server \
+    TAILSCALE_USE_SSH=false \
+    TAILSCALE_ACCEPT_DNS=true \
+    TAILSCALE_AUTO_UPDATE=false \
+    TS_BE_EXIT_NODE=false \
+    TAILSCALE_USE_WEBCLIENT=true \
+    TAILSCALE_STATE_DIR=/config/tailscale \
+    TAILSCALE_SERVE_MODE=https \
+    TAILSCALE_SERVE_PORT=8443
+
+# Environment variables for pipx
+ARG PIPX_HOME=/opt/pipx \
+    PIPX_BIN_DIR=/usr/local/bin \
+    PIPX_MAN_DIR=/usr/local/share/man
 
 ## Copy application files and s6-overlay config to container root
 COPY root/ /
