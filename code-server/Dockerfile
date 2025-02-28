@@ -97,15 +97,22 @@ RUN LDFLAGS="${LDFLAGS} -static" make -C src proot GIT=false && \
 # Racket is a general-purpose, multi-paradigm programming language in the Lisp/Scheme family
 # This stage builds Racket which will be copied into the final image
 # =============================================================================
-FROM base as racket_builder
+FROM base AS racket_builder
 
-ENV $BUILD_DIR=/build
+ENV BUILD_DIR=/build
+
+ARG RACKET_VERSION=8.15
+ARG RACKET_PACKAGE=racket-8.15-src-builtpkgs.tgz
+ARG RACKET_URL=https://download.racket-lang.org/releases/$RACKET_VERSION/installers/$RACKET_PACKAGE
+ARG RACKET_CHECKSUM=sha256:02086d3eaf52c8e1816663265a8085350343daa646353a967fea8f35ba827896
+
+ADD --checksum=$RACKET_CHECKSUM $RACKET_URL $BUILD_DIR/$RACKET_PACKAGE
+
+# Set the working directory for build operations
 WORKDIR $BUILD_DIR
 
-ADD --checksum=sha256:02086d3eaf52c8e1816663265a8085350343daa646353a967fea8f35ba827896 https://download.racket-lang.org/releases/8.15/installers/racket-8.15-src-builtpkgs.tgz $BUILD_DIR/racket-8.15-src-builtpkgs.tgz
-
-RUN tar xfz racket-8.15-src-builtpkgs.tgz && \
-    cd racket-8.15 && \
+RUN tar xfz $RACKET_PACKAGE && \
+    cd racket-$RACKET_VERSION && \
     ./configure --prefix=/opt/racket && \
     make -j$(nproc) && \
     make install
