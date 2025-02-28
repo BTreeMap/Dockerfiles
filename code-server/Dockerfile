@@ -1,4 +1,70 @@
 # =============================================================================
+# Base stage - Using LinuxServer's code-server as the foundation
+# code-server provides VS Code functionality in the browser
+# This stage sets up the core environment for our development container
+# =============================================================================
+FROM lscr.io/linuxserver/code-server:latest AS base
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    PUID=1000 \
+    PGID=1000 \
+    TZ=America/Toronto \
+    DEFAULT_WORKSPACE=/config/workspace
+
+# Environment variables for Tailscale
+ENV TAILSCALE_ENABLED=true \
+    TAILSCALE_AUTHKEY="" \
+    TAILSCALE_HOSTNAME=code-server \
+    TAILSCALE_USE_SSH=false \
+    TAILSCALE_ACCEPT_DNS=true \
+    TAILSCALE_AUTO_UPDATE=false \
+    TS_BE_EXIT_NODE=false \
+    TAILSCALE_USE_WEBCLIENT=true \
+    TAILSCALE_STATE_DIR=/config/tailscale \
+    TAILSCALE_SERVE_MODE=https \
+    TAILSCALE_SERVE_PORT=8443
+
+# Environment variables for pipx
+ARG PIPX_HOME=/opt/pipx \
+    PIPX_BIN_DIR=/usr/local/bin \
+    PIPX_MAN_DIR=/usr/local/share/man
+
+# Combine RUN commands into logical groups to minimize layers and improve caching
+RUN set -ex && \
+    \
+    # Update and upgrade package lists
+    apt-get update && \
+    apt-get upgrade -y && \
+    \
+    # Install necessary packages
+    apt-get install -y --no-install-recommends \
+        7zip \
+        apt-transport-https \
+        bind9-dnsutils \
+        build-essential \
+        curl \
+        git \
+        iputils-ping \
+        lsb-release \
+        mtr \
+        pipx \
+        python-is-python3 \
+        python3-full \
+        python3-pip \
+        python3-setuptools \
+        python3-venv \
+        unzip \
+        wget && \
+    \
+    # Remove temporary and unnecessary files
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* \
+        /config/* \
+        /tmp/* \
+        /var/tmp/*
+
+# =============================================================================
 # Builder stage for proot - Used to compile the proot binary from source
 # proot allows for containerized chroot-like functionality without root privileges
 # =============================================================================
@@ -45,80 +111,46 @@ RUN LDFLAGS="${LDFLAGS} -static" make -C src proot GIT=false && \
     cp src/proot dist/
 
 # =============================================================================
+# Builder stage for Racket - Used to compile Racket programming language from source
+# Racket is a general-purpose, multi-paradigm programming language in the Lisp/Scheme family
+# This stage builds Racket which will be copied into the final image
+# =============================================================================
+FROM base as racket_builder
+
+ENV $BUILD_DIR=/build
+WORKDIR $BUILD_DIR
+
+ADD --checksum=sha256:02086d3eaf52c8e1816663265a8085350343daa646353a967fea8f35ba827896 https://download.racket-lang.org/releases/8.15/installers/racket-8.15-src-builtpkgs.tgz $BUILD_DIR/racket-8.15-src-builtpkgs.tgz
+
+RUN tar xfz racket-8.15-src-builtpkgs.tgz && \
+    cd racket-8.15 && \
+    ./configure --prefix=/opt/racket && \
+    make -j$(nproc) && \
+    make install
+
+# =============================================================================
 # Main image - Using LinuxServer's code-server as the base image
 # code-server provides VS Code in the browser with a full development environment
 # =============================================================================
-FROM lscr.io/linuxserver/code-server:latest
+FROM base
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive \
-    PUID=1000 \
-    PGID=1000 \
-    TZ=America/Toronto \
-    DEFAULT_WORKSPACE=/config/workspace \
-    FNM_DIR=/opt/fnm \
+# Set environment variables for the final image
+ENV FNM_DIR=/opt/fnm \
     FNM_MULTISHELL_PATH=/opt/fnm/multishells \
     RUSTUP_HOME=/opt/rustup \
-    CARGO_HOME=/opt/cargo
+    CARGO_HOME=/opt/cargo \
+    PATH=/opt/racket/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
 
-# Environment variables for Tailscale
-ENV TAILSCALE_ENABLED=true \
-    TAILSCALE_AUTHKEY="" \
-    TAILSCALE_HOSTNAME=code-server \
-    TAILSCALE_USE_SSH=false \
-    TAILSCALE_ACCEPT_DNS=true \
-    TAILSCALE_AUTO_UPDATE=false \
-    TS_BE_EXIT_NODE=false \
-    TAILSCALE_USE_WEBCLIENT=true \
-    TAILSCALE_STATE_DIR=/config/tailscale \
-    TAILSCALE_SERVE_MODE=https \
-    TAILSCALE_SERVE_PORT=8443
-
-# Environment variables for pipx
-ARG PIPX_HOME=/opt/pipx \
-    PIPX_BIN_DIR=/usr/local/bin \
-    PIPX_MAN_DIR=/usr/local/share/man
-
-# Copy application files and s6-overlay config to container root
+## Copy application files and s6-overlay config to container root
 COPY root/ /
 
 # Copy the proot binary from the proot_builder stage to /usr/local/bin/proot in the current stage
 # This allows us to use proot for creating a virtualized filesystem environment without full root privileges
 COPY --from=proot_builder /proot/dist/proot /usr/local/bin/proot
 
-# Combine RUN commands into logical groups to minimize layers and improve caching
-RUN set -ex && \
-    \
-    # Update and upgrade package lists
-    apt-get update && \
-    apt-get upgrade -y && \
-    \
-    # Install necessary packages
-    apt-get install -y --no-install-recommends \
-        7zip \
-        apt-transport-https \
-        bind9-dnsutils \
-        build-essential \
-        curl \
-        git \
-        iputils-ping \
-        lsb-release \
-        mtr \
-        pipx \
-        python-is-python3 \
-        python3-full \
-        python3-pip \
-        python3-setuptools \
-        python3-venv \
-        unzip \
-        wget && \
-    \
-    # Remove temporary and unnecessary files
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* \
-        /config/* \
-        /tmp/* \
-        /var/tmp/*
+# Copy the Racket installation from the racket_builder stage to /opt/racket in the current stage
+# This allows us to use Racket for development and execution of Racket programs
+COPY --from=racket_builder /opt/racket /opt/racket
 
 RUN set -ex && \
     \
@@ -126,7 +158,6 @@ RUN set -ex && \
     curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir $FNM_DIR && \
     echo '#!/bin/sh' > /etc/profile.d/fnm.sh && \
     chmod +x /etc/profile.d/fnm.sh && \
-    echo "export PATH=\"$FNM_DIR:\$PATH\"" >> /etc/profile.d/fnm.sh && \
     $FNM_DIR/fnm install --lts --fnm-dir=$FNM_DIR && \
     echo 'eval "$($FNM_DIR/fnm env)"' >> /etc/profile.d/fnm.sh && \
     \
@@ -141,10 +172,6 @@ RUN set -ex && \
     \
     # Install Rust using rustup
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
-    echo '#!/bin/sh' > /etc/profile.d/rust.sh && \
-    chmod +x /etc/profile.d/rust.sh && \
-    echo "export PATH=\"$CARGO_HOME/bin:\$PATH\"" >> /etc/profile.d/rust.sh && \
-    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
