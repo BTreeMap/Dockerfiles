@@ -112,7 +112,7 @@ ADD --checksum=$RACKET_CHECKSUM $RACKET_URL $BUILD_DIR/$RACKET_PACKAGE
 WORKDIR $BUILD_DIR
 
 RUN tar xfz $RACKET_PACKAGE && \
-    cd racket-$RACKET_VERSION && \
+    cd racket-$RACKET_VERSION/src && \
     ./configure --prefix=/opt/racket && \
     make -j$(nproc) && \
     make install
