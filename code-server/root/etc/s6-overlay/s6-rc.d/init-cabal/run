@@ -1,11 +1,11 @@
-#!/bin/sh
+#!/usr/bin/with-contenv bash
 
 # Create CABAL_DIR if it doesn't exist and set permissions to 777
 if [ ! -d "$CABAL_DIR" ]; then
   mkdir -p "$CABAL_DIR"
 fi
 
-chmod 777 "$CABAL_DIR"
+chmod -R 777 "$CABAL_DIR"
 
 # Update the package list if it doesn't exist
 if [ ! -d "$CABAL_DIR/packages/hackage.haskell.org" ]; then
