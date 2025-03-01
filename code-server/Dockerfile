@@ -14,6 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Set environment variables for Racket, FNM, Rust, and Cargo
 ENV RACKET_HOME=/opt/racket \
+    CABAL_DIR=/config/.haskell \
     HASKELL_HOME=/opt/haskell \
     FNM_DIR=/opt/fnm \
     RUSTUP_HOME=/opt/rustup \
@@ -170,11 +171,10 @@ RUN ./ghcup install ghc --set recommended && \
 FROM base
 
 # Set environment variables for the final image
-ENV CABAL_DIR=/config/.haskell \
-    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
+ENV PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
 
 # Environment variables for Tailscale
-ENV TAILSCALE_ENABLED=true \
+ENV TAILSCALE_ENABLED=false \
     TAILSCALE_AUTHKEY="" \
     TAILSCALE_HOSTNAME=code-server \
     TAILSCALE_USE_SSH=false \
