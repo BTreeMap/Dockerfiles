@@ -5,12 +5,18 @@
 # =============================================================================
 FROM lscr.io/linuxserver/code-server:latest AS base
 
-# Set environment variables
+# Set environment variables for the base image
 ENV DEBIAN_FRONTEND=noninteractive \
     PUID=1000 \
     PGID=1000 \
     TZ=America/Toronto \
     DEFAULT_WORKSPACE=/config/workspace
+
+# Set environment variables for Racket, FNM, Rust, and Cargo
+ENV RACKET_HOME=/opt/racket \
+    FNM_DIR=/opt/fnm \
+    RUSTUP_HOME=/opt/rustup \
+    CARGO_HOME=/opt/cargo \
 
 # Combine RUN commands into logical groups to minimize layers and improve caching
 RUN set -ex && \
@@ -113,7 +119,7 @@ WORKDIR $BUILD_DIR
 
 RUN tar xfz $RACKET_PACKAGE && \
     cd racket-$RACKET_VERSION/src && \
-    ./configure --prefix=/opt/racket && \
+    ./configure --prefix=$RACKET_HOME && \
     make -j$(nproc) && \
     make install
 
@@ -124,11 +130,7 @@ RUN tar xfz $RACKET_PACKAGE && \
 FROM base
 
 # Set environment variables for the final image
-ENV FNM_DIR=/opt/fnm \
-    FNM_MULTISHELL_PATH=/opt/fnm/multishells \
-    RUSTUP_HOME=/opt/rustup \
-    CARGO_HOME=/opt/cargo \
-    PATH=/opt/racket/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
+ENV PATH=$RACKET_HOME/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
 
 # Environment variables for Tailscale
 ENV TAILSCALE_ENABLED=true \
@@ -155,9 +157,9 @@ COPY root/ /
 # This allows us to use proot for creating a virtualized filesystem environment without full root privileges
 COPY --from=proot_builder /proot/dist/proot /usr/local/bin/proot
 
-# Copy the Racket installation from the racket_builder stage to /opt/racket in the current stage
+# Copy the Racket installation from the racket_builder stage to $RACKET_HOME in the current stage
 # This allows us to use Racket for development and execution of Racket programs
-COPY --from=racket_builder /opt/racket /opt/racket
+COPY --from=racket_builder $RACKET_HOME $RACKET_HOME
 
 RUN set -ex && \
     \
