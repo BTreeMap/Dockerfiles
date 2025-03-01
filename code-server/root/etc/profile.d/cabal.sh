@@ -1,10 +1,13 @@
 #!/bin/sh
 
-if [ "$(id -u)" = "0" ]; then
-  exit 0
+CABAL_DIR=/config/.haskell
+
+# Create CABAL_DIR if it doesn't exist and set permissions to 777
+if [ ! -d "$CABAL_DIR" ]; then
+  mkdir -p "$CABAL_DIR"
 fi
 
-CABAL_DIR=~/.haskell
+chmod 777 "$CABAL_DIR"
 
 export CABAL_DIR
 export PATH="$CABAL_DIR/bin:$PATH"
