@@ -46,7 +46,8 @@ RUN set -ex && \
         python3-setuptools \
         python3-venv \
         unzip \
-        wget && \
+        wget \
+        xvfb && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
