@@ -171,7 +171,7 @@ RUN ./ghcup install ghc --set recommended && \
 FROM base
 
 # Set environment variables for the final image
-ENV PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
+ENV PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
 
 # Environment variables for Tailscale
 ENV TAILSCALE_ENABLED=false \
@@ -204,7 +204,7 @@ COPY --from=racket_builder $RACKET_HOME $RACKET_HOME
 
 # Copy the Haskell installation from the haskell_builder stage to $HASKELL_HOME in the current stage
 # This allows us to use Haskell for development and execution of Haskell programs
-COPY --from=haskell_builder $HASKELL_HOME/.ghcup $HASKELL_HOME
+COPY --from=haskell_builder $HASKELL_HOME $HASKELL_HOME
 
 RUN set -ex && \
     \
