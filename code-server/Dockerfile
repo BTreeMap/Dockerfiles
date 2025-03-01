@@ -142,8 +142,18 @@ RUN ARCH=$(uname -m) && \
     else \
         GHCUP_URL="https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup"; \
     fi && \
-    curl -sSL "$GHCUP_URL" -o $GHCUP_HOME/ghcup && \
-    chmod +x $GHCUP_HOME/ghcup
+    curl -sSL "$GHCUP_URL" -o ghcup && \
+    chmod +x ghcup
+
+# Install GHC, Cabal, and HLS using GHCup
+RUN ./ghcup install ghc --set recommended && \
+    ./ghcup install cabal latest && \
+    ./ghcup install hls latest && \
+    rm -rf \
+        $GHCUP_INSTALL_BASE_PREFIX/.ghcup/cache \
+        $GHCUP_INSTALL_BASE_PREFIX/.ghcup/logs \
+        $GHCUP_INSTALL_BASE_PREFIX/.ghcup/tmp \
+        $GHCUP_INSTALL_BASE_PREFIX/.ghcup/trash
 
 # =============================================================================
 # Main image - Using LinuxServer's code-server as the base image
