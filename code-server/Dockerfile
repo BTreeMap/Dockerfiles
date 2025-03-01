@@ -14,6 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Set environment variables for Racket, FNM, Rust, and Cargo
 ENV RACKET_HOME=/opt/racket \
+    HASKELL_HOME=/opt/haskell \
     FNM_DIR=/opt/fnm \
     RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
@@ -131,7 +132,7 @@ FROM base AS haskell_builder
 
 # Set environment variables for Haskell installation
 ENV GHCUP_HOME=/opt/ghcup \
-    GHCUP_INSTALL_BASE_PREFIX=/haskell
+    GHCUP_INSTALL_BASE_PREFIX=$HASKELL_HOME
 
 WORKDIR $GHCUP_HOME
 
@@ -150,10 +151,10 @@ RUN ./ghcup install ghc --set recommended && \
     ./ghcup install cabal latest && \
     ./ghcup install hls latest && \
     rm -rf \
-        $GHCUP_INSTALL_BASE_PREFIX/.ghcup/cache \
-        $GHCUP_INSTALL_BASE_PREFIX/.ghcup/logs \
-        $GHCUP_INSTALL_BASE_PREFIX/.ghcup/tmp \
-        $GHCUP_INSTALL_BASE_PREFIX/.ghcup/trash
+        $HASKELL_HOME/.ghcup/cache \
+        $HASKELL_HOME/.ghcup/logs \
+        $HASKELL_HOME/.ghcup/tmp \
+        $HASKELL_HOME/.ghcup/trash
 
 # =============================================================================
 # Main image - Using LinuxServer's code-server as the base image
@@ -162,7 +163,7 @@ RUN ./ghcup install ghc --set recommended && \
 FROM base
 
 # Set environment variables for the final image
-ENV PATH=$RACKET_HOME/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
+ENV PATH=$RACKET_HOME/bin:$HASKELL_HOME/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
 
 # Environment variables for Tailscale
 ENV TAILSCALE_ENABLED=true \
@@ -192,6 +193,10 @@ COPY --from=proot_builder /proot/dist/proot /usr/local/bin/proot
 # Copy the Racket installation from the racket_builder stage to $RACKET_HOME in the current stage
 # This allows us to use Racket for development and execution of Racket programs
 COPY --from=racket_builder $RACKET_HOME $RACKET_HOME
+
+# Copy the Haskell installation from the haskell_builder stage to $HASKELL_HOME in the current stage
+# This allows us to use Haskell for development and execution of Haskell programs
+COPY --from=haskell_builder $HASKELL_HOME/.ghcup $HASKELL_HOME
 
 RUN set -ex && \
     \
