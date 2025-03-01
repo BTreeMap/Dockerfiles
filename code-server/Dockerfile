@@ -127,6 +127,24 @@ RUN tar xfz $RACKET_PACKAGE && \
     make -j$(nproc) && \
     make install
 
+FROM base AS haskell_builder
+
+# Set environment variables for Haskell installation
+ENV GHCUP_HOME=/opt/ghcup \
+    GHCUP_INSTALL_BASE_PREFIX=/haskell
+
+WORKDIR $GHCUP_HOME
+
+# Download the appropriate GHCup binary based on architecture
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        GHCUP_URL="https://downloads.haskell.org/~ghcup/aarch64-linux-ghcup"; \
+    else \
+        GHCUP_URL="https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup"; \
+    fi && \
+    curl -sSL "$GHCUP_URL" -o $GHCUP_HOME/ghcup && \
+    chmod +x $GHCUP_HOME/ghcup
+
 # =============================================================================
 # Main image - Using LinuxServer's code-server as the base image
 # code-server provides VS Code in the browser with a full development environment
