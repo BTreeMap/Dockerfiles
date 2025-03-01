@@ -7,6 +7,7 @@ fi
 
 chmod 777 "$CABAL_DIR"
 
+# Update the package list if it doesn't exist
 if [ ! -d "$CABAL_DIR/packages/hackage.haskell.org" ]; then
   cabal update
 fi
