@@ -170,7 +170,8 @@ RUN ./ghcup install ghc --set recommended && \
 FROM base
 
 # Set environment variables for the final image
-ENV PATH=$RACKET_HOME/bin:$HASKELL_HOME/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
+ENV CABAL_DIR=/config/.haskell \
+    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
 
 # Environment variables for Tailscale
 ENV TAILSCALE_ENABLED=true \
