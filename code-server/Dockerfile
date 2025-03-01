@@ -36,6 +36,7 @@ RUN set -ex && \
         curl \
         git \
         iputils-ping \
+        libgmp-dev \
         lsb-release \
         mtr \
         pipx \
