@@ -105,18 +105,22 @@ RUN LDFLAGS="${LDFLAGS} -static" make -C src proot GIT=false && \
 # =============================================================================
 FROM base AS racket_builder
 
+# Set environment variables for Racket installation
 ENV BUILD_DIR=/build
 
+# Specify the Racket version and download URL
 ARG RACKET_VERSION=8.15
 ARG RACKET_PACKAGE=racket-8.15-src-builtpkgs.tgz
 ARG RACKET_URL=https://download.racket-lang.org/releases/$RACKET_VERSION/installers/$RACKET_PACKAGE
 ARG RACKET_CHECKSUM=sha256:02086d3eaf52c8e1816663265a8085350343daa646353a967fea8f35ba827896
 
+# Download the Racket source package
 ADD --checksum=$RACKET_CHECKSUM $RACKET_URL $BUILD_DIR/$RACKET_PACKAGE
 
 # Set the working directory for build operations
 WORKDIR $BUILD_DIR
 
+# Extract, configure, build, and install Racket
 RUN tar xfz $RACKET_PACKAGE && \
     cd racket-$RACKET_VERSION/src && \
     ./configure --prefix=$RACKET_HOME && \
