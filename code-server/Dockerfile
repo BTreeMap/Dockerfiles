@@ -209,10 +209,7 @@ RUN set -ex && \
     \
     # Install Fast Node Manager (fnm) and Node.js
     curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir $FNM_DIR && \
-    echo '#!/bin/sh' > /etc/profile.d/fnm.sh && \
-    chmod +x /etc/profile.d/fnm.sh && \
     $FNM_DIR/fnm install --lts --fnm-dir=$FNM_DIR && \
-    echo 'eval "$($FNM_DIR/fnm env)"' >> /etc/profile.d/fnm.sh && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
