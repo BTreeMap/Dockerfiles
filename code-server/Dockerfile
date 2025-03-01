@@ -17,7 +17,7 @@ ENV RACKET_HOME=/opt/racket \
     HASKELL_HOME=/opt/haskell \
     FNM_DIR=/opt/fnm \
     RUSTUP_HOME=/opt/rustup \
-    CARGO_HOME=/opt/cargo \
+    CARGO_HOME=/opt/cargo
 
 # Combine RUN commands into logical groups to minimize layers and improve caching
 RUN set -ex && \
@@ -128,12 +128,19 @@ RUN tar xfz $RACKET_PACKAGE && \
     make -j$(nproc) && \
     make install
 
+# =============================================================================
+# Builder stage for Haskell - Used to install the Haskell toolchain
+# Haskell is a statically-typed, purely functional programming language
+# This stage sets up GHC (compiler), Cabal (package manager), and HLS (language server)
+# The Haskell environment will be copied into the final image
+# =============================================================================
 FROM base AS haskell_builder
 
 # Set environment variables for Haskell installation
 ENV GHCUP_HOME=/opt/ghcup \
     GHCUP_INSTALL_BASE_PREFIX=$HASKELL_HOME
 
+# Set the working directory for Haskell installation
 WORKDIR $GHCUP_HOME
 
 # Download the appropriate GHCup binary based on architecture
