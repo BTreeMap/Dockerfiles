@@ -160,9 +160,9 @@ def patch_json(
         logger = setup_logger()
 
     logger.info(
-        "Starting patch operation. source='%s', patches='%s', output='%s', force=%s",
+        "Starting patch operation. source='%s', number of patches=%d, output='%s', force=%s",
         source_file_path,
-        patch_files,
+        len(patch_files),
         output_file_path,
         force,
     )
@@ -209,7 +209,7 @@ def main():
     parser.add_argument("--source", required=True, help="Path to the source JSON file.")
     parser.add_argument(
         "--output",
-        help="Path where the output JSON file will be saved. If not set, prints to stdout.",
+        help="Path where the output JSON file will be saved. If not set, prints to stdout. If --in-place is used, this will be set to the source file.",
     )
     parser.add_argument(
         "--in-place",
@@ -245,11 +245,9 @@ def main():
 
     # Validate and map string log level to numeric value
     user_level = args.log_level.upper()
-    if user_level not in VALID_LOG_LEVELS:
+    numeric_log_level = VALID_LOG_LEVELS.get(user_level, logging.INFO)
+    if numeric_log_level == logging.INFO and user_level != "INFO":
         print(f"Invalid log level: '{user_level}'. Defaulting to 'INFO'.")
-        numeric_log_level = logging.INFO
-    else:
-        numeric_log_level = VALID_LOG_LEVELS[user_level]
 
     logger = setup_logger(numeric_log_level)
 
