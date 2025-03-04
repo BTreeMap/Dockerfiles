@@ -49,8 +49,9 @@ def remove_packages(pkg_patterns: list[str]) -> None:
 
         if packages_to_remove:
             print(
-                "Found {len(packages_to_remove)} packages to remove: \n\n - {}\n\n".format(
-                    "\n - ".join(packages_to_remove)
+                "Found {} packages to remove: \n\n - {}\n\n".format(
+                    len(packages_to_remove),
+                    "\n - ".join(packages_to_remove),
                 )
             )
             # Remove packages that actually exist
