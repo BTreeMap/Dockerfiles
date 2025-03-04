@@ -1,10 +1,10 @@
 {
-    "magicRacket.languageServer.enabled": true,
-    "magicRacket.languageServer.command": "xvfb-run",
-    "magicRacket.languageServer.arguments": [
-        "--auto-servernum",
-        "racket",
-        "--lib",
-        "racket-langserver"
-    ]
+  "magicRacket.languageServer.arguments": [
+    "--auto-servernum",
+    "racket",
+    "--lib",
+    "racket-langserver"
+  ],
+  "magicRacket.languageServer.command": "xvfb-run",
+  "magicRacket.languageServer.enabled": true
 }

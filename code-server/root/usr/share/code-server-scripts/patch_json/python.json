@@ -1,4 +1,4 @@
 {
-    "python.defaultInterpreterPath": "/opt/shared-venv/bin/python",
-    "python.languageServer": "Jedi"
+  "python.defaultInterpreterPath": "/opt/shared-venv/bin/python",
+  "python.languageServer": "Jedi"
 }

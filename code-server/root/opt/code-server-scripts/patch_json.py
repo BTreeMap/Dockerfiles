@@ -205,17 +205,7 @@ VALID_LOG_LEVELS = {
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Patch JSON files.\n\n"
-            "Single patch example:\n"
-            "  python patch_json.py --source source.json patch.json\n\n"
-            "Multiple patches example:\n"
-            "  python patch_json.py --source source.json patch1.json patch2.json\n\n"
-            "In-place example:\n"
-            "  python patch_json.py --source source.json --in-place patch.json\n"
-        )
-    )
+    parser = argparse.ArgumentParser(description="Patch JSON files.")
     parser.add_argument("--source", required=True, help="Path to the source JSON file.")
     parser.add_argument(
         "--output",
