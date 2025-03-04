@@ -70,6 +70,7 @@ def write_json(
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=sort_keys,
+                quote_keys=True,
                 trailing_commas=True,
                 allow_duplicate_keys=False,
             )
@@ -199,6 +200,7 @@ def patch_json(
             ensure_ascii=False,
             indent=2,
             sort_keys=sort_keys,
+            quote_keys=True,
             trailing_commas=True,
             allow_duplicate_keys=False,
         )
