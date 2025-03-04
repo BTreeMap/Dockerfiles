@@ -5,7 +5,7 @@ patch_and_echo() {
   shift
   local patch_files=("$@")
   echo "Patching '$source_file' with patches: ${patch_files[*]}"
-  python3 /opt/code-server-scripts/patch_json.py --source "$source_file" --force --in-place "${patch_files[@]}"
+  /opt/shared-venv/bin/python /opt/code-server-scripts/patch_json.py --source "$source_file" --force --in-place "${patch_files[@]}"
 }
 
 # Check if PATCH_JSON is set to a value representing "true"
