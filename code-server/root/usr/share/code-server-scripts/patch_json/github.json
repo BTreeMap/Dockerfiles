@@ -1,3 +1,4 @@
 {
-    "github.copilot.selectedCompletionModel": "gpt-4o-copilot"
+  "github.copilot.chat.edits.codesearch.enabled": true,
+  "github.copilot.selectedCompletionModel": "gpt-4o-copilot",
 }

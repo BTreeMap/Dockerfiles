@@ -1,5 +1,5 @@
 {
   "haskell.formattingProvider": "ormolu",
   "haskell.manageHLS": "PATH",
-  "haskell.serverExecutablePath": "haskell-language-server-wrapper"
+  "haskell.serverExecutablePath": "haskell-language-server-wrapper",
 }

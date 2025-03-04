@@ -3,8 +3,8 @@
     "--auto-servernum",
     "racket",
     "--lib",
-    "racket-langserver"
+    "racket-langserver",
   ],
   "magicRacket.languageServer.command": "xvfb-run",
-  "magicRacket.languageServer.enabled": true
+  "magicRacket.languageServer.enabled": true,
 }

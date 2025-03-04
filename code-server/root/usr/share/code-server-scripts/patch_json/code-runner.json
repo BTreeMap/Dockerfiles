@@ -1,4 +1,4 @@
 {
-    "code-runner.enableAppInsights": false,
-    "code-runner.runInTerminal": true
+  "code-runner.enableAppInsights": false,
+  "code-runner.runInTerminal": true,
 }
