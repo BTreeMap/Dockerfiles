@@ -30,32 +30,6 @@ def free_disk_space():
     print("Current disk space before cleanup:")
     subprocess.run(["df", "-h"], check=False)
 
-    # List 100 largest packages
-    print("Listing 100 largest packages...")
-    try:
-        largest_packages = subprocess.run(
-            ["dpkg-query", "-Wf", "${Installed-Size}\t${Package}\n"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-
-        # Process and sort the output
-        packages = largest_packages.strip().split("\n")
-        packages.sort(
-            key=lambda x: (
-                int(x.split()[0]) if x.strip() and x.split()[0].isdigit() else 0
-            )
-        )
-
-        # Display the 100 largest packages
-        if packages:
-            print("100 largest packages:")
-            for pkg in packages[-100:]:
-                print(pkg)
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to list largest packages: {e}")
-
     # Group apt-get removal commands together with packages sorted alphabetically
     print("Removing unnecessary packages...")
     subprocess.run(
@@ -64,14 +38,13 @@ def free_disk_space():
             "apt-get",
             "remove",
             "-y",
-            "^dotnet-.*",
-            "^ghc-9.*",
-            "^llvm-.*",
+            "^dotnet-*",
+            "^golang-*",
+            "^llvm-*",
+            "^temurin-*-jdk",
             "azure-cli",
             "firefox",
-            "google-chrome-stable",
-            "google-cloud-sdk",
-            "powershell",
+            "snapd",
         ],
         check=False,
     )
