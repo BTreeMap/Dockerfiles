@@ -21,8 +21,6 @@ class BuildResult:
 
 
 def remove_packages(pkg_patterns: list[str]) -> None:
-    global logger
-
     """
     Removes packages matching the given patterns using dpkg and apt.
 
@@ -71,8 +69,6 @@ def remove_packages(pkg_patterns: list[str]) -> None:
 
 
 def free_disk_space():
-    global logger
-
     """
     Removes unnecessary packages and directories to free up disk space for Docker builds.
 
@@ -173,8 +169,6 @@ def collect_system_metrics():
 
 
 def log_system_metrics(metrics: dict | None = None):
-    global logger
-
     """Logs system metrics using the global logger with error handling.
 
     Args:
@@ -217,8 +211,6 @@ def log_system_metrics(metrics: dict | None = None):
 
 
 def build_and_push_image(build_args) -> BuildResult:
-    global logger
-
     """Builds and pushes a Docker image with retry logic and metrics collection."""
     (
         dockerfile_path,
