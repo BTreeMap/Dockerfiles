@@ -198,7 +198,15 @@ VALID_LOG_LEVELS = {
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Patch JSON files.")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Patch JSON files.\n\n"
+            "Single patch example:\n"
+            "  python patch_json.py original.json output.json --patches patch.json\n\n"
+            "Multiple patches example:\n"
+            "  python patch_json.py original.json output.json --patches patch1.json patch2.json\n"
+        )
+    )
     parser.add_argument("original", help="Path to the original JSON file.")
     parser.add_argument("output", help="Path where the output JSON file will be saved.")
     parser.add_argument(
