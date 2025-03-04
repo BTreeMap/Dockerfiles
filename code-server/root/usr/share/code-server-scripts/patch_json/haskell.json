@@ -1,5 +1,6 @@
 {
   "haskell.formattingProvider": "ormolu",
   "haskell.manageHLS": "PATH",
+  "haskell.plugin.semanticTokens.globalOn": true,
   "haskell.serverExecutablePath": "haskell-language-server-wrapper",
 }
