@@ -1,21 +1,24 @@
 #!/usr/bin/with-contenv bash
 
-# Helper to determine truthy values
+# Set default options for patching behavior if not defined externally
+: "${PATCH_JSON_USE_FORCE:=true}"           # Enables '--force' flag by default
+: "${PATCH_JSON_ENABLE_SORT_KEYS:=true}"    # Enables JSON key sorting by default
+
+# Function: is_true
+# Description: Returns true if the provided value is a recognized truthy string.
 is_true() {
   local value="${1,,}"
   [[ "$value" =~ ^(true|yes|1|on|y)$ ]]
 }
 
-# Set defaults if not defined
-: "${PATCH_JSON_USE_FORCE:=true}"
-: "${PATCH_JSON_ENABLE_SORT_KEYS:=true}"
-
+# Function: patch_and_echo
+# Description: Applies patches to a JSON file with optional flags, and logs the operation details.
 patch_and_echo() {
   local source_file="$1"
   shift
   local patch_files=("$@")
   
-  # Construct optional flags
+  # Build flags based on environment variables
   local flags=""
   if is_true "$PATCH_JSON_USE_FORCE"; then
     flags+=" --force"
@@ -24,7 +27,7 @@ patch_and_echo() {
     flags+=" --no-sort-keys"
   fi
 
-  echo "Patching '$source_file' with patches: ${patch_files[*]} and flags: $flags"
+  echo "Applying patch to '$source_file' using: ${patch_files[*]}. Flags: '$flags'."
   /opt/shared-venv/bin/python /opt/code-server-scripts/patch_json.py --source "$source_file" $flags --in-place "${patch_files[@]}"
 }
 
@@ -32,7 +35,7 @@ patch_and_echo() {
 if [[ -n "$PATCH_JSON" && "${PATCH_JSON,,}" =~ ^(true|yes|1|on|y)$ ]]; then
   patch_and_echo /config/data/Machine/settings.json /usr/share/code-server-scripts/patch_json/*.json
   patch_and_echo /config/data/User/settings.json /usr/share/code-server-scripts/patch_json/*.json
-  echo "Patching completed."
+  echo "All JSON patches applied successfully."
 else
-  echo "PATCH_JSON is not set to true. Skipping patching."
+  echo "PATCH_JSON is not enabled. Skipping JSON patching."
 fi
