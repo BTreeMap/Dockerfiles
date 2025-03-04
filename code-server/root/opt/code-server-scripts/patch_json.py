@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
-import json
 import logging
 import os
 import sys
 from typing import Any, Dict, Optional
+
+import json5
 
 # ------------------------------------------------------------------------------
 # Utility Functions
@@ -40,10 +41,10 @@ def read_json(file_path: str, logger: logging.Logger) -> Dict[str, Any]:
 
     try:
         with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            data = json5.load(f, allow_duplicate_keys=False)
             logger.debug("Successfully read JSON from '%s'.", file_path)
             return data if isinstance(data, dict) else {}
-    except (json.JSONDecodeError, OSError) as e:
+    except Exception as e:
         logger.error("Failed to read JSON from '%s': %s", file_path, e)
         return {}
 
@@ -63,9 +64,16 @@ def write_json(
 
         logger.debug("Writing updated JSON data to '%s'.", file_path)
         with open(file_path, "w", encoding="utf-8") as f_out:
-            json.dump(data, f_out, ensure_ascii=False, indent=2, sort_keys=sort_keys)
+            json5.dump(
+                data,
+                f_out,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=sort_keys,
+                allow_duplicate_keys=False,
+            )
         logger.info("Successfully wrote JSON to '%s'.", file_path)
-    except OSError as e:
+    except Exception as e:
         logger.error("Failed to write JSON to '%s': %s", file_path, e)
 
 
@@ -184,8 +192,13 @@ def patch_json(
     if output_file_path:
         write_json(output_file_path, source_data, logger, sort_keys=sort_keys)
     else:
-        json.dump(
-            source_data, sys.stdout, ensure_ascii=False, indent=2, sort_keys=sort_keys
+        json5.dump(
+            source_data,
+            sys.stdout,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=sort_keys,
+            allow_duplicate_keys=False,
         )
         sys.stdout.write("\n")
     logger.info("Patch operation with multiple files completed successfully.")
