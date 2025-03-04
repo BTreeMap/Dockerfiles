@@ -2,7 +2,8 @@
 
 # Set default options for cabal behavior if not defined externally
 : "${CABAL_DIR:=/config/.haskell}" # Default directory for cabal
-: "${UPDATE_CABAL_PACKAGES:=true}" # Enables cabal update by default
+: "${CABAL_SET_PERMISSIONS:=true}" # Enables setting permissions by default
+: "${CABAL_UPDATE_PACKAGES:=true}" # Enables cabal update by default
 
 # Function: is_true
 # Description: Returns true if the provided value is a recognized truthy string.
@@ -18,17 +19,21 @@ if [ ! -d "$CABAL_DIR" ]; then
 fi
 
 # Set permissions to read, write, and execute for all users
-echo "Setting permissions for $CABAL_DIR to read, write, and execute for all users"
-chmod -R 777 "$CABAL_DIR"
-
-# Check if cabal update is enabled
-if [ ! is_true "$UPDATE_CABAL_PACKAGES" ]; then
-  echo "Skipping cabal update"
-  exit 0
+if [ is_true "$CABAL_SET_PERMISSIONS" ]; then
+  echo "Setting permissions for $CABAL_DIR to read, write, and execute for all users"
+  chmod -R 777 "$CABAL_DIR"
+else
+  echo "Skipping setting permissions for $CABAL_DIR"
 fi
 
 # Update the package list if it doesn't exist
-if [ ! -d "$CABAL_DIR/packages/hackage.haskell.org" ]; then
-  echo "Updating cabal packages"
-  cabal update
+if [ is_true "$CABAL_UPDATE_PACKAGES" ]; then
+  if [ ! -d "$CABAL_DIR/packages/hackage.haskell.org" ]; then
+    echo "Updating cabal packages"
+    cabal update
+  else
+    echo "Skipping cabal update - package list already exists"
+  fi
+else
+  echo "Skipping cabal update - environment variable is set to false"
 fi
