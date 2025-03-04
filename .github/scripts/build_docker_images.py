@@ -20,6 +20,52 @@ class BuildResult:
     system_metrics: dict | None = None
 
 
+def free_disk_space():
+    """
+    Removes unnecessary packages and directories to free up disk space for Docker builds.
+
+    This function executes a series of cleanup operations targeting commonly unused
+    packages in CI environments, helping prevent "no space left on device" errors.
+    """
+    # Group apt-get removal commands together with packages sorted alphabetically
+    print("Removing unnecessary packages...")
+    subprocess.run(
+        [
+            "sudo",
+            "apt-get",
+            "remove",
+            "-y",
+            "^dotnet-.*",
+            "^ghc-8.*",
+            "^llvm-.*",
+            "azure-cli",
+            "firefox",
+            "google-chrome-stable",
+            "google-cloud-sdk",
+            "hhvm",
+            "mono-devel",
+            "php.*",
+            "powershell",
+        ],
+        check=False,
+    )
+
+    # Clean up package management system
+    print("Performing system cleanup...")
+    subprocess.run(["sudo", "apt-get", "autoremove", "-y"], check=False)
+    subprocess.run(["sudo", "apt-get", "clean"], check=False)
+
+    # Group directory removals together with paths sorted alphabetically
+    print("Removing large directory trees...")
+    large_directories = ["/opt/ghc", "/usr/local/lib/android", "/usr/share/dotnet/"]
+    for directory in large_directories:
+        subprocess.run(["sudo", "rm", "-rf", directory], check=False)
+
+    # Show available space after cleanup
+    print("Current disk space after cleanup:")
+    subprocess.run(["df", "-h", "/"], check=False)
+
+
 def init_logger():
     """Initializes and configures a logger for build operations."""
     logger = logging.getLogger("docker_builder")
@@ -217,6 +263,7 @@ def build_and_push_image(build_args) -> BuildResult:
 def main():
     global logger
 
+    free_disk_space()
     logger = init_logger()
 
     # Configuration from environment variables
