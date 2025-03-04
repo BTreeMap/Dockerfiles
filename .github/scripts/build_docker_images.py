@@ -20,6 +20,53 @@ class BuildResult:
     system_metrics: dict | None = None
 
 
+def remove_packages(pkg_patterns: list[str]) -> None:
+    """
+    Removes packages matching the given patterns using dpkg and apt.
+
+    Args:
+        pkg_patterns: List of package name patterns, supporting globbing.
+    """
+    try:
+        all_packages = []
+        for pattern in pkg_patterns:
+            # Call dpkg directly and process output in Python
+            result = subprocess.run(
+                ["dpkg", "--get-selections", pattern],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                # Parse the output to extract package names (first column)
+                for line in result.stdout.strip().split("\n"):
+                    if line.strip():
+                        package_name = line.split()[0]
+                        all_packages.append(package_name)
+
+        # Remove duplicates and sort
+        packages_to_remove = sorted(set(all_packages))
+
+        if packages_to_remove:
+            print(
+                "Found {len(packages_to_remove)} packages to remove: \n\n  {}\n\n".format(
+                    "  \n".join(packages_to_remove)
+                )
+            )
+            # Remove packages that actually exist
+            subprocess.run(
+                ["sudo", "apt-get", "remove", "--purge", "-y"] + packages_to_remove,
+                check=False,
+            )
+            subprocess.run(
+                ["sudo", "dpkg", "--purge"] + packages_to_remove, check=False
+            )
+        else:
+            print("No matching packages found for removal")
+    except Exception as e:
+        print(f"Failed to get package list: {e}, continuing with cleanup")
+
+
 def free_disk_space():
     """
     Removes unnecessary packages and directories to free up disk space for Docker builds.
@@ -32,22 +79,17 @@ def free_disk_space():
 
     # Group apt-get removal commands together with packages sorted alphabetically
     print("Removing unnecessary packages...")
-    subprocess.run(
-        [
-            "sudo",
-            "apt-get",
-            "remove",
-            "-y",
-            "^dotnet-*",
-            "^golang-*",
-            "^llvm-*",
-            "^temurin-*-jdk",
-            "azure-cli",
-            "firefox",
-            "snapd",
-        ],
-        check=False,
-    )
+    # List packages to remove with globbing patterns
+    pkg_patterns = [
+        "dotnet-*",
+        "golang-*",
+        "llvm-*",
+        "temurin-*-jdk",
+        "azure-cli",
+        "firefox",
+        "snapd",
+    ]
+    remove_packages(pkg_patterns)
 
     # Clean up package management system
     print("Performing system cleanup...")
