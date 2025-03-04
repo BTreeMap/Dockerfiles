@@ -52,7 +52,8 @@ def remove_packages(pkg_patterns: list[str]) -> None:
                 "Found {} packages to remove: \n\n - {}\n\n".format(
                     len(packages_to_remove),
                     "\n - ".join(packages_to_remove),
-                )
+                ),
+                flush=True,
             )
             # Remove packages that actually exist
             subprocess.run(
@@ -63,9 +64,15 @@ def remove_packages(pkg_patterns: list[str]) -> None:
                 ["sudo", "dpkg", "--purge"] + packages_to_remove, check=False
             )
         else:
-            print("No matching packages found for removal")
+            print(
+                "No matching packages found for removal",
+                flush=True,
+            )
     except Exception as e:
-        print(f"Failed to get package list: {e}, continuing with cleanup")
+        print(
+            f"Failed to get package list: {e}, continuing with cleanup",
+            flush=True,
+        )
 
 
 def free_disk_space():
@@ -75,11 +82,17 @@ def free_disk_space():
     This function executes a series of cleanup operations targeting commonly unused
     packages in CI environments, helping prevent "no space left on device" errors.
     """
-    print("Current disk space before cleanup:")
+    print(
+        "Current disk space before cleanup:",
+        flush=True,
+    )
     subprocess.run(["df", "-h"], check=False)
 
     # Group apt-get removal commands together with packages sorted alphabetically
-    print("Removing unnecessary packages...")
+    print(
+        "Removing unnecessary packages...",
+        flush=True,
+    )
     # List packages to remove with globbing patterns
     pkg_patterns = [
         "dotnet-*",
@@ -93,18 +106,27 @@ def free_disk_space():
     remove_packages(pkg_patterns)
 
     # Clean up package management system
-    print("Performing system cleanup...")
+    print(
+        "Performing system cleanup...",
+        flush=True,
+    )
     subprocess.run(["sudo", "apt-get", "autoremove", "-y"], check=False)
     subprocess.run(["sudo", "apt-get", "clean"], check=False)
 
     # Group directory removals together with paths sorted alphabetically
-    print("Removing large directory trees...")
+    print(
+        "Removing large directory trees...",
+        flush=True,
+    )
     large_directories = ["/opt/ghc", "/usr/local/lib/android", "/usr/share/dotnet/"]
     for directory in large_directories:
         subprocess.run(["sudo", "rm", "-rf", directory], check=False)
 
     # Show available space after cleanup
-    print("Current disk space after cleanup:")
+    print(
+        "Current disk space after cleanup:",
+        flush=True,
+    )
     subprocess.run(["df", "-h"], check=False)
 
 
