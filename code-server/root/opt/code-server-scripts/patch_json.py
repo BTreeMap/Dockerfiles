@@ -173,12 +173,13 @@ def patch_json(
             logger.warning(
                 "Patch file '%s' does not exist. Skipping patch operation.", patch_file
             )
-            continue
-        patch_data = read_json(patch_file, logger)
-        if force:
-            source_data = apply_force_patch(source_data, patch_data, logger)
         else:
-            source_data = apply_keep_patch(source_data, patch_data, logger)
+            logger.info("Applying patch from '%s'.", patch_file)
+            patch_data = read_json(patch_file, logger)
+            if force:
+                source_data = apply_force_patch(source_data, patch_data, logger)
+            else:
+                source_data = apply_keep_patch(source_data, patch_data, logger)
 
     if output_file_path:
         write_json(output_file_path, source_data, logger, sort_keys=sort_keys)
