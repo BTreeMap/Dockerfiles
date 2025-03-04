@@ -1,8 +1,18 @@
 #!/usr/bin/with-contenv bash
 
+patch_and_echo() {
+  local source_file="$1"
+  shift
+  local patch_files=("$@")
+  echo "Patching '$source_file' with patches: ${patch_files[*]}"
+  python3 /opt/code-server-scripts/patch_json.py --source "$source_file" --force --in-place "${patch_files[@]}"
+}
+
 # Check if PATCH_JSON is set to a value representing "true"
 if [[ -n "$PATCH_JSON" && "${PATCH_JSON,,}" =~ ^(true|yes|1|on|y)$ ]]; then
-  echo "Patching settings.json with git.json patches"
-  python3 /opt/code-server-scripts/patch_json.py --source /config/data/Machine/settings.json --force --in-place /usr/share/code-server-scripts/*.json
-  python3 /opt/code-server-scripts/patch_json.py --source /config/data/User/settings.json --force --in-place /usr/share/code-server-scripts/*.json
+  patch_and_echo /config/data/Machine/settings.json /usr/share/code-server-scripts/*.json
+  patch_and_echo /config/data/User/settings.json /usr/share/code-server-scripts/*.json
+  echo "Patching completed."
+else
+  echo "PATCH_JSON is not set to true. Skipping patching."
 fi
