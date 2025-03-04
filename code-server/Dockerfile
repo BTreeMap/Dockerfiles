@@ -276,6 +276,7 @@ RUN set -ex && \
         black \
         click \
         cryptography \
+        discord.py \
         Django \
         Flask \
         httpx[brotli,http2,socks,zstd] \

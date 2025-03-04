@@ -4,7 +4,7 @@
 # optionally setting permissions to 777, and optionally updating the package list.
 #
 # Environment variables:
-#   CABAL_DIR            Directory for storing cabal data (default: /config/.haskell)
+#   CABAL_DIR             Directory for storing cabal data (default: /config/.haskell)
 #   CABAL_SET_PERMISSIONS Boolean to control if directory permissions should be set (default: true)
 #   CABAL_UPDATE_PACKAGES Boolean to control if 'cabal update' should run (default: true)
 
