@@ -144,14 +144,14 @@ def apply_keep_patch(
 
 def patch_json(
     original_file_path: str,
-    patch_file_path: str,
+    patch_files: list,
     output_file_path: str,
     force: bool = False,
     logger: Optional[logging.Logger] = None,
     sort_keys: bool = True,
 ) -> None:
     """
-    Reads in an original JSON file, applies patches from another JSON file,
+    Reads in an original JSON file, applies patches from multiple JSON files,
     and writes out the result to a given output file path. If 'force' is True,
     keys in the original are overwritten. Otherwise, only missing keys are added.
     """
@@ -159,31 +159,28 @@ def patch_json(
         logger = setup_logger()
 
     logger.info(
-        "Starting patch operation. original='%s', patch='%s', output='%s', force=%s",
+        "Starting patch operation. original='%s', patches='%s', output='%s', force=%s",
         original_file_path,
-        patch_file_path,
+        patch_files,
         output_file_path,
         force,
     )
 
-    # Check if patch file exists
-    if not os.path.exists(patch_file_path):
-        logger.warning(
-            "Patch file '%s' does not exist. Skipping patch operation.", patch_file_path
-        )
-        return
-
-    patch_data = read_json(patch_file_path, logger)
     original_data = read_json(original_file_path, logger)
+    for patch_file in patch_files:
+        if not os.path.exists(patch_file):
+            logger.warning(
+                "Patch file '%s' does not exist. Skipping patch operation.", patch_file
+            )
+            continue
+        patch_data = read_json(patch_file, logger)
+        if force:
+            original_data = apply_force_patch(original_data, patch_data, logger)
+        else:
+            original_data = apply_keep_patch(original_data, patch_data, logger)
 
-    logger.debug("Applying patch. Force = %s", force)
-    if force:
-        updated_data = apply_force_patch(original_data, patch_data, logger)
-    else:
-        updated_data = apply_keep_patch(original_data, patch_data, logger)
-
-    write_json(output_file_path, updated_data, logger, sort_keys=sort_keys)
-    logger.info("Patch operation completed successfully.")
+    write_json(output_file_path, original_data, logger, sort_keys=sort_keys)
+    logger.info("Patch operation with multiple files completed successfully.")
 
 
 # ------------------------------------------------------------------------------
@@ -203,8 +200,13 @@ VALID_LOG_LEVELS = {
 def main():
     parser = argparse.ArgumentParser(description="Patch JSON files.")
     parser.add_argument("original", help="Path to the original JSON file.")
-    parser.add_argument("patch", help="Path to the patch JSON file.")
     parser.add_argument("output", help="Path where the output JSON file will be saved.")
+    parser.add_argument(
+        "--patches",
+        nargs="+",
+        required=True,
+        help="One or more patch JSON files to apply in order.",
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -237,7 +239,7 @@ def main():
 
     patch_json(
         args.original,
-        args.patch,
+        args.patches,
         args.output,
         args.force,
         logger,
