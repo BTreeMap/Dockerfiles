@@ -176,6 +176,7 @@ FROM base
 ENV PATCH_JSON=true \
     PATCH_JSON_ENABLE_SORT_KEYS=true \
     PATCH_JSON_USE_FORCE=true \
+    UPDATE_CABAL_PACKAGES=true \
     PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
 
 # Environment variables for Tailscale
