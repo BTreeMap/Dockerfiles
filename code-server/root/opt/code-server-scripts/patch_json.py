@@ -222,6 +222,7 @@ def main():
     parser.add_argument(
         "--force",
         action="store_true",
+        default=False,
         help="Whether to force overwrite existing keys (default: only add missing keys).",
     )
     parser.add_argument(

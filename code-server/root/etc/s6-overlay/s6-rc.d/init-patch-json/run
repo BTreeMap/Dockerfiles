@@ -1,13 +1,8 @@
 #!/usr/bin/with-contenv bash
 
-# Create CABAL_DIR if it doesn't exist and set permissions to 777
-if [ ! -d "$CABAL_DIR" ]; then
-  mkdir -p "$CABAL_DIR"
-fi
-
-chmod -R 777 "$CABAL_DIR"
-
-# Update the package list if it doesn't exist
-if [ ! -d "$CABAL_DIR/packages/hackage.haskell.org" ]; then
-  cabal update
+# Check if PATCH_JSON is set to a value representing "true"
+if [[ -n "$PATCH_JSON" && "${PATCH_JSON,,}" =~ ^(true|yes|1|on|y)$ ]]; then
+  echo "Patching settings.json with git.json patches"
+  python3 /opt/code-server-scripts/patch_json.py --source /config/data/Machine/settings.json --force --in-place /usr/share/code-server-scripts/*.json
+  python3 /opt/code-server-scripts/patch_json.py --source /config/data/User/settings.json --force --in-place /usr/share/code-server-scripts/*.json
 fi
