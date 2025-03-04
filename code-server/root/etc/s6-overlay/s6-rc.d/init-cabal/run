@@ -1,5 +1,13 @@
 #!/usr/bin/with-contenv bash
 
+# This script initializes cabal by creating the specified directory,
+# optionally setting permissions to 777, and optionally updating the package list.
+#
+# Environment variables:
+#   CABAL_DIR            Directory for storing cabal data (default: /config/.haskell)
+#   CABAL_SET_PERMISSIONS Boolean to control if directory permissions should be set (default: true)
+#   CABAL_UPDATE_PACKAGES Boolean to control if 'cabal update' should run (default: true)
+
 # Set default options for cabal behavior if not defined externally
 : "${CABAL_DIR:=/config/.haskell}" # Default directory for cabal
 : "${CABAL_SET_PERMISSIONS:=true}" # Enables setting permissions by default
@@ -18,16 +26,15 @@ if [ ! -d "$CABAL_DIR" ]; then
   mkdir -p "$CABAL_DIR"
 fi
 
-# Set permissions to read, write, and execute for all users
-if [ is_true "$CABAL_SET_PERMISSIONS" ]; then
+# (Note: Using 777 is very permissive; consider restricting permissions if possible.)
+if is_true "$CABAL_SET_PERMISSIONS"; then
   echo "Setting permissions for $CABAL_DIR to read, write, and execute for all users"
   chmod -R 777 "$CABAL_DIR"
 else
   echo "Skipping setting permissions for $CABAL_DIR"
 fi
 
-# Update the package list if it doesn't exist
-if [ is_true "$CABAL_UPDATE_PACKAGES" ]; then
+if is_true "$CABAL_UPDATE_PACKAGES"; then
   if [ ! -d "$CABAL_DIR/packages/hackage.haskell.org" ]; then
     echo "Updating cabal packages"
     cabal update
