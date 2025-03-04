@@ -21,6 +21,8 @@ class BuildResult:
 
 
 def remove_packages(pkg_patterns: list[str]) -> None:
+    global logger
+
     """
     Removes packages matching the given patterns using dpkg and apt.
 
@@ -48,12 +50,11 @@ def remove_packages(pkg_patterns: list[str]) -> None:
         packages_to_remove = sorted(set(all_packages))
 
         if packages_to_remove:
-            print(
+            logger.info(
                 "Found {} packages to remove: \n\n - {}\n\n".format(
                     len(packages_to_remove),
                     "\n - ".join(packages_to_remove),
-                ),
-                flush=True,
+                )
             )
             # Remove packages that actually exist
             subprocess.run(
@@ -64,35 +65,25 @@ def remove_packages(pkg_patterns: list[str]) -> None:
                 ["sudo", "dpkg", "--purge"] + packages_to_remove, check=False
             )
         else:
-            print(
-                "No matching packages found for removal",
-                flush=True,
-            )
+            logger.warning("No matching packages found for removal")
     except Exception as e:
-        print(
-            f"Failed to get package list: {e}, continuing with cleanup",
-            flush=True,
-        )
+        logger.error(f"Failed to get package list: {e}, continuing with cleanup")
 
 
 def free_disk_space():
+    global logger
+
     """
     Removes unnecessary packages and directories to free up disk space for Docker builds.
 
     This function executes a series of cleanup operations targeting commonly unused
     packages in CI environments, helping prevent "no space left on device" errors.
     """
-    print(
-        "Current disk space before cleanup:",
-        flush=True,
-    )
+    logger.info("Current disk space before cleanup:")
     subprocess.run(["df", "-h"], check=False)
 
     # Group apt-get removal commands together with packages sorted alphabetically
-    print(
-        "Removing unnecessary packages...",
-        flush=True,
-    )
+    logger.info("Removing unnecessary packages...")
     # List packages to remove with globbing patterns
     pkg_patterns = [
         "dotnet-*",
@@ -106,27 +97,18 @@ def free_disk_space():
     remove_packages(pkg_patterns)
 
     # Clean up package management system
-    print(
-        "Performing system cleanup...",
-        flush=True,
-    )
+    logger.info("Performing system cleanup...")
     subprocess.run(["sudo", "apt-get", "autoremove", "-y"], check=False)
     subprocess.run(["sudo", "apt-get", "clean"], check=False)
 
     # Group directory removals together with paths sorted alphabetically
-    print(
-        "Removing large directory trees...",
-        flush=True,
-    )
+    logger.info("Removing large directory trees...")
     large_directories = ["/opt/ghc", "/usr/local/lib/android", "/usr/share/dotnet/"]
     for directory in large_directories:
         subprocess.run(["sudo", "rm", "-rf", directory], check=False)
 
     # Show available space after cleanup
-    print(
-        "Current disk space after cleanup:",
-        flush=True,
-    )
+    logger.info("Current disk space after cleanup:")
     subprocess.run(["df", "-h"], check=False)
 
 
@@ -191,6 +173,8 @@ def collect_system_metrics():
 
 
 def log_system_metrics(metrics: dict | None = None):
+    global logger
+
     """Logs system metrics using the global logger with error handling.
 
     Args:
@@ -233,6 +217,8 @@ def log_system_metrics(metrics: dict | None = None):
 
 
 def build_and_push_image(build_args) -> BuildResult:
+    global logger
+
     """Builds and pushes a Docker image with retry logic and metrics collection."""
     (
         dockerfile_path,
@@ -327,8 +313,10 @@ def build_and_push_image(build_args) -> BuildResult:
 def main():
     global logger
 
-    free_disk_space()
     logger = init_logger()
+
+    # Free up disk space before starting builds
+    free_disk_space()
 
     # Configuration from environment variables
     docker_registry = get_env_var("DOCKER_REGISTRY").lower()
