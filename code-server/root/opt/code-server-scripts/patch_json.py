@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import sys
 from typing import Any, Dict, Optional
 
 # ------------------------------------------------------------------------------
@@ -143,30 +144,30 @@ def apply_keep_patch(
 
 
 def patch_json(
-    original_file_path: str,
+    source_file_path: str,
     patch_files: list,
-    output_file_path: str,
+    output_file_path: Optional[str] = None,
     force: bool = False,
     logger: Optional[logging.Logger] = None,
     sort_keys: bool = True,
 ) -> None:
     """
-    Reads in an original JSON file, applies patches from multiple JSON files,
+    Reads in a source JSON file, applies patches from multiple JSON files,
     and writes out the result to a given output file path. If 'force' is True,
-    keys in the original are overwritten. Otherwise, only missing keys are added.
+    keys in the source are overwritten. Otherwise, only missing keys are added.
     """
     if logger is None:
         logger = setup_logger()
 
     logger.info(
-        "Starting patch operation. original='%s', patches='%s', output='%s', force=%s",
-        original_file_path,
+        "Starting patch operation. source='%s', patches='%s', output='%s', force=%s",
+        source_file_path,
         patch_files,
         output_file_path,
         force,
     )
 
-    original_data = read_json(original_file_path, logger)
+    source_data = read_json(source_file_path, logger)
     for patch_file in patch_files:
         if not os.path.exists(patch_file):
             logger.warning(
@@ -175,11 +176,17 @@ def patch_json(
             continue
         patch_data = read_json(patch_file, logger)
         if force:
-            original_data = apply_force_patch(original_data, patch_data, logger)
+            source_data = apply_force_patch(source_data, patch_data, logger)
         else:
-            original_data = apply_keep_patch(original_data, patch_data, logger)
+            source_data = apply_keep_patch(source_data, patch_data, logger)
 
-    write_json(output_file_path, original_data, logger, sort_keys=sort_keys)
+    if output_file_path:
+        write_json(output_file_path, source_data, logger, sort_keys=sort_keys)
+    else:
+        json.dump(
+            source_data, sys.stdout, ensure_ascii=False, indent=2, sort_keys=sort_keys
+        )
+        sys.stdout.write("\n")
     logger.info("Patch operation with multiple files completed successfully.")
 
 
@@ -202,18 +209,25 @@ def main():
         description=(
             "Patch JSON files.\n\n"
             "Single patch example:\n"
-            "  python patch_json.py original.json output.json --patches patch.json\n\n"
+            "  python patch_json.py --source source.json patch.json\n\n"
             "Multiple patches example:\n"
-            "  python patch_json.py original.json output.json --patches patch1.json patch2.json\n"
+            "  python patch_json.py --source source.json patch1.json patch2.json\n\n"
+            "In-place example:\n"
+            "  python patch_json.py --source source.json --in-place patch.json\n"
         )
     )
-    parser.add_argument("original", help="Path to the original JSON file.")
-    parser.add_argument("output", help="Path where the output JSON file will be saved.")
+    parser.add_argument("--source", required=True, help="Path to the source JSON file.")
     parser.add_argument(
-        "--patches",
-        nargs="+",
-        required=True,
-        help="One or more patch JSON files to apply in order.",
+        "--output",
+        help="Path where the output JSON file will be saved. If not set, prints to stdout.",
+    )
+    parser.add_argument(
+        "--in-place",
+        action="store_true",
+        help="Apply patches directly to the source file.",
+    )
+    parser.add_argument(
+        "patches", nargs="*", help="One or more patch JSON files to apply in order."
     )
     parser.add_argument(
         "--force",
@@ -235,6 +249,9 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.in_place:
+        args.output = args.source
+
     # Validate and map string log level to numeric value
     user_level = args.log_level.upper()
     if user_level not in VALID_LOG_LEVELS:
@@ -246,7 +263,7 @@ def main():
     logger = setup_logger(numeric_log_level)
 
     patch_json(
-        args.original,
+        args.source,
         args.patches,
         args.output,
         args.force,
