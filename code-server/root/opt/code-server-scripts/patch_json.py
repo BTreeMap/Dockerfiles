@@ -70,6 +70,7 @@ def write_json(
                 ensure_ascii=False,
                 indent=2,
                 sort_keys=sort_keys,
+                trailing_commas=True,
                 allow_duplicate_keys=False,
             )
         logger.info("Successfully wrote JSON to '%s'.", file_path)
@@ -198,6 +199,7 @@ def patch_json(
             ensure_ascii=False,
             indent=2,
             sort_keys=sort_keys,
+            trailing_commas=True,
             allow_duplicate_keys=False,
         )
         sys.stdout.write("\n")
