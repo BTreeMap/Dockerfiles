@@ -27,6 +27,9 @@ def free_disk_space():
     This function executes a series of cleanup operations targeting commonly unused
     packages in CI environments, helping prevent "no space left on device" errors.
     """
+    print("Current disk space before cleanup:")
+    subprocess.run(["df", "-h"], check=False)
+
     # Group apt-get removal commands together with packages sorted alphabetically
     print("Removing unnecessary packages...")
     subprocess.run(
@@ -36,15 +39,12 @@ def free_disk_space():
             "remove",
             "-y",
             "^dotnet-.*",
-            "^ghc-8.*",
+            "^ghc-9.*",
             "^llvm-.*",
             "azure-cli",
             "firefox",
             "google-chrome-stable",
             "google-cloud-sdk",
-            "hhvm",
-            "mono-devel",
-            "php.*",
             "powershell",
         ],
         check=False,
@@ -63,7 +63,7 @@ def free_disk_space():
 
     # Show available space after cleanup
     print("Current disk space after cleanup:")
-    subprocess.run(["df", "-h", "/"], check=False)
+    subprocess.run(["df", "-h"], check=False)
 
 
 def init_logger():
