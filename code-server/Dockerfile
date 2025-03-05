@@ -160,7 +160,7 @@ RUN ARCH=$(uname -m) && \
 RUN ./ghcup install ghc --set recommended && \
     ./ghcup install cabal latest && \
     ./ghcup install hls latest && \
-    ./ghcup gc --cache --hls-no-ghc --tmpdirs && \
+    ./ghcup gc --cache --hls-no-ghc --profiling-libs --tmpdirs && \
     rm -rf \
         $HASKELL_HOME/.ghcup/cache \
         $HASKELL_HOME/.ghcup/logs \
