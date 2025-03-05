@@ -273,6 +273,8 @@ RUN set -ex && \
     /opt/shared-venv/bin/pip install --no-cache-dir \
         aiodns \
         aiohttp \
+        aioitertools \
+        aiomultiprocess \
         aiosqlite \
         beautifulsoup4 \
         black \
