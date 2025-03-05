@@ -288,7 +288,7 @@ RUN set -ex && \
         openai \
         pandas \
         pillow \
-        psycopg[binary] \
+        psycopg[binary,pool] \
         pydantic \
         pymongo \
         pytest \
