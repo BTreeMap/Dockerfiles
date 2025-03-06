@@ -246,7 +246,7 @@ def build_and_push_image(build_args) -> BuildResult:
         "buildx",
         "build",
         "--output",
-        "type=registry,rewrite-timestamp=true,oci-mediatypes=true",
+        "type=registry,compression=zstd,force-compression=true,compression-level=3,rewrite-timestamp=true,oci-mediatypes=true",
         "--no-cache",
         "--builder",
         builder_name,
