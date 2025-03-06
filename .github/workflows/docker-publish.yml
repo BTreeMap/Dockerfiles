@@ -21,14 +21,25 @@ jobs:
     outputs:
       date: ${{ steps.timestamp.outputs.date }}
       date_time: ${{ steps.timestamp.outputs.date_time }}
+      source_date_epoch: ${{ steps.timestamp.outputs.source_date_epoch }}
     steps:
       - name: Generate build timestamp
         id: timestamp
         run: |
-          date=$(date '+%Y-%m-%d')
-          date_time=$(date '+%Y-%m-%d.%H-%M-%S')
+          # Capture the current time as a Unix timestamp
+          now=$(date '+%s')
+          
+          # Format the date variables using the captured timestamp
+          date=$(date -u -d "@$now" '+%Y-%m-%d')
+          date_time=$(date -u -d "@$now" '+%Y-%m-%d.%H-%M-%S')
+          
+          # Get the first day of the current month at 00:00 UTC
+          year_month=$(date -u -d "@$now" '+%Y-%m')
+          source_date_epoch=$(date -u -d "${year_month}-01 00:00:00" '+%s')
+          
           echo "date=$date" >> $GITHUB_OUTPUT
           echo "date_time=$date_time" >> $GITHUB_OUTPUT
+          echo "source_date_epoch=$source_date_epoch" >> $GITHUB_OUTPUT
 
   build-amd64:
     needs: setup-timestamp
@@ -67,6 +78,7 @@ jobs:
           DOCKER_PLATFORM: amd64
           DATE_STR: ${{ needs.setup-timestamp.outputs.date }}
           DATE_TIME_STR: ${{ needs.setup-timestamp.outputs.date_time }}
+          SOURCE_DATE_EPOCH: ${{ needs.setup-timestamp.outputs.source_date_epoch }}
 
   build-arm64:
     needs: setup-timestamp
@@ -105,6 +117,7 @@ jobs:
           DOCKER_PLATFORM: arm64
           DATE_STR: ${{ needs.setup-timestamp.outputs.date }}
           DATE_TIME_STR: ${{ needs.setup-timestamp.outputs.date_time }}
+          SOURCE_DATE_EPOCH: ${{ needs.setup-timestamp.outputs.source_date_epoch }}
 
   create-manifest:
     needs: [setup-timestamp, build-amd64, build-arm64]
