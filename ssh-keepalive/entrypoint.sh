@@ -19,7 +19,7 @@ log_msg "Starting entrypoint.sh..."
 : "${AUTOSSH_PORT:=58449}"
 
 # Create the target SSH directory if it does not exist
-log_msg "Checking existence of /root/.ssh directory..."
+log_msg "Checking the existence of /root/.ssh directory..."
 mkdir -p /root/.ssh/
 log_msg "/root/.ssh directory ensured."
 
@@ -32,7 +32,7 @@ if [ -n "$SSH_KEY_DIR" ] && [ -d "$SSH_KEY_DIR" ]; then
     cp -r "$SSH_KEY_DIR/"* /root/.ssh/
     log_msg "SSH keys copied from $SSH_KEY_DIR to /root/.ssh/"
 else
-    log_msg "No SSH key directory specified or directory not found. Skipping SSH keys setup."
+    log_msg "No SSH key directory specified or directory not found. Skipping SSH key setup."
 fi
 
 # Set the correct permissions for the .ssh directory and its contents
@@ -69,7 +69,7 @@ MAX_INTERVAL=32
 
 log_msg "Starting autossh with retry logic..."
 while true; do
-    log_msg "Attempting to establish SSH connection with autossh..."
+    log_msg "Attempting to establish an SSH connection with autossh..."
     autossh -M "${AUTOSSH_PORT}" -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -N "${SSH_COMMAND}" -p "${SSH_PORT}" || true
 
     # If autossh exits, print an error message
@@ -86,5 +86,5 @@ while true; do
 done
 
 # Keep the script running indefinitely to prevent container exit.
-log_msg "Entrypoint script complete, entering idle to keep container alive."
+log_msg "Entrypoint script complete, entering idle mode to keep the container alive."
 exec tail -f /dev/null
