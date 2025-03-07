@@ -4,7 +4,7 @@
 set -e
 
 log_msg() {
-  echo "$(date +'%Y-%m-%d %H:%M:%S') - $@"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') [ENTRYPOINT] - $@"
 }
 
 log_msg "Starting entrypoint.sh..."
