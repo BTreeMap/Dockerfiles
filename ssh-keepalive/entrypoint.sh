@@ -12,9 +12,11 @@ log_msg "Starting entrypoint.sh..."
 # Optional path to SSH keys directory
 : "${SSH_KEY_DIR:=""}"
 
+# Default poll interval for autossh
+: "${AUTOSSH_POLL:=60}"
+
 # Default monitoring port for autossh
 : "${AUTOSSH_PORT:=58449}"
-: "${AUTOSSH_POLL:=60}"
 
 # Create the target SSH directory if it does not exist
 log_msg "Checking existence of /root/.ssh directory..."
