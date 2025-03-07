@@ -28,7 +28,7 @@ log_msg "SSH_EXTRA_ARGS: $SSH_EXTRA_ARGS"
 log_msg "SSH_KEY_DIR: $SSH_KEY_DIR"
 
 # Create the target SSH directory if it does not exist
-log_msg "Checking the existence of /root/.ssh directory..."
+log_msg "Checking for the existence of /root/.ssh directory..."
 mkdir -p /root/.ssh/
 log_msg "/root/.ssh directory ensured."
 
@@ -41,11 +41,11 @@ if [ -n "$SSH_KEY_DIR" ] && [ -d "$SSH_KEY_DIR" ]; then
     cp -r "$SSH_KEY_DIR/"* /root/.ssh/
     log_msg "SSH keys copied from $SSH_KEY_DIR to /root/.ssh/"
 else
-    log_msg "No SSH key directory specified or directory not found. Skipping SSH key setup."
+    log_msg "No SSH key directory was specified or the directory was not found. Skipping SSH key setup."
 fi
 
 # Set the correct permissions for the .ssh directory and its contents
-log_msg "Setting permissions for /root/.ssh directory and its contents."
+log_msg "Setting the correct permissions for /root/.ssh directory and its contents."
 chmod 700 /root/.ssh               # Read, write, and execute permissions for the owner only
 chmod 600 /root/.ssh/*             # Read and write permissions for the owner only
 
@@ -57,7 +57,7 @@ chown -R root:root /root/.ssh      # Set ownership to root for the .ssh director
 log_msg "Retrieving SSH connection parameters from environment variables..."
 SSH_USER="${SSH_USER:-}"            # Default to empty if not specified
 SSH_HOST="${SSH_HOST:-}"            # Default to empty if not specified
-SSH_PORT="${SSH_PORT:-22}"           # Default to 22 if not specified
+SSH_PORT="${SSH_PORT:-22}"          # Default to 22 if not specified
 
 log_msg "SSH_USER: $SSH_USER"
 log_msg "SSH_HOST: $SSH_HOST"
@@ -82,7 +82,7 @@ while true; do
     autossh -M "${AUTOSSH_PORT}" -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" ${SSH_EXTRA_ARGS} "${SSH_COMMAND}" -p "${SSH_PORT}" || true
 
     # If autossh exits, print an error message
-    log_msg "Error: autossh has exited. Retrying in ${RETRY_INTERVAL} seconds..."
+    log_msg "Error: autossh exited. Retrying in ${RETRY_INTERVAL} seconds..."
     
     # Wait for the current retry interval
     sleep $RETRY_INTERVAL
