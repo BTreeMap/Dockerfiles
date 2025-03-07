@@ -79,7 +79,7 @@ MAX_INTERVAL=32
 log_msg "Starting autossh with retry logic..."
 while true; do
     log_msg "Attempting to establish an SSH connection with autossh..."
-    autossh -M "${AUTOSSH_PORT}" -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" ${SSH_EXTRA_ARGS} "${SSH_COMMAND}" -p "${SSH_PORT}" || true
+    autossh -M "${AUTOSSH_PORT}" ${SSH_EXTRA_ARGS} "${SSH_COMMAND}" -p "${SSH_PORT}" || true
 
     # If autossh exits, print an error message
     log_msg "Error: autossh exited. Retrying in ${RETRY_INTERVAL} seconds..."

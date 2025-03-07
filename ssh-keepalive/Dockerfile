@@ -18,7 +18,7 @@ RUN apk add --no-cache openssh-client && \
 # Set environment variables for autossh
 ENV AUTOSSH_POLL=60 \
     AUTOSSH_PORT=58449 \
-    SSH_EXTRA_ARGS="-N" \
+    SSH_EXTRA_ARGS="-o 'StrictHostKeyChecking=no' -o 'ServerAliveInterval=30' -o 'ServerAliveCountMax=3' -N" \
     SSH_KEY_DIR=""
 
 # Set the entrypoint command to the script
