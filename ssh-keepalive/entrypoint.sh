@@ -15,6 +15,9 @@ log_msg "Starting entrypoint.sh..."
 # Default monitoring port for autossh
 : "${AUTOSSH_PORT:=58449}"
 
+# Default SSH command to be executed
+: "${SSH_COMMAND:=""}"
+
 # Optional SSH extra arguments
 : "${SSH_EXTRA_ARGS:=-N}"
 
@@ -65,11 +68,11 @@ log_msg "SSH_PORT: $SSH_PORT"
 
 # Construct the SSH command based on whether SSH_USER is supplied
 if [ -n "$SSH_USER" ]; then
-    SSH_COMMAND="${SSH_USER}@${SSH_HOST}"  # Use user@host format
-    log_msg "SSH command constructed as: $SSH_COMMAND"
+    SSH_DESTINATION="${SSH_USER}@${SSH_HOST}"  # Use user@host format
+    log_msg "SSH command constructed as: $SSH_DESTINATION"
 else
-    SSH_COMMAND="${SSH_HOST}"               # Use host only if user is empty
-    log_msg "SSH command constructed as: $SSH_COMMAND"
+    SSH_DESTINATION="${SSH_HOST}"               # Use host only if user is empty
+    log_msg "SSH command constructed as: $SSH_DESTINATION"
 fi
 
 # Command to establish an SSH connection with autossh
@@ -79,7 +82,7 @@ MAX_INTERVAL=32
 log_msg "Starting autossh with retry logic..."
 while true; do
     log_msg "Attempting to establish an SSH connection with autossh..."
-    autossh -M "${AUTOSSH_PORT}" ${SSH_EXTRA_ARGS} "${SSH_COMMAND}" -p "${SSH_PORT}" || true
+    autossh -M "${AUTOSSH_PORT}" ${SSH_EXTRA_ARGS} -p "${SSH_PORT}" "${SSH_DESTINATION}" ${SSH_COMMAND} || true
 
     # If autossh exits, print an error message
     log_msg "Error: autossh exited. Retrying in ${RETRY_INTERVAL} seconds..."
