@@ -7,7 +7,7 @@ log_msg() {
     echo "$(date +'%Y-%m-%d %H:%M:%S') [ENTRYPOINT] - $@"
 }
 
-log_msg "Starting entrypoint.sh..."
+log_msg "Starting entrypoint script..."
 
 # Default poll interval for autossh
 : "${AUTOSSH_POLL:=60}"
@@ -31,7 +31,7 @@ log_msg "SSH_EXTRA_ARGS: $SSH_EXTRA_ARGS"
 log_msg "SSH_KEY_DIR: $SSH_KEY_DIR"
 
 # Create the target SSH directory if it does not exist
-log_msg "Checking for the existence of /root/.ssh directory..."
+log_msg "Checking for existence of /root/.ssh directory..."
 mkdir -p /root/.ssh/
 log_msg "/root/.ssh directory ensured."
 
@@ -44,11 +44,11 @@ if [ -n "$SSH_KEY_DIR" ] && [ -d "$SSH_KEY_DIR" ]; then
     cp -r "$SSH_KEY_DIR/"* /root/.ssh/
     log_msg "SSH keys copied from $SSH_KEY_DIR to /root/.ssh/"
 else
-    log_msg "No SSH key directory was specified or the directory was not found. Skipping SSH key setup."
+    log_msg "No SSH key directory specified or directory not found. Skipping SSH key setup."
 fi
 
 # Set the correct permissions for the .ssh directory and its contents
-log_msg "Setting the correct permissions for /root/.ssh directory and its contents."
+log_msg "Setting correct permissions for /root/.ssh and its contents."
 chmod 700 /root/.ssh               # Read, write, and execute permissions for the owner only
 chmod 600 /root/.ssh/*             # Read and write permissions for the owner only
 
