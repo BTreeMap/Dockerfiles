@@ -9,14 +9,23 @@ log_msg() {
 
 log_msg "Starting entrypoint.sh..."
 
-# Optional path to SSH keys directory
-: "${SSH_KEY_DIR:=""}"
-
 # Default poll interval for autossh
 : "${AUTOSSH_POLL:=60}"
 
 # Default monitoring port for autossh
 : "${AUTOSSH_PORT:=58449}"
+
+# Optional SSH extra arguments
+: "${SSH_EXTRA_ARGS:=-N}"
+
+# Optional path to SSH keys directory
+: "${SSH_KEY_DIR:=""}"
+
+# Log the environment variables
+log_msg "AUTOSSH_POLL: $AUTOSSH_POLL"
+log_msg "AUTOSSH_PORT: $AUTOSSH_PORT"
+log_msg "SSH_EXTRA_ARGS: $SSH_EXTRA_ARGS"
+log_msg "SSH_KEY_DIR: $SSH_KEY_DIR"
 
 # Create the target SSH directory if it does not exist
 log_msg "Checking the existence of /root/.ssh directory..."
@@ -70,7 +79,7 @@ MAX_INTERVAL=32
 log_msg "Starting autossh with retry logic..."
 while true; do
     log_msg "Attempting to establish an SSH connection with autossh..."
-    autossh -M "${AUTOSSH_PORT}" -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" -N "${SSH_COMMAND}" -p "${SSH_PORT}" || true
+    autossh -M "${AUTOSSH_PORT}" -o "StrictHostKeyChecking=no" -o "ServerAliveInterval=30" -o "ServerAliveCountMax=3" ${SSH_EXTRA_ARGS} "${SSH_COMMAND}" -p "${SSH_PORT}" || true
 
     # If autossh exits, print an error message
     log_msg "Error: autossh has exited. Retrying in ${RETRY_INTERVAL} seconds..."
