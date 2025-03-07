@@ -1,7 +1,7 @@
-# Use multi-stage build to keep final image size small.
+# Use multi-stage build to keep final image size small
 FROM alpine:latest AS builder
 
-# Install CA certificates and curl (for retrieving the binary and verifying the checksum).
+# Set the architecture for the build
 ARG TARGETPLATFORM
 
 ARG MATTERBRIDGE_URL_AMD64=https://github.com/42wim/matterbridge/releases/download/v1.26.0/matterbridge-1.26.0-linux-64bit
@@ -12,11 +12,12 @@ ARG MATTERBRIDGE_SHA256_ARM64=3d922187ce3e792f9cf896e209c828d3466e3b2453f3a133f7
 
 RUN apk update && \
     apk upgrade && \
+    # Install curl to download matterbridge binary
     apk add --no-cache \
         ca-certificates \
         curl \
     && \
-    # Check architecture and download correct matterbridge binary.
+    # Check architecture and download correct matterbridge binary
     case "$TARGETPLATFORM" in \
         "linux/amd64") curl -L $MATTERBRIDGE_URL_AMD64 -o /bin/matterbridge \
         && echo "$MATTERBRIDGE_SHA256_AMD64  /bin/matterbridge" | sha256sum -c - ;; \
@@ -28,8 +29,10 @@ RUN chmod +x /bin/matterbridge
 
 FROM scratch
 
-# Copy certificates so matterbridge can make secure connections.
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# Copy the matterbridge binary from the builder stage
 COPY --from=builder /bin/matterbridge /bin/matterbridge
+
+# Copy certificates so matterbridge can make secure connections
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 ENTRYPOINT ["/bin/matterbridge", "-conf", "/conf/matterbridge.toml"]
