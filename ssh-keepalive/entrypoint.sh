@@ -27,6 +27,7 @@ log_msg "Starting entrypoint script..."
 # Log the environment variables
 log_msg "AUTOSSH_POLL: $AUTOSSH_POLL"
 log_msg "AUTOSSH_PORT: $AUTOSSH_PORT"
+log_msg "SSH_COMMAND: $SSH_COMMAND"
 log_msg "SSH_EXTRA_ARGS: $SSH_EXTRA_ARGS"
 log_msg "SSH_KEY_DIR: $SSH_KEY_DIR"
 
@@ -82,7 +83,7 @@ MAX_INTERVAL=32
 log_msg "Starting autossh with retry logic..."
 while true; do
     log_msg "Attempting to establish an SSH connection with autossh..."
-    autossh -M "${AUTOSSH_PORT}" ${SSH_EXTRA_ARGS} -p "${SSH_PORT}" "${SSH_DESTINATION}" ${SSH_COMMAND} || true
+    autossh -M "${AUTOSSH_PORT}" ${SSH_EXTRA_ARGS} -p "${SSH_PORT}" "${SSH_DESTINATION}" -- ${SSH_COMMAND} || true
 
     # If autossh exits, print an error message
     log_msg "Error: autossh exited. Retrying in ${RETRY_INTERVAL} seconds..."
