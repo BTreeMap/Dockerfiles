@@ -1,7 +1,7 @@
 FROM tailscale/tailscale:stable
 
-# Update and upgrade apk packages, then remove cache to reduce image size
-RUN apk update && apk upgrade && rm -rf /var/cache/apk/*
+# Upgrade apk packages
+RUN apk upgrade --no-cache
 
 # Set the required environment variables
 ENV TS_AUTH_ONCE=true \
