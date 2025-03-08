@@ -1,19 +1,25 @@
 # Base image - lightweight Alpine Linux for minimal container size
-FROM alpine:latest
+FROM alpine:latest as base
 
 # System setup: Update, install dependencies, create directories, and clean cache
 # Combined layers reduce image size and improve build efficiency
 RUN apk update && \
-    apk upgrade --no-cache && \
-    apk add --no-cache \
-    ca-certificates \
-    iptables \
-    ip6tables \
-    bind-tools \
-    ethtool \
-    curl && \
+    apk upgrade && \
+    apk add \
+        bind-tools \
+        ca-certificates \
+        curl \
+        ethtool \
+        ip6tables \
+        iptables \
+    && \
     mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale && \
     rm -rf /var/cache/apk/*
+
+FROM scratch
+
+# Copy the base image contents to the final image
+COPY --from=base / /
 
 # Set default container working directory for script execution
 WORKDIR /app
