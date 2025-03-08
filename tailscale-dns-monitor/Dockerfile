@@ -1,5 +1,5 @@
 # Base image - lightweight Alpine Linux for minimal container size
-FROM alpine:latest AS base
+FROM alpine:3.21 AS base
 
 # System setup: Update, install dependencies, create directories, and clean cache
 # Combined layers reduce image size and improve build efficiency
@@ -16,23 +16,23 @@ RUN apk update && \
     mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale && \
     rm -rf /var/cache/apk/*
 
+# Copy application files and make scripts executable
+COPY root/ /
+RUN chmod +x /app/dns_query.sh /app/start.sh
+
 FROM scratch
 
 # Copy the base image contents to the final image
 COPY --from=base / /
-
-# Set default container working directory for script execution
-WORKDIR /app
-
-# Copy application files and make scripts executable
-COPY root/ /
-RUN chmod +x /app/dns_query.sh /app/start.sh
 
 # Import Tailscale binaries directly from official image for reliability
 COPY --from=tailscale/tailscale:stable \
     /usr/local/bin/tailscaled \
     /usr/local/bin/tailscale \
     /app/
+
+# Set default container working directory for script execution
+WORKDIR /app
 
 # Tailscale configuration environment variables
 ENV TAILSCALE_AUTH_KEY="" \
