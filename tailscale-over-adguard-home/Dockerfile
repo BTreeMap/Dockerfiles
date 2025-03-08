@@ -1,15 +1,33 @@
-# Use the latest Alpine image
-FROM alpine:3.20
+# Using Alpine 3.21 as the base image.
+FROM alpine:3.21 AS base
 
 # Install necessary packages
-RUN apk update && apk upgrade && \
-    apk add --no-cache \
-    ca-certificates \
-    libcap \
-    tzdata \
-    iptables \
-    iproute2 \
-    tini
+RUN apk update && \
+    apk upgrade && \
+    apk add \
+        ca-certificates \
+        iproute2 \
+        iptables \
+        libcap \
+        tini \
+        tzdata \
+    && \
+    # Clean up the apk cache
+    rm -rf /var/cache/apk/*
+
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /opt/adguardhome/conf /opt/adguardhome/work /var/lib/tailscale && \
+    chmod 700 /var/lib/tailscale && \
+    chown -R nobody:nogroup /opt/adguardhome /var/lib/tailscale
+
+FROM scratch
+
+# Copy the base image contents to the final image
+COPY --from=base / /
 
 # Set working directory
 WORKDIR /opt
@@ -18,20 +36,13 @@ WORKDIR /opt
 COPY --from=adguard/adguardhome:latest /opt/adguardhome/AdGuardHome /usr/local/bin/AdGuardHome
 
 # Copy Tailscale binaries from the official image
-COPY --from=tailscale/tailscale:stable /usr/local/bin/tailscaled /usr/local/bin/tailscaled
-COPY --from=tailscale/tailscale:stable /usr/local/bin/tailscale /usr/local/bin/tailscale
+COPY --from=tailscale/tailscale:stable \
+    /usr/local/bin/tailscaled \
+    /usr/local/bin/tailscale \
+    /usr/local/bin/
 
 # Set necessary capabilities for AdGuardHome to bind to privileged ports
 RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/AdGuardHome
-
-# Create necessary directories with proper permissions
-RUN mkdir -p /opt/adguardhome/conf /opt/adguardhome/work /var/lib/tailscale && \
-    chmod 700 /var/lib/tailscale && \
-    chown -R nobody:nogroup /opt/adguardhome /var/lib/tailscale
-
-# Copy entrypoint script
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 # Environment variables for AdGuard Home
 ENV ADGUARD_CONFIG_PATH="/opt/adguardhome/conf/AdGuardHome.yaml" \
