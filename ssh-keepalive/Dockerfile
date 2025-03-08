@@ -1,13 +1,11 @@
-# Using Alpine 3.20 as the base image.
-FROM alpine:3.20
+# Using Alpine 3.21 as the base image.
+FROM alpine:3.21
 
 # Copy the entrypoint script into the image
 COPY entrypoint.sh /entrypoint.sh
 
-# Install the OpenSSH client from the main repository, then install autossh
-# from the community repository. Clean up unnecessary files to reduce image size.
-RUN apk add --no-cache openssh-client && \
-    apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community autossh && \
+# Install SSH tools, clean up cache, and prepare entrypoint script
+RUN apk add --no-cache autossh openssh-client && \
     # Clean up the apk cache.
     rm -rf /var/cache/apk/* && \
     # Remove the empty /root/.ssh directory if it exists.
