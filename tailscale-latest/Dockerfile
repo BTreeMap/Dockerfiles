@@ -1,4 +1,4 @@
-FROM tailscale/tailscale:stable
+FROM tailscale/tailscale:stable AS base
 
 # Update and upgrade apk packages, then remove cache to reduce image size
 RUN apk update && apk upgrade && rm -rf /var/cache/apk/*

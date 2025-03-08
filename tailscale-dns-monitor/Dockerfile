@@ -1,5 +1,5 @@
 # Base image - lightweight Alpine Linux for minimal container size
-FROM alpine:latest as base
+FROM alpine:latest AS base
 
 # System setup: Update, install dependencies, create directories, and clean cache
 # Combined layers reduce image size and improve build efficiency
