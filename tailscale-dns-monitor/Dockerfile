@@ -2,7 +2,6 @@
 FROM alpine:3.21 AS base
 
 # System setup: Update, install dependencies, create directories, and clean cache
-# Combined layers reduce image size and improve build efficiency
 RUN apk update && \
     apk upgrade && \
     apk add \
@@ -10,7 +9,6 @@ RUN apk update && \
         ca-certificates \
         curl \
         ethtool \
-        ip6tables \
         iptables \
     && \
     mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale && \
