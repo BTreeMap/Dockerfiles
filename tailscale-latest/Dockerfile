@@ -1,12 +1,7 @@
-FROM tailscale/tailscale:stable AS base
+FROM tailscale/tailscale:stable
 
 # Update and upgrade apk packages, then remove cache to reduce image size
 RUN apk update && apk upgrade && rm -rf /var/cache/apk/*
-
-FROM scratch
-
-# Copy the base image contents to the final image
-COPY --from=base / /
 
 # Set the required environment variables
 ENV TS_AUTH_ONCE=true \
