@@ -13,7 +13,7 @@ ARG MATTERBRIDGE_SHA256_ARM64=3d922187ce3e792f9cf896e209c828d3466e3b2453f3a133f7
 RUN apk update && \
     apk upgrade && \
     # Install curl to download matterbridge binary
-    apk add --no-cache \
+    apk add \
         ca-certificates \
         curl \
     && \
