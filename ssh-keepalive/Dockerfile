@@ -18,7 +18,7 @@ RUN apk add --no-cache openssh-client && \
 # Set environment variables for autossh
 ENV AUTOSSH_POLL=60 \
     AUTOSSH_PORT=58449 \
-    SSH_COMMAND="" \
+    SSH_COMMAND="tail -f /dev/null -s 86400" \
     SSH_EXTRA_ARGS="-o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -N" \
     SSH_HOST="github.com" \
     SSH_KEY_DIR="" \

@@ -140,4 +140,4 @@ fi
 echo "Entrypoint script completed. Waiting for background processes."
 
 # Keep the script running indefinitely to prevent the container from exiting.
-exec tail -f /dev/null
+exec tail -f /dev/null -s 86400

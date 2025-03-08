@@ -100,4 +100,4 @@ done
 
 # Keep the script running indefinitely to prevent container exit.
 log_msg "Entrypoint script complete, entering idle mode to keep the container alive."
-exec tail -f /dev/null
+exec tail -f /dev/null -s 86400

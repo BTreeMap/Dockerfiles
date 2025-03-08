@@ -75,4 +75,4 @@ su -c "warp-cli --accept-tos connect" ubuntu
 
 # Execute an indefinite tail command to keep the container running
 echo "Starting indefinite tail command to keep the container running..."
-exec tail -f /dev/null
+exec tail -f /dev/null -s 86400

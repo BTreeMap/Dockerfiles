@@ -74,4 +74,4 @@ echo "[$(date)] Starting DNS querying script..."
 exec /app/dns_query.sh
 
 # Keep the script running indefinitely to prevent the container from exiting.
-exec tail -f /dev/null
+exec tail -f /dev/null -s 86400

@@ -60,4 +60,4 @@ sleep 5
 ./gluetun-entrypoint &
 
 # Keep the script running indefinitely to prevent container exit.
-exec tail -f /dev/null
+exec tail -f /dev/null -s 86400
