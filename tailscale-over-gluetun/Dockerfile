@@ -4,9 +4,11 @@ FROM qmcgaw/gluetun:v3
 # Copy the custom entrypoint script into the container.
 COPY entrypoint.sh /entrypoint.sh
 
-# Retrieve Tailscale binaries from the latest Tailscale Docker image.
-COPY --from=docker.io/tailscale/tailscale:stable /usr/local/bin/tailscaled /app/tailscaled
-COPY --from=docker.io/tailscale/tailscale:stable /usr/local/bin/tailscale /app/tailscale
+# Copy Tailscale binaries from the official image
+COPY --from=tailscale/tailscale:stable \
+    /usr/local/bin/tailscaled \
+    /usr/local/bin/tailscale \
+    /app/
 
 # Update the package list, upgrade existing packages, and install necessary dependencies.
 RUN apk update && \
