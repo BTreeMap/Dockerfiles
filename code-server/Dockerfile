@@ -113,10 +113,10 @@ FROM base AS racket_builder
 ENV BUILD_DIR=/build
 
 # Specify the Racket version and download URL
-ARG RACKET_VERSION=8.15
-ARG RACKET_PACKAGE=racket-8.15-src-builtpkgs.tgz
+ARG RACKET_VERSION=8.16
+ARG RACKET_PACKAGE=racket-8.16-src-builtpkgs.tgz
 ARG RACKET_URL=https://download.racket-lang.org/releases/$RACKET_VERSION/installers/$RACKET_PACKAGE
-ARG RACKET_CHECKSUM=sha256:02086d3eaf52c8e1816663265a8085350343daa646353a967fea8f35ba827896
+ARG RACKET_CHECKSUM=sha256:44d7c1ab34b52588f90dc22b15d96110e104d0c88ed1869f85b6f03c99843078
 
 # Download the Racket source package
 ADD --checksum=$RACKET_CHECKSUM $RACKET_URL $BUILD_DIR/$RACKET_PACKAGE
