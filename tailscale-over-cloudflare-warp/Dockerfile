@@ -2,8 +2,8 @@
 # Cloudflare WARP: https://pkg.cloudflareclient.com/
 # Tailscale Installation: https://tailscale.com/kb/1031/install-linux
 
-# Use the official Ubuntu 24.04 base image for ARM64 architecture
-FROM ubuntu:24.04
+# Use the official Ubuntu 24.04 image as the base for the container 
+FROM ubuntu:24.04 as base
 
 # Copy the entrypoint script into the container's root directory
 COPY entrypoint.sh /entrypoint.sh
@@ -40,6 +40,11 @@ RUN apt-get update && \
     mkdir -p /home/ubuntu/.local/share/warp && \
     echo -n 'yes' > /home/ubuntu/.local/share/warp/accepted-tos.txt && \
     echo -n 'yes' > /home/ubuntu/.local/share/warp/accepted-teams-tos.txt
+
+FROM scratch
+
+# Copy the base image contents to the final image
+COPY --from=base / /
 
 # Set the entrypoint for the container to execute the entrypoint script when the container starts
 ENTRYPOINT ["/entrypoint.sh"]
