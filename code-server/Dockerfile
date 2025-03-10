@@ -276,6 +276,7 @@ RUN set -ex && \
         aioitertools \
         aiomultiprocess \
         aiosqlite \
+        anthropic \
         beautifulsoup4 \
         black \
         click \
@@ -283,6 +284,7 @@ RUN set -ex && \
         discord.py \
         Django \
         Flask \
+        google-genai \
         httpx[brotli,http2,socks,zstd] \
         isort \
         json5 \
