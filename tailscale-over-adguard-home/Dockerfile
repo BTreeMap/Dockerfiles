@@ -19,6 +19,12 @@ RUN apk update && \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Copy AdGuardHome binary from the official image
+COPY --from=adguard/adguardhome:latest /opt/adguardhome/AdGuardHome /usr/local/bin/
+
+# Set necessary capabilities for AdGuardHome to bind to privileged ports
+RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/AdGuardHome
+
 # Create necessary directories with proper permissions
 RUN mkdir -p /opt/adguardhome/conf /opt/adguardhome/work /var/lib/tailscale && \
     chmod 700 /var/lib/tailscale && \
@@ -32,17 +38,11 @@ COPY --from=base / /
 # Set working directory
 WORKDIR /opt
 
-# Copy AdGuardHome binary from the official image
-COPY --from=adguard/adguardhome:latest /opt/adguardhome/AdGuardHome /usr/local/bin/AdGuardHome
-
 # Copy Tailscale binaries from the official image
 COPY --from=tailscale/tailscale:stable \
     /usr/local/bin/tailscaled \
     /usr/local/bin/tailscale \
     /usr/local/bin/
-
-# Set necessary capabilities for AdGuardHome to bind to privileged ports
-RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/AdGuardHome
 
 # Environment variables for AdGuard Home
 ENV ADGUARD_CONFIG_PATH="/opt/adguardhome/conf/AdGuardHome.yaml" \
