@@ -3,7 +3,7 @@
 # Tailscale Installation: https://tailscale.com/kb/1031/install-linux
 
 # Use the official Ubuntu 24.04 image as the base for the container 
-FROM ubuntu:24.04 as base
+FROM ubuntu:24.04 AS base
 
 # Copy the entrypoint script into the container's root directory
 COPY entrypoint.sh /entrypoint.sh
