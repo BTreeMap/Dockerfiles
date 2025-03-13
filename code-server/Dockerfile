@@ -290,6 +290,7 @@ RUN set -ex && \
         isort \
         json5 \
         jupyter \
+        loguru \
         matplotlib \
         numpy \
         openai \
