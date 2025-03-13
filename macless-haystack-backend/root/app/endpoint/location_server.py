@@ -14,7 +14,7 @@ import time
 from datetime import timezone  # Added to handle timezone-aware datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
-import config
+import mh_config
 import requests
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -24,7 +24,7 @@ from location_server_helper import generate_html_map, initialize_database
 from register import pypush_gsa_icloud
 
 # Check if the config file exists
-if not os.path.exists(config.getConfigFile()):
+if not os.path.exists(mh_config.getConfigFile()):
     logger.info(
         "No auth-token found. Please run mh_endpoint.py to register the device first."
     )
@@ -54,12 +54,14 @@ def decode_tag(data):
 
 
 def getAuth(regenerate=False, second_factor="sms"):
-    if os.path.exists(config.getConfigFile()) and not regenerate:
-        with open(config.getConfigFile(), "r") as f:
+    if os.path.exists(mh_config.getConfigFile()) and not regenerate:
+        with open(mh_config.getConfigFile(), "r") as f:
             j = json.load(f)
     else:
         mobileme = pypush_gsa_icloud.icloud_login_mobileme(
-            username=config.USER, password=config.PASS, second_factor=second_factor
+            username=mh_config.getUser(),
+            password=mh_config.getPass(),
+            second_factor=second_factor,
         )
         logger.info(f"Mobileme result: {mobileme}")
         j = {
@@ -68,7 +70,7 @@ def getAuth(regenerate=False, second_factor="sms"):
                 "service-data"
             ]["tokens"]["searchPartyToken"],
         }
-        with open(config.getConfigFile(), "w") as f:
+        with open(mh_config.getConfigFile(), "w") as f:
             json.dump(j, f)
     return (j["dsid"], j["searchPartyToken"])
 
