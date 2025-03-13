@@ -45,6 +45,7 @@ RUN set -ex && \
         python3-pip \
         python3-setuptools \
         python3-venv \
+        screen \
         unzip \
         wget \
         xvfb && \
