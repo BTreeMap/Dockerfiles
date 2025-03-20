@@ -48,8 +48,8 @@ RUN set -ex && \
         screen \
         unzip \
         wget \
-        xvfb && \
-    \
+        xvfb \
+    && \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
@@ -293,6 +293,7 @@ RUN set -ex && \
         isort \
         json5 \
         jupyter \
+        langchain \
         loguru \
         matplotlib \
         numpy \
@@ -302,6 +303,7 @@ RUN set -ex && \
         psycopg[binary,pool] \
         pydantic \
         pymongo \
+        pypdf \
         pytest \
         python-dateutil \
         python-dotenv \
@@ -313,16 +315,16 @@ RUN set -ex && \
         scipy \
         sympy \
         ujson \
-        websockets && \
-    \
+        websockets \
+    && \
     # Install some Python applications using pipx
     pipx install --pip-args='--no-cache-dir' \
         black \
         httpie \
         isort \
         poetry \
-        wheel && \
-    \
+        wheel \
+    && \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
