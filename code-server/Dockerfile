@@ -286,6 +286,8 @@ RUN set -ex && \
         discord.py \
         Django \
         Flask \
+        google-cloud-firestore \
+        google-cloud-storage \
         google-genai \
         httpx[brotli,http2,socks,zstd] \
         isort \
