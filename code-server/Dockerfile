@@ -281,6 +281,7 @@ RUN set -ex && \
         beautifulsoup4 \
         black \
         click \
+        cohere \
         cryptography \
         discord.py \
         Django \
