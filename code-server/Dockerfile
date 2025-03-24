@@ -295,6 +295,7 @@ RUN set -ex && \
         jupyter \
         langchain \
         langchain-community \
+        langgraph \
         loguru \
         matplotlib \
         numpy \
