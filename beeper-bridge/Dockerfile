@@ -51,7 +51,7 @@ RUN apk update && apk upgrade && apk add \
 
 # Copy and install cryptg wheel
 COPY --from=lottie /cryptg-*.whl /tmp/
-RUN pip3 install --break-system-packages /tmp/cryptg-*.whl && rm -f /tmp/cryptg-*.whl
+RUN pip3 install --break-system-packages /tmp/cryptg-*.whl
 
 # Copy artifacts from previous stages
 COPY --from=downloader /bin/bbctl /usr/local/bin/bbctl
@@ -69,7 +69,12 @@ FROM scratch
 COPY --from=builder / /
 
 # Configuration
-ENV SYSTEM_SITE_PACKAGES=true
+ENV SYSTEM_SITE_PACKAGES=true \
+    BEEPER_ENV=prod \
+    MATRIX_ACCESS_TOKEN=01JQHDCC0M95GKM2C0959ECRSX \
+    DATA_DIR=/data \
+    DB_DIR=/data/db
+
 VOLUME /data
 
 ENTRYPOINT ["/usr/local/bin/run-bridge.sh"]
