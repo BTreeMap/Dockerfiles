@@ -31,9 +31,8 @@ fi
 LOGIN_FLAGS=""
 
 # Set the Tailscale authentication key if provided
-if ! [ -v TAILSCALE_AUTHKEY ]; then
-    echo "WARNING: TAILSCALE_AUTHKEY is not defined. You can set it using the TAILSCALE_AUTHKEY environment variable. Alternatively, you can run `tailscale up` without this variable to be prompted for authentication."
-else
+if [ -v TAILSCALE_AUTHKEY ]; then
+    echo "INFO: Using a Tailscale authkey"
     LOGIN_FLAGS="${LOGIN_FLAGS} --authkey=${TAILSCALE_AUTHKEY}"
 fi
 
@@ -43,7 +42,7 @@ if [ -v TAILSCALE_LOGIN_SERVER ]; then
     LOGIN_FLAGS="${LOGIN_FLAGS} --login-server=${TAILSCALE_LOGIN_SERVER}"
 fi
 
-if [ -v LOGIN_FLAGS]; then
+if [ -v LOGIN_FLAGS ]; then
     echo "INFO: Performing Tailscale login with flags: ${LOGIN_FLAGS}"
     tailscale login ${LOGIN_FLAGS}
 fi
