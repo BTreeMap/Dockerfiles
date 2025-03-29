@@ -46,8 +46,8 @@ RUN apk update && apk upgrade && apk add \
     py3-magic \
     py3-olm \
     py3-pillow \
-    py3-pycryptodome
-    py3-ruamel.yaml \
+    py3-pycryptodome \
+    py3-ruamel.yaml
 
 # Copy and install cryptg wheel
 COPY --from=lottie /cryptg-*.whl /tmp/
@@ -71,9 +71,9 @@ COPY --from=builder / /
 # Configuration
 ENV BEEPER_ENV=prod \
     DATA_DIR=/data \
-    DB_DIR=/data/db
-    MATRIX_ACCESS_TOKEN=01JQHDCC0M95GKM2C0959ECRSX \
-    SYSTEM_SITE_PACKAGES=true \
+    DB_DIR=/data/db \
+    MATRIX_ACCESS_TOKEN=01JQHEEC38R3DM3JBKD0DQRRSB \
+    SYSTEM_SITE_PACKAGES=true
 
 VOLUME /data
 
