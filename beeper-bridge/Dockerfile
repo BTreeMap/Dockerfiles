@@ -1,5 +1,5 @@
 # Use multi-stage build to keep final image size small
-FROM alpine:latest AS builder
+FROM alpine:3.21 AS downloader
 
 # Set the architecture for the build
 ARG TARGETPLATFORM
@@ -19,20 +19,36 @@ RUN apk update && \
     && \
     # Check architecture and download correct matterbridge binary
     case "$TARGETPLATFORM" in \
-        "linux/amd64") curl -L $BEEPER_BRIDGE_URL_AMD64 -o /bin/matterbridge \
+        "linux/amd64") curl -L $BEEPER_BRIDGE_URL_AMD64 -o /bin/bbctl \
         && echo "$BEEPER_BRIDGE_SHA256_AMD64  /bin/bbctl" | sha256sum -c - ;; \
-        "linux/arm64") curl -L $BEEPER_BRIDGE_URL_ARM64 -o /bin/matterbridge \
+        "linux/arm64") curl -L $BEEPER_BRIDGE_URL_ARM64 -o /bin/bbctl \
         && echo "$BEEPER_BRIDGE_SHA256_ARM64  /bin/bbctl" | sha256sum -c - ;; \
     esac
 
 RUN chmod +x /bin/matterbridge
 
-FROM scratch
+FROM dock.mau.dev/tulir/lottieconverter:alpine-3.21 AS lottie
 
-# Copy the matterbridge binary from the builder stage
-COPY --from=builder /bin/matterbridge /bin/matterbridge
+FROM alpine:3.21 as builder
 
-# Copy certificates so matterbridge can make secure connections
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN apk add --no-cache bash curl jq git ffmpeg \
+	# Python for python bridges
+	python3 py3-pip py3-setuptools py3-wheel \
+	# Common dependencies that need native extensions for Python bridges
+	py3-magic py3-ruamel.yaml py3-aiohttp py3-pillow py3-olm py3-pycryptodome
+
+COPY --from=lottie /cryptg-*.whl /tmp/
+RUN pip3 install --break-system-packages /tmp/cryptg-*.whl && rm -f /tmp/cryptg-*.whl
+
+COPY --from=downloader /bin/bbctl /usr/local/bin/bbctl
+COPY --from=lottie /usr/lib/librlottie.so* /usr/lib/
+COPY --from=lottie /usr/local/bin/lottieconverter /usr/local/bin/lottieconverter
+COPY ./docker/run-bridge.sh /usr/local/bin/run-bridge.sh
+
+RUN chmod +x /usr/local/bin/run-bridge.sh
+
+ENV SYSTEM_SITE_PACKAGES=true
+VOLUME /data
+
 
 ENTRYPOINT ["/bin/matterbridge", "-conf", "/conf/matterbridge.toml"]
