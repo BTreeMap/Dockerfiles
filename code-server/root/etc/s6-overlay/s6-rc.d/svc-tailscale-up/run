@@ -1,5 +1,27 @@
 #!/usr/bin/with-contenv bash
 
+# Helper function to determine if a value is "truthy"
+is_truthy() {
+    local val
+    # Return false if variable is not set or empty
+    if [ -z "$1" ]; then
+        return 1
+    fi
+    
+    # Convert to lowercase
+    val=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+    
+    # Check for truthy values
+    case "$val" in
+        true|yes|1|on|y)
+            return 0 # True
+            ;;
+        *)
+            return 1 # False
+            ;;
+    esac
+}
+
 # Check if Tailscale is enabled
 if [ "${TAILSCALE_ENABLED}" = "false" ]; then
     echo "Tailscale is disabled. Exiting."
@@ -26,21 +48,6 @@ if [ -v TAILSCALE_USE_SSH ]; then
     FLAGS="${FLAGS} --ssh=${TAILSCALE_USE_SSH}"
 fi
 
-# Accept DNS over Tailscale
-if [ -v TAILSCALE_ACCEPT_DNS ]; then
-    FLAGS="${FLAGS} --accept-dns=${TAILSCALE_ACCEPT_DNS}"
-    if [ "${TAILSCALE_ACCEPT_DNS}" = "true" ]; then
-        python3 /opt/code-server-scripts/modify_resolv_conf.py --nameserver 100.100.100.100
-    fi
-fi
-
-# Configure Tailscale to act as an exit node if requested
-# Note: This requires approval in the Tailscale admin console
-if [ -v TAILSCALE_BE_EXIT_NODE ]; then
-    echo "WARNING: Acting as an exit node. This requires approval in the Tailscale admin console."
-    FLAGS="${FLAGS} --advertise-exit-node=${TS_BE_EXIT_NODE}"
-fi
-
 # Use a custom login server if provided
 if [ -v TAILSCALE_LOGIN_SERVER ]; then
     echo "INFO: Using a custom login server: ${TAILSCALE_LOGIN_SERVER}"
@@ -48,6 +55,21 @@ if [ -v TAILSCALE_LOGIN_SERVER ]; then
 fi
 
 tailscale up $FLAGS
+
+# Configure Tailscale to act as an exit node if requested
+# Note: This requires approval in the Tailscale admin console
+if [ -v TAILSCALE_BE_EXIT_NODE ]; then
+    echo "WARNING: Acting as an exit node. This requires approval in the Tailscale admin console."
+    tailscale set "${FLAGS} --advertise-exit-node=${TAILSCALE_BE_EXIT_NODE}"
+fi
+
+# Accept DNS over Tailscale
+if [ -v TAILSCALE_ACCEPT_DNS ]; then
+    tailscale set --accept-dns=${TAILSCALE_ACCEPT_DNS}
+    if [ -v TAILSCALE_REPLACE_DNS ] && is_truthy "${TAILSCALE_REPLACE_DNS}"; then
+        python3 /opt/code-server-scripts/modify_resolv_conf.py --nameserver 100.100.100.100
+    fi
+fi
 
 # Set the web client preference
 if [ -v TAILSCALE_USE_WEBCLIENT ]; then
