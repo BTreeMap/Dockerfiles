@@ -33,21 +33,21 @@ FROM alpine:3.21 as builder
 RUN apk update && apk upgrade && apk add \
     bash \
     curl \
-    jq \
-    git \
     ffmpeg \
+    git \
+    jq \
     # Python for python bridges
-    python3 \
     py3-pip \
     py3-setuptools \
     py3-wheel \
+    python3 \
     # Common dependencies that need native extensions for Python bridges
-    py3-magic \
-    py3-ruamel.yaml \
     py3-aiohttp \
-    py3-pillow \
+    py3-magic \
     py3-olm \
+    py3-pillow \
     py3-pycryptodome
+    py3-ruamel.yaml \
 
 # Copy and install cryptg wheel
 COPY --from=lottie /cryptg-*.whl /tmp/
@@ -69,11 +69,11 @@ FROM scratch
 COPY --from=builder / /
 
 # Configuration
-ENV SYSTEM_SITE_PACKAGES=true \
-    BEEPER_ENV=prod \
-    MATRIX_ACCESS_TOKEN=01JQHDCC0M95GKM2C0959ECRSX \
+ENV BEEPER_ENV=prod \
     DATA_DIR=/data \
     DB_DIR=/data/db
+    MATRIX_ACCESS_TOKEN=01JQHDCC0M95GKM2C0959ECRSX \
+    SYSTEM_SITE_PACKAGES=true \
 
 VOLUME /data
 
