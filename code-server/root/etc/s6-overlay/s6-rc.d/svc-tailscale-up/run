@@ -30,27 +30,27 @@ fi
 
 LOGIN_FLAGS=""
 
-# Set the Tailscale authentication key if provided
+# Provide a Tailscale authentication key if configured
 if [ -v TAILSCALE_AUTHKEY ]; then
-    echo "INFO: Using a Tailscale authkey"
+    echo "INFO: Using Tailscale authkey."
     LOGIN_FLAGS="${LOGIN_FLAGS} --authkey=${TAILSCALE_AUTHKEY}"
 fi
 
-# Use a custom login server if provided
+# Provide a custom login server if configured
 if [ -v TAILSCALE_LOGIN_SERVER ]; then
-    echo "INFO: Using a custom login server: ${TAILSCALE_LOGIN_SERVER}"
+    echo "INFO: Using custom login server: ${TAILSCALE_LOGIN_SERVER}"
     LOGIN_FLAGS="${LOGIN_FLAGS} --login-server=${TAILSCALE_LOGIN_SERVER}"
 fi
 
 if [ -v LOGIN_FLAGS ]; then
-    echo "INFO: Performing Tailscale login with flags: ${LOGIN_FLAGS}"
+    echo "INFO: Logging in to Tailscale with flags: ${LOGIN_FLAGS}"
     tailscale login ${LOGIN_FLAGS}
 fi
 
-# Set the Tailscale hostname if provided
-# Note: This may affect how other Tailscale devices see this device
+# Configure a Tailscale hostname if set
+# Note: This might affect how other devices on your Tailscale network identify this device
 if [ -v TAILSCALE_HOSTNAME ]; then
-    echo "INFO: Setting Tailscale hostname to ${TAILSCALE_HOSTNAME}"
+    echo "INFO: Setting Tailscale hostname to: ${TAILSCALE_HOSTNAME}"
     tailscale set --hostname=${TAILSCALE_HOSTNAME}
 fi
 
@@ -58,7 +58,7 @@ fi
 # Note: This requires approval in the Tailscale admin console
 if [ -v TAILSCALE_BE_EXIT_NODE ]; then
     if is_truthy "${TAILSCALE_BE_EXIT_NODE}"; then
-        echo "WARNING: Acting as an exit node. This requires approval in the Tailscale admin console."
+        echo "WARNING: Configuring as an exit node. Tailscale admin console approval is required."
         TAILSCALE_BE_EXIT_NODE=true
     else
         TAILSCALE_BE_EXIT_NODE=false
@@ -67,10 +67,10 @@ if [ -v TAILSCALE_BE_EXIT_NODE ]; then
 fi
 
 # Accept DNS settings from Tailscale if requested
-# Note: Accepting DNS settings may override your current DNS configuration
+# Note: Accepting DNS settings may impact internet connectivity
 if [ -v TAILSCALE_ACCEPT_DNS ]; then
     if is_truthy "${TAILSCALE_ACCEPT_DNS}"; then
-        echo "WARNING: Accepting DNS settings from Tailscale. This may affect your internet connectivity."
+        echo "WARNING: Accepting DNS settings from Tailscale. This may impact internet connectivity."
         TAILSCALE_ACCEPT_DNS=true
     else
         TAILSCALE_ACCEPT_DNS=false
@@ -79,10 +79,10 @@ if [ -v TAILSCALE_ACCEPT_DNS ]; then
 fi
 
 # Set the web client preference
-# Note: Advertising the web client allows remote management from your Tailnet
+# Note: Enabling the web client allows remote management from your Tailnet
 if [ -v TAILSCALE_USE_WEBCLIENT ]; then
     if is_truthy "${TAILSCALE_USE_WEBCLIENT}"; then
-        echo "WARNING: Advertising web client. This allows remote management from your Tailnet."
+        echo "WARNING: Enabling the web client for remote management from your Tailnet."
         TAILSCALE_USE_WEBCLIENT=true
     else
         TAILSCALE_USE_WEBCLIENT=false
@@ -94,7 +94,7 @@ fi
 # Note: Auto-update ensures Tailscale is always up-to-date
 if [ -v TAILSCALE_AUTO_UPDATE ]; then
     if is_truthy "${TAILSCALE_AUTO_UPDATE}"; then
-        echo "WARNING: Enabling auto-update. This automatically updates Tailscale to the latest version."
+        echo "WARNING: Auto-update is enabled. Tailscale will update automatically."
         TAILSCALE_AUTO_UPDATE=true
     else
         TAILSCALE_AUTO_UPDATE=false
@@ -103,10 +103,10 @@ if [ -v TAILSCALE_AUTO_UPDATE ]; then
 fi
 
 # Set the Tailscale SSH configuration if provided
-# Note: Enabling Tailscale SSH allows SSH access over Tailscale
+# Note: Enabling Tailscale SSH allows SSH access through Tailscale
 if [ -v TAILSCALE_USE_SSH ]; then
     if is_truthy "${TAILSCALE_USE_SSH}"; then
-        echo "WARNING: Enabling Tailscale SSH. This allows SSH access over Tailscale."
+        echo "WARNING: Enabling Tailscale SSH. This allows SSH access through Tailscale."
         TAILSCALE_USE_SSH=true
     else
         TAILSCALE_USE_SSH=false
@@ -117,9 +117,9 @@ fi
 tailscale up
 
 # Replace DNS settings with Tailscale DNS if requested
-# Note: Replacing DNS settings may override your current DNS configuration
+# Note: Replacing DNS settings may impact internet connectivity
 if is_truthy "${TAILSCALE_ACCEPT_DNS}" && is_truthy "${TAILSCALE_REPLACE_DNS}"; then
-    echo "WARNING: Replacing DNS settings with Tailscale DNS. This may affect your internet connectivity."
+    echo "WARNING: Replacing DNS settings with Tailscale DNS. This may impact internet connectivity."
     python3 /opt/code-server-scripts/modify_resolv_conf.py --nameserver 100.100.100.100
 fi
 
@@ -127,10 +127,10 @@ fi
 # Note: Serving or funneling traffic requires proper configuration
 if [ -v TAILSCALE_SERVE_PORT ] && [ -v TAILSCALE_SERVE_MODE ]; then
     if [ -v TAILSCALE_FUNNEL ]; then
-        echo "WARNING: Using Tailscale funnel mode. This allows remote access from the Internet."
+        echo "WARNING: Using Tailscale funnel mode, allowing remote Internet access."
         tailscale funnel --"${TAILSCALE_SERVE_MODE}"=443 http://localhost:"${TAILSCALE_SERVE_PORT}" &
     else
-        echo "WARNING: Using Tailscale serve mode. This allows remote access from your Tailnet."
+        echo "WARNING: Using Tailscale serve mode, allowing remote access from your Tailnet."
         tailscale serve --"${TAILSCALE_SERVE_MODE}"=443 http://localhost:"${TAILSCALE_SERVE_PORT}" &
     fi
 fi
