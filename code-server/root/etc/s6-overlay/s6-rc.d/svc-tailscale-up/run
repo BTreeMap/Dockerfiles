@@ -28,58 +28,94 @@ if [ "${TAILSCALE_ENABLED}" = "false" ]; then
     exit 0
 fi
 
-FLAGS=""
+LOGIN_FLAGS=""
 
 # Set the Tailscale authentication key if provided
 if ! [ -v TAILSCALE_AUTHKEY ]; then
     echo "WARNING: TAILSCALE_AUTHKEY is not defined. You can set it using the TAILSCALE_AUTHKEY environment variable. Alternatively, you can run `tailscale up` without this variable to be prompted for authentication."
 else
-    FLAGS="${FLAGS} --authkey=${TAILSCALE_AUTHKEY}"
-fi
-
-# Set the Tailscale hostname if provided
-# Note: This may affect how other Tailscale devices see this device
-if [ -v TAILSCALE_HOSTNAME ]; then
-    FLAGS="${FLAGS} --hostname=${TAILSCALE_HOSTNAME}"
-fi
-
-# Set the Tailscale SSH configuration if provided
-if [ -v TAILSCALE_USE_SSH ]; then
-    FLAGS="${FLAGS} --ssh=${TAILSCALE_USE_SSH}"
+    LOGIN_FLAGS="${LOGIN_FLAGS} --authkey=${TAILSCALE_AUTHKEY}"
 fi
 
 # Use a custom login server if provided
 if [ -v TAILSCALE_LOGIN_SERVER ]; then
     echo "INFO: Using a custom login server: ${TAILSCALE_LOGIN_SERVER}"
-    FLAGS="${FLAGS} --login-server=${TAILSCALE_LOGIN_SERVER}"
+    LOGIN_FLAGS="${LOGIN_FLAGS} --login-server=${TAILSCALE_LOGIN_SERVER}"
 fi
 
-tailscale up $FLAGS
+if [ -v LOGIN_FLAGS]; then
+    echo "INFO: Performing Tailscale login with flags: ${LOGIN_FLAGS}"
+    tailscale login ${LOGIN_FLAGS}
+fi
+
+# Set the Tailscale hostname if provided
+# Note: This may affect how other Tailscale devices see this device
+if [ -v TAILSCALE_HOSTNAME ]; then
+    echo "INFO: Setting Tailscale hostname to ${TAILSCALE_HOSTNAME}"
+    tailscale set --hostname=${TAILSCALE_HOSTNAME}
+fi
 
 # Configure Tailscale to act as an exit node if requested
 # Note: This requires approval in the Tailscale admin console
 if [ -v TAILSCALE_BE_EXIT_NODE ]; then
-    echo "WARNING: Acting as an exit node. This requires approval in the Tailscale admin console."
-    tailscale set "${FLAGS} --advertise-exit-node=${TAILSCALE_BE_EXIT_NODE}"
+    if is_truthy "${TAILSCALE_BE_EXIT_NODE}"; then
+        echo "WARNING: Acting as an exit node. This requires approval in the Tailscale admin console."
+        TAILSCALE_BE_EXIT_NODE=true
+    else
+        TAILSCALE_BE_EXIT_NODE=false
+    fi
+    tailscale set --advertise-exit-node=${TAILSCALE_BE_EXIT_NODE}
 fi
 
 # Accept DNS over Tailscale
 if [ -v TAILSCALE_ACCEPT_DNS ]; then
+    if is_truthy "${TAILSCALE_ACCEPT_DNS}"; then
+        echo "WARNING: Accepting DNS settings from Tailscale. This may affect your internet connectivity."
+        TAILSCALE_ACCEPT_DNS=true
+    else
+        TAILSCALE_ACCEPT_DNS=false
+    fi
     tailscale set --accept-dns=${TAILSCALE_ACCEPT_DNS}
-    if [ -v TAILSCALE_REPLACE_DNS ] && is_truthy "${TAILSCALE_REPLACE_DNS}"; then
+    if [ TAILSCALE_ACCEPT_DNS = "true" ] && is_truthy "${TAILSCALE_REPLACE_DNS}"; then
+        echo "WARNING: Replacing DNS settings with Tailscale DNS. This may affect your internet connectivity."
         python3 /opt/code-server-scripts/modify_resolv_conf.py --nameserver 100.100.100.100
     fi
 fi
 
 # Set the web client preference
 if [ -v TAILSCALE_USE_WEBCLIENT ]; then
+    if is_truthy "${TAILSCALE_USE_WEBCLIENT}"; then
+        echo "WARNING: Advertising web client. This allows remote management from your Tailnet."
+        TAILSCALE_USE_WEBCLIENT=true
+    else
+        TAILSCALE_USE_WEBCLIENT=false
+    fi
     tailscale set --webclient=${TAILSCALE_USE_WEBCLIENT}
 fi
 
 # Enable auto-update
 if [ -v TAILSCALE_AUTO_UPDATE ]; then
-    tailscale set --auto-update=${TAILSCALE_AUTO_UPDATE}
+    if is_truthy "${TAILSCALE_AUTO_UPDATE}"; then
+        echo "WARNING: Enabling auto-update. This automatically updates Tailscale to the latest version."
+        TAILSCALE_AUTO_UPDATE=true
+    else
+        TAILSCALE_AUTO_UPDATE=false
+    fi
+    tailscale set --autoupdate=${TAILSCALE_AUTO_UPDATE}
 fi
+
+# Set the Tailscale SSH configuration if provided
+if [ -v TAILSCALE_USE_SSH ]; then
+    if is_truthy "${TAILSCALE_USE_SSH}"; then
+        echo "WARNING: Enabling Tailscale SSH. This allows SSH access over Tailscale."
+        TAILSCALE_USE_SSH=true
+    else
+        TAILSCALE_USE_SSH=false
+    fi
+    tailscale set --ssh=${TAILSCALE_USE_SSH}
+fi
+
+tailscale up
 
 # Configure Tailscale to serve or funnel traffic
 if [ -v TAILSCALE_SERVE_PORT ] && [ -v TAILSCALE_SERVE_MODE ]; then
