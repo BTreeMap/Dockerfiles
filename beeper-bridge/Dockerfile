@@ -45,9 +45,14 @@ COPY --from=lottie /usr/lib/librlottie.so* /usr/lib/
 COPY --from=lottie /usr/local/bin/lottieconverter /usr/local/bin/lottieconverter
 COPY root/ /
 
-RUN 
+RUN rm -rf /tmp/* && \
+    # Clean up unnecessary files
+    rm -rf /var/cache/apk/*
 
-RUN chmod +x /usr/local/bin/run-bridge.sh
+FROM scratch
+
+# Copy the built files from the builder stage
+COPY --from=builder / /
 
 ENV SYSTEM_SITE_PACKAGES=true
 VOLUME /data
