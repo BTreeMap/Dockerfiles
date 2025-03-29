@@ -23,7 +23,7 @@ is_truthy() {
 }
 
 # Check if Tailscale is enabled
-if [ "${TAILSCALE_ENABLED}" = "false" ]; then
+if ! is_truthy "${TAILSCALE_ENABLED}" then
     echo "Tailscale is disabled. Exiting."
     exit 0
 fi
@@ -66,7 +66,7 @@ if [ -v TAILSCALE_BE_EXIT_NODE ]; then
     tailscale set --advertise-exit-node=${TAILSCALE_BE_EXIT_NODE}
 fi
 
-# Accept DNS over Tailscale
+# Accept DNS settings from Tailscale if requested
 if [ -v TAILSCALE_ACCEPT_DNS ]; then
     if is_truthy "${TAILSCALE_ACCEPT_DNS}"; then
         echo "WARNING: Accepting DNS settings from Tailscale. This may affect your internet connectivity."
@@ -75,10 +75,6 @@ if [ -v TAILSCALE_ACCEPT_DNS ]; then
         TAILSCALE_ACCEPT_DNS=false
     fi
     tailscale set --accept-dns=${TAILSCALE_ACCEPT_DNS}
-    if [ TAILSCALE_ACCEPT_DNS = "true" ] && is_truthy "${TAILSCALE_REPLACE_DNS}"; then
-        echo "WARNING: Replacing DNS settings with Tailscale DNS. This may affect your internet connectivity."
-        python3 /opt/code-server-scripts/modify_resolv_conf.py --nameserver 100.100.100.100
-    fi
 fi
 
 # Set the web client preference
@@ -115,6 +111,12 @@ if [ -v TAILSCALE_USE_SSH ]; then
 fi
 
 tailscale up
+
+# Replace DNS settings with Tailscale DNS if requested
+if is_truthy "${TAILSCALE_ACCEPT_DNS}" && is_truthy "${TAILSCALE_REPLACE_DNS}"; then
+    echo "WARNING: Replacing DNS settings with Tailscale DNS. This may affect your internet connectivity."
+    python3 /opt/code-server-scripts/modify_resolv_conf.py --nameserver 100.100.100.100
+fi
 
 # Configure Tailscale to serve or funnel traffic
 if [ -v TAILSCALE_SERVE_PORT ] && [ -v TAILSCALE_SERVE_MODE ]; then
