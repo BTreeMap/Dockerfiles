@@ -26,6 +26,11 @@ fi
 export BBCTL_CONFIG=${BBCTL_CONFIG:-/tmp/bbctl.json}
 export BEEPER_ENV=${BEEPER_ENV:-prod}
 
+# Bridge execution options
+export BRIDGE_TYPE=${BRIDGE_TYPE:-}
+export BBCTL_NO_OVERRIDE_CONFIG=${BBCTL_NO_OVERRIDE_CONFIG:-}
+export BRIDGE_EXTRA_ARGS=${BRIDGE_EXTRA_ARGS:-}
+
 #
 # SETUP SECTION
 #
@@ -57,5 +62,23 @@ fi
 # EXECUTION SECTION
 #
 
+# Construct bridge run command with options
+RUN_ARGS=""
+
+# Add no-override-config flag if set
+if [[ -n "${BBCTL_NO_OVERRIDE_CONFIG}" ]]; then
+    RUN_ARGS="${RUN_ARGS} --no-override-config"
+fi
+
+# Add bridge type if specified
+if [[ -n "${BRIDGE_TYPE}" ]]; then
+    RUN_ARGS="${RUN_ARGS} --type ${BRIDGE_TYPE}"
+fi
+
+# Add any extra arguments
+if [[ -n "${BRIDGE_EXTRA_ARGS}" ]]; then
+    RUN_ARGS="${RUN_ARGS} ${BRIDGE_EXTRA_ARGS}"
+fi
+
 # Run the specified bridge
-bbctl -e $BEEPER_ENV run $BRIDGE_NAME
+bbctl -e $BEEPER_ENV run ${RUN_ARGS} $BRIDGE_NAME
