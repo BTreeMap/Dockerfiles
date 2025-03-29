@@ -25,13 +25,13 @@ RUN apk update && \
         && echo "$BEEPER_BRIDGE_SHA256_ARM64  /bin/bbctl" | sha256sum -c - ;; \
     esac
 
-RUN chmod +x /bin/matterbridge
+RUN chmod +x /bin/bbctl
 
 FROM dock.mau.dev/tulir/lottieconverter:alpine-3.21 AS lottie
 
 FROM alpine:3.21 as builder
 
-RUN apk add --no-cache bash curl jq git ffmpeg \
+RUN apk update && apk upgrade && apk add bash curl jq git ffmpeg \
 	# Python for python bridges
 	python3 py3-pip py3-setuptools py3-wheel \
 	# Common dependencies that need native extensions for Python bridges
@@ -43,12 +43,13 @@ RUN pip3 install --break-system-packages /tmp/cryptg-*.whl && rm -f /tmp/cryptg-
 COPY --from=downloader /bin/bbctl /usr/local/bin/bbctl
 COPY --from=lottie /usr/lib/librlottie.so* /usr/lib/
 COPY --from=lottie /usr/local/bin/lottieconverter /usr/local/bin/lottieconverter
-COPY ./docker/run-bridge.sh /usr/local/bin/run-bridge.sh
+COPY root/ /
+
+RUN 
 
 RUN chmod +x /usr/local/bin/run-bridge.sh
 
 ENV SYSTEM_SITE_PACKAGES=true
 VOLUME /data
 
-
-ENTRYPOINT ["/bin/matterbridge", "-conf", "/conf/matterbridge.toml"]
+ENTRYPOINT ["/usr/local/bin/run-bridge.sh"]
