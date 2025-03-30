@@ -42,7 +42,7 @@ if [ -v TAILSCALE_LOGIN_SERVER ]; then
     LOGIN_FLAGS="${LOGIN_FLAGS} --login-server=${TAILSCALE_LOGIN_SERVER}"
 fi
 
-if [ -v LOGIN_FLAGS ]; then
+if [ -n "${LOGIN_FLAGS}" ]; then
     echo "INFO: Logging in to Tailscale with flags: ${LOGIN_FLAGS}"
     tailscale login ${LOGIN_FLAGS}
 fi
