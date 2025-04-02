@@ -317,6 +317,7 @@ RUN set -ex && \
         scikit-learn \
         scipy \
         seaborn \
+        skl2onnx \
         sympy \
         tqdm \
         ujson \
