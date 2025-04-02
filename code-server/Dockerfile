@@ -318,6 +318,7 @@ RUN set -ex && \
         scipy \
         seaborn \
         sympy \
+        tqdm \
         ujson \
         websockets \
     && \
