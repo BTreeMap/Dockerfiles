@@ -24,7 +24,17 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     sed -i 's/applications:org.kde.discover.desktop,/applications:org.kde.konsole.desktop,/g' \
     /usr/share/plasma/plasmoids/org.kde.plasma.taskmanager/contents/config/main.xml && \ 
     # Install essential packages required for the setup
-    apt-get install -y wget curl lsb-release apt-transport-https git vim jq iptables && \ 
+    apt-get install -y \
+        wget \
+        curl \
+        lsb-release \
+        apt-transport-https \
+        git \
+        vim \
+        jq \
+        iptables \
+        iputils-ping \
+    && \ 
     # Get the current Ubuntu version to construct the Microsoft package URL
     ubuntu_release=$(lsb_release -rs) && \ 
     # Download the Microsoft package repository configuration for Ubuntu

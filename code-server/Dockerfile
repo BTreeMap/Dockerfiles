@@ -316,6 +316,7 @@ RUN set -ex && \
         scapy \
         scikit-learn \
         scipy \
+        seaborn \
         sympy \
         ujson \
         websockets \

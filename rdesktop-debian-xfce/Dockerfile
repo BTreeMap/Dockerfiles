@@ -31,7 +31,16 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     echo "**** XFCE tweaks ****" && \
     rm -f /etc/xdg/autostart/xscreensaver.desktop && \
     # Install required packages for functionality
-    apt-get install -y wget curl lsb-release git vim jq iptables && \ 
+    apt-get install -y \
+        wget \
+        curl \
+        lsb-release \
+        git \
+        vim \
+        jq \
+        iptables \
+        iputils-ping \
+    && \ 
     # Download the Microsoft package for the current Debian release
     wget https://packages.microsoft.com/config/debian/$(lsb_release -rs)/packages-microsoft-prod.deb -O $MS_PACKAGES_DEB_PATH && \ 
     # Install the Microsoft package
