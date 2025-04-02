@@ -32,6 +32,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     rm -f /etc/xdg/autostart/xscreensaver.desktop && \
     # Install required packages for functionality
     apt-get install -y \
+        bind9-dnsutils \
         curl \
         git \
         iptables \

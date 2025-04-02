@@ -25,7 +25,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     /usr/share/plasma/plasmoids/org.kde.plasma.taskmanager/contents/config/main.xml && \ 
     # Install essential packages required for the setup
     apt-get install -y \
-        apt-transport-https \
+        bind9-dnsutils \
         curl \
         git \
         iptables \
