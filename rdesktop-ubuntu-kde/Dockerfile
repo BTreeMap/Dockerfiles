@@ -32,6 +32,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
         iputils-ping \
         jq \
         lsb-release \
+        unzip \
         vim \
         wget \
     && \ 
