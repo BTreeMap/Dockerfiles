@@ -25,15 +25,15 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     /usr/share/plasma/plasmoids/org.kde.plasma.taskmanager/contents/config/main.xml && \ 
     # Install essential packages required for the setup
     apt-get install -y \
-        wget \
-        curl \
-        lsb-release \
         apt-transport-https \
+        curl \
         git \
-        vim \
-        jq \
         iptables \
         iputils-ping \
+        jq \
+        lsb-release \
+        vim \
+        wget \
     && \ 
     # Get the current Ubuntu version to construct the Microsoft package URL
     ubuntu_release=$(lsb_release -rs) && \ 
