@@ -39,6 +39,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
         iputils-ping \
         jq \
         lsb-release \
+        python-is-python3 \
         unzip \
         vim \
         wget \
