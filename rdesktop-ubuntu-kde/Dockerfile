@@ -33,6 +33,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
         jq \
         lsb-release \
         python-is-python3 \
+        screen \
         unzip \
         vim \
         wget \
