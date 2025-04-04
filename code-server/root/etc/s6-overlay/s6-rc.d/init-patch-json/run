@@ -33,8 +33,8 @@ patch_and_echo() {
 
 # Check if PATCH_JSON is set to a value representing "true"
 if [[ -n "$PATCH_JSON" && "${PATCH_JSON,,}" =~ ^(true|yes|1|on|y)$ ]]; then
-  patch_and_echo /config/data/Machine/settings.json /usr/share/code-server-scripts/patch_json/*.json
-  patch_and_echo /config/data/User/settings.json /usr/share/code-server-scripts/patch_json/*.json
+  patch_and_echo /config/data/Machine/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
+  patch_and_echo /config/data/User/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
   echo "All JSON patches applied successfully."
 else
   echo "PATCH_JSON is not enabled. Skipping JSON patching."
