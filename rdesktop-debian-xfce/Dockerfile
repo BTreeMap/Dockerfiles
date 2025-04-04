@@ -45,7 +45,8 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
         unzip \
         vim \
         wget \
-    && \ 
+        xz-utils \
+    && \
     # Download the Microsoft package for the current Debian release
     wget https://packages.microsoft.com/config/debian/$(lsb_release -rs)/packages-microsoft-prod.deb -O $MS_PACKAGES_DEB_PATH && \ 
     # Install the Microsoft package

@@ -49,6 +49,7 @@ RUN set -ex && \
         unzip \
         wget \
         xvfb \
+        xz-utils \
     && \
     # Remove temporary and unnecessary files
     apt-get clean && \

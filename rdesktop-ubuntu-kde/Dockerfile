@@ -38,7 +38,8 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
         unzip \
         vim \
         wget \
-    && \ 
+        xz-utils \
+    && \
     # Get the current Ubuntu version to construct the Microsoft package URL
     ubuntu_release=$(lsb_release -rs) && \ 
     # Download the Microsoft package repository configuration for Ubuntu
