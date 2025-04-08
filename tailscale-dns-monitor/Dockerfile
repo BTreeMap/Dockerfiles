@@ -41,8 +41,8 @@ ENV TAILSCALE_AUTH_KEY="" \
     TAILSCALE_SET_EXTRA_ARGS="--webclient"
 
 # DNS monitoring configuration variables
-ENV REFRESH_DURATION=300 \
-    QUERY_DURATION=1 \
+ENV QUERY_DURATION=1 \
+    REFRESH_DURATION=300 \
     DNS_SERVERS_FILE=/data/dns_servers.txt \
     DOMAINS_FILE=/data/domains.txt
 
