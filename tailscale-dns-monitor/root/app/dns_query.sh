@@ -205,14 +205,6 @@ while true; do
     dns_servers=$(grep -v '^[[:space:]]*$' "$DNS_SERVERS_FILE" | grep -v '^#')
     domains=$(grep -v '^[[:space:]]*$' "$DOMAINS_FILE" | grep -v '^#')
 
-    # For each DNS server
-    for dns_server in $dns_servers; do
-        # For each domain
-        for domain in $domains; do
-            query_dns "$dns_server" "$domain"
-        done
-    done
-
     # Read DNS over HTTPS servers, skipping empty lines and comments
     if [ -f "$DNS_OVER_HTTPS_SERVERS_FILE" ]; then
         dns_over_https_servers=$(grep -v '^[[:space:]]*$' "$DNS_OVER_HTTPS_SERVERS_FILE" | grep -v '^#')
@@ -220,28 +212,35 @@ while true; do
         dns_over_https_servers=""
     fi
 
-    # For each DNS over HTTPS server
-    echo "$dns_over_https_servers" | while read line; do
-        # Skip if line is empty or a comment
-        if [ -z "$line" ]; then continue; fi
-        # Parse the line into variables
-        protocol=$(echo "$line" | awk '{print $1}')
-        hostname=$(echo "$line" | awk '{print $2}')
-        port=$(echo "$line" | awk '{print $3}')
-        ip=$(echo "$line" | awk '{print $4}')
-        path=$(echo "$line" | awk '{print $5}')
-        true_client_ip=$(echo "$line" | awk '{print $6}')
-        if [ -z "$true_client_ip" ]; then
-            true_client_ip="138.51.64.128"
-        fi
+    # For each domain
+    for domain in $domains; do
+        # For each DNS server
+        for dns_server in $dns_servers; do
+            query_dns "$dns_server" "$domain"
+        done
 
-        # For each domain
-        for domain in $domains; do
+        # For each DNS over HTTPS server
+        echo "$dns_over_https_servers" | while read line; do
+            # Skip if line is empty or a comment
+            if [ -z "$line" ]; then continue; fi
+            # Parse the line into variables
+            protocol=$(echo "$line" | awk '{print $1}')
+            hostname=$(echo "$line" | awk '{print $2}')
+            port=$(echo "$line" | awk '{print $3}')
+            ip=$(echo "$line" | awk '{print $4}')
+            path=$(echo "$line" | awk '{print $5}')
+            true_client_ip=$(echo "$line" | awk '{print $6}')
+            if [ -z "$true_client_ip" ]; then
+                true_client_ip="138.51.64.128"
+            fi
+
             query_dns_over_https "$protocol" "$hostname" "$port" "$ip" "$path" "$domain" "$true_client_ip"
         done
+
+        sleep "$QUERY_DURATION" # Sleep between queries to avoid overwhelming the DNS servers
     done
 
     echo "[$(date)] DNS query cycle completed. Sleeping for $REFRESH_DURATION seconds..."
     echo "================================================================================"
-    sleep "$REFRESH_DURATION"
+    sleep "$REFRESH_DURATION" # Sleep before the next cycle
 done
