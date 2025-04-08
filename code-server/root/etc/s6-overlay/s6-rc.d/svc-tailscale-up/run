@@ -99,7 +99,7 @@ if [ -v TAILSCALE_AUTO_UPDATE ]; then
     else
         TAILSCALE_AUTO_UPDATE=false
     fi
-    tailscale set --autoupdate=${TAILSCALE_AUTO_UPDATE}
+    tailscale set --auto-update=${TAILSCALE_AUTO_UPDATE}
 fi
 
 # Set the Tailscale SSH configuration if provided
