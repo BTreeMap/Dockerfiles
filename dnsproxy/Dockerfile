@@ -1,40 +1,32 @@
 # A docker file for scripts/make/build-docker.sh.
 
-FROM alpine:3.18
-
-ARG BUILD_DATE
-ARG VERSION
-ARG VCS_REF
-
-LABEL\
-	maintainer="AdGuard Team <devteam@adguard.com>" \
-	org.opencontainers.image.authors="AdGuard Team <devteam@adguard.com>" \
-	org.opencontainers.image.created=$BUILD_DATE \
-	org.opencontainers.image.description="Simple DNS proxy with DoH, DoT, DoQ and DNSCrypt support" \
-	org.opencontainers.image.documentation="https://github.com/AdguardTeam/dnsproxy" \
-	org.opencontainers.image.licenses="Apache-2.0" \
-	org.opencontainers.image.revision=$VCS_REF \
-	org.opencontainers.image.source="https://github.com/AdguardTeam/dnsproxy" \
-	org.opencontainers.image.title="dnsproxy" \
-	org.opencontainers.image.url="https://github.com/AdguardTeam/dnsproxy" \
-	org.opencontainers.image.vendor="AdGuard" \
-	org.opencontainers.image.version=$VERSION
+FROM alpine:3.21 AS base
 
 # Update certificates.
-RUN apk --no-cache add ca-certificates libcap tzdata && \
-	mkdir -p /opt/dnsproxy && chown -R nobody: /opt/dnsproxy
+RUN apk update && \
+    apk upgrade && \
+    apk add \
+        ca-certificates \
+        libcap \
+        tzdata \
+    && \
+	mkdir -p /opt/dnsproxy && \
+    chown -R nobody: /opt/dnsproxy && \
+    rm -rf \
+        /var/cache/apk/* \
+        /tmp/* \
+        /var/tmp/* \
+        /usr/share/man \
+        /usr/share/doc \
+        /usr/share/licenses
 
-ARG DIST_DIR
-ARG TARGETARCH
-ARG TARGETOS
-ARG TARGETVARIANT
 
-COPY --chown=nobody:nogroup\
-	./${DIST_DIR}/docker/dnsproxy_${TARGETOS}_${TARGETARCH}_${TARGETVARIANT}\
-	/opt/dnsproxy/dnsproxy
-COPY --chown=nobody:nogroup\
-    ./${DIST_DIR}/docker/config.yaml\
-    /opt/dnsproxy/config.yaml
+COPY \
+    --chown=nobody:nogroup \
+	--from=adguard/dnsproxy:latest \
+	/opt/dnsproxy/dnsproxy \
+    /opt/dnsproxy/config.yaml \
+    /opt/dnsproxy/
 
 RUN setcap 'cap_net_bind_service=+eip' /opt/dnsproxy/dnsproxy
 
