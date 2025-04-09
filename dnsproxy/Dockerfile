@@ -20,7 +20,6 @@ RUN apk update && \
         /usr/share/doc \
         /usr/share/licenses
 
-
 COPY \
     --chown=nobody:nogroup \
 	--from=adguard/dnsproxy:latest \
@@ -29,6 +28,10 @@ COPY \
     /opt/dnsproxy/
 
 RUN setcap 'cap_net_bind_service=+eip' /opt/dnsproxy/dnsproxy
+
+FROM scratch
+
+COPY --from=base / /
 
 # 53     : TCP, UDP : DNS
 # 80     : TCP      : HTTP
