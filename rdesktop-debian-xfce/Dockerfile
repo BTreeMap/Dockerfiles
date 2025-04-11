@@ -40,6 +40,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
         jq \
         lsb-release \
         mtr \
+        nano \
         python-is-python3 \
         screen \
         unzip \
@@ -74,8 +75,8 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
 ENV JAVA_HOME=/usr/lib/jvm/msopenjdk-21         
 
 # Environment variables for Tailscale
-ENV TAILSCALE_ENABLED="true" \
-    TAILSCALE_ACCEPT_DNS="false" \
-    TAILSCALE_AUTO_UPDATE="false" \
-    TS_BE_EXIT_NODE="false" \
-    TAILSCALE_USE_WEBCLIENT="true"
+ENV TAILSCALE_ENABLED=true \
+    TAILSCALE_ACCEPT_DNS=false \
+    TAILSCALE_AUTO_UPDATE=false \
+    TAILSCALE_BE_EXIT_NODE=false \
+    TAILSCALE_USE_WEBCLIENT=true
