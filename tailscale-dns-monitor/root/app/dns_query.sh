@@ -197,9 +197,21 @@ query_dns_over_https() {
     echo "--------------------------------------------------------------------------------"
 }
 
+# Flag to indicate if we are in prewarm mode
+IS_PREWARM=true
+
+echo "[$(date)] Starting DNS query cycle..."
+
 # Main loop
 while true; do
-    echo "[$(date)] Starting DNS query cycle..."
+    if [ "$IS_PREWARM" = true ]; then
+        echo "[$(date)] Prewarming DNS servers..."
+        QUERY_DURATION_ACTUAL=1
+        IS_PREWARM=false
+    else
+        echo "[$(date)] Normal DNS query cycle..."
+        QUERY_DURATION_ACTUAL=$QUERY_DURATION
+    fi
 
     # Read DNS servers and domains, skipping empty lines and comments
     dns_servers=$(grep -v '^[[:space:]]*$' "$DNS_SERVERS_FILE" | grep -v '^#')
@@ -237,7 +249,7 @@ while true; do
             query_dns_over_https "$protocol" "$hostname" "$port" "$ip" "$path" "$domain" "$true_client_ip"
         done
 
-        sleep "$QUERY_DURATION" # Sleep between queries to avoid overwhelming the DNS servers
+        sleep "$QUERY_DURATION_ACTUAL" # Sleep between queries to avoid overwhelming the DNS servers
     done
 
     echo "[$(date)] DNS query cycle completed. Sleeping for $REFRESH_DURATION seconds..."
