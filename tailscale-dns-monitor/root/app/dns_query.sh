@@ -1,7 +1,10 @@
 #!/bin/sh
 
-# Set default refresh duration (in seconds)
-REFRESH_DURATION="${REFRESH_DURATION:-600}"
+# Set default refresh interval (in seconds)
+REFRESH_INTERVAL="${REFRESH_DURATION:-600}"
+
+# Set default query delay (in seconds)
+QUERY_DELAY="${QUERY_DURATION:-5}"
 
 # Set default DNS servers file path
 DNS_SERVERS_FILE="${DNS_SERVERS_FILE:-/data/dns_servers.txt}"
@@ -45,29 +48,29 @@ query_dns() {
     # Perform A record query
     echo "[$(date)] Querying A record..."
     if dig @"$dns_server" "$domain" A +tries=1 +timeout=5 > /dev/null 2>&1; then
-        echo "[$(date)] A record query to '$dns_server' for '$domain' succeeded."
+        echo "[$(date)] A record query to '$dns_server' for '$domain' succeeded"
     else
-        echo "[$(date)] A record query to '$dns_server' for '$domain' failed."
+        echo "[$(date)] A record query to '$dns_server' for '$domain' failed"
     fi
 
     # Perform AAAA record query
     echo "[$(date)] Querying AAAA record..."
     if dig @"$dns_server" "$domain" AAAA +tries=1 +timeout=5 > /dev/null 2>&1; then
-        echo "[$(date)] AAAA record query to '$dns_server' for '$domain' succeeded."
+        echo "[$(date)] AAAA record query to '$dns_server' for '$domain' succeeded"
     else
-        echo "[$(date)] AAAA record query to '$dns_server' for '$domain' failed."
+        echo "[$(date)] AAAA record query to '$dns_server' for '$domain' failed"
     fi
 
     # Perform HTTPS (TYPE65) record query
     echo "[$(date)] Querying HTTPS (TYPE65) record..."
     if dig @"$dns_server" "$domain" HTTPS +tries=1 +timeout=5 > /dev/null 2>&1 || \
        dig @"$dns_server" "$domain" TYPE65 +tries=1 +timeout=5 > /dev/null 2>&1; then
-        echo "[$(date)] HTTPS record query to '$dns_server' for '$domain' succeeded."
+        echo "[$(date)] HTTPS record query to '$dns_server' for '$domain' succeeded"
     else
-        echo "[$(date)] HTTPS record query to '$dns_server' for '$domain' failed."
+        echo "[$(date)] HTTPS record query to '$dns_server' for '$domain' failed"
     fi
 
-    echo "[$(date)] Completed queries to '$dns_server' for '$domain'."
+    echo "[$(date)] Completed queries to '$dns_server' for '$domain'"
     echo "--------------------------------------------------------------------------------"
 }
 
@@ -166,7 +169,7 @@ query_dns_over_https() {
 
         # Generate DNS query
         if ! generate_dns_query "$domain" "$qtype" "$query_file"; then
-            echo "[$(date)] Failed to generate DNS query for $qtype record."
+            echo "[$(date)] Failed to generate DNS query for $qtype record"
             rm -f "$query_file" "$response_file"
             continue
         fi
@@ -181,36 +184,36 @@ query_dns_over_https() {
             --resolve "$hostname:$port:$ip" "$url"; then
             # Parse the response
             if parse_dns_response "$response_file"; then
-                echo "[$(date)] $qtype record query to '$hostname' for '$domain' succeeded."
+                echo "[$(date)] $qtype record query to '$hostname' for '$domain' succeeded"
             else
-                echo "[$(date)] $qtype record query to '$hostname' for '$domain' failed (DNS error)."
+                echo "[$(date)] $qtype record query to '$hostname' for '$domain' failed (DNS error)"
             fi
         else
-            echo "[$(date)] $qtype record query to '$hostname' for '$domain' failed (curl error)."
+            echo "[$(date)] $qtype record query to '$hostname' for '$domain' failed (curl error)"
         fi
 
         # Remove temporary files
         rm -f "$query_file" "$response_file"
     done
 
-    echo "[$(date)] Completed queries to '$hostname' for '$domain'."
+    echo "[$(date)] Completed queries to '$hostname' for '$domain'"
     echo "--------------------------------------------------------------------------------"
 }
 
-# Flag to indicate if we are in prewarm mode
-IS_PREWARM=true
+# Flag to indicate if we are in warmup mode
+IS_WARMUP=true
 
 echo "[$(date)] Starting DNS query cycle..."
 
 # Main loop
 while true; do
-    if [ "$IS_PREWARM" = true ]; then
-        echo "[$(date)] Prewarming DNS servers..."
-        QUERY_DURATION_ACTUAL=1
-        IS_PREWARM=false
+    if [ "$IS_WARMUP" = true ]; then
+        echo "[$(date)] Warming up DNS servers..."
+        CURRENT_QUERY_DELAY=1
+        IS_WARMUP=false
     else
-        echo "[$(date)] Normal DNS query cycle..."
-        QUERY_DURATION_ACTUAL=$QUERY_DURATION
+        echo "[$(date)] Running normal DNS query cycle..."
+        CURRENT_QUERY_DELAY=$QUERY_DELAY
     fi
 
     # Read DNS servers and domains, skipping empty lines and comments
@@ -249,10 +252,10 @@ while true; do
             query_dns_over_https "$protocol" "$hostname" "$port" "$ip" "$path" "$domain" "$true_client_ip"
         done
 
-        sleep "$QUERY_DURATION_ACTUAL" # Sleep between queries to avoid overwhelming the DNS servers
+        sleep "$CURRENT_QUERY_DELAY" # Sleep between queries to avoid overwhelming the DNS servers
     done
 
-    echo "[$(date)] DNS query cycle completed. Sleeping for $REFRESH_DURATION seconds..."
+    echo "[$(date)] DNS query cycle completed. Sleeping for $REFRESH_INTERVAL seconds..."
     echo "================================================================================"
-    sleep "$REFRESH_DURATION" # Sleep before the next cycle
+    sleep "$REFRESH_INTERVAL" # Sleep before the next cycle
 done
