@@ -48,3 +48,7 @@ COPY --from=base / /
 
 # Set the entrypoint for the container to execute the entrypoint script when the container starts
 ENTRYPOINT ["/entrypoint.sh"]
+
+# Add a health check to verify the WARP client status
+HEALTHCHECK --interval=2m --start-period=30s --timeout=10s --retries=3 \
+  CMD su - ubuntu -c 'warp-cli status' | grep -q "Status update: Connected"
