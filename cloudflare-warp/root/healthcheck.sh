@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-# File: /healthcheck.sh
+#!/bin/bash
 
 # Path to failure counter
 CNTFILE=/tmp/hc_fail_count
@@ -15,7 +14,9 @@ else
   echo "$count" > "$CNTFILE"
   if [ "$count" -ge 3 ]; then
     rm -f "$CNTFILE"
-    kill 1   # sends SIGTERM to PID 1, stopping the container
+    # sends SIGTERM to PID 1, stopping the container
+    kill 1
   fi
-  exit 1    # mark this check as failed
+  # mark this check as failed
+  exit 1
 fi
