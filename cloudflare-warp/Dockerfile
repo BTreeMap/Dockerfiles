@@ -1,50 +1,51 @@
 # Reference Links:
 # Cloudflare WARP: https://pkg.cloudflareclient.com/
 
-# Use the official Ubuntu 24.04 image as the base for the container 
+# Use the official Ubuntu 24.04 image as the base image
 FROM ubuntu:24.04 AS base
 
-# Copy the entrypoint script into the container's root directory
-COPY entrypoint.sh /entrypoint.sh
+# Copy scripts (entrypoint, healthcheck, etc.) into the container's root directory
+COPY root/ /
 
-# Set the apt frontend to non-interactive mode for automated installs
+# Set the apt frontend to non-interactive for automated installs
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install necessary packages and configure the environment for Cloudflare client
+# Install dependencies, add Cloudflare repo, and install WARP client
 RUN apt-get update && \
     apt-get upgrade -y && \
-    # Install required utilities for package management and GPG handling
+    # Install utilities for package management and GPG
     apt-get install -y curl gnupg lsb-release ethtool && \
-    # Import the Cloudflare GPG key for package verification
+    # Import Cloudflare GPG key
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | \
     gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && \
-    # Add the Cloudflare APT repository to the sources list
+    # Add Cloudflare APT repository
     echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | \
     tee /etc/apt/sources.list.d/cloudflare-client.list && \
-    # Update the package index after adding the new repository
+    # Update package index
     apt-get update && \
-    # Install the Cloudflare WARP client
+    # Install Cloudflare WARP client
     apt-get install -y cloudflare-warp && \
-    # Clean up APT caches and temporary files to minimize the final image size
+    # Clean up APT caches and temporary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    # Remove the state directory for Cloudflare WARP to ensure they are empty in the image
+    # Remove Cloudflare WARP state directory
     rm -rf /var/lib/cloudflare-warp && \
-    # Make the entrypoint script executable to ensure it can be run at container start
+    # Make scripts executable
     chmod +x /entrypoint.sh && \
-    # Create necessary directories for WARP and pre-accept TOS (terms of service)
+    chmod +x /healthcheck.sh && \
+    # Create WARP config directory and pre-accept TOS
     mkdir -p /home/ubuntu/.local/share/warp && \
     echo -n 'yes' > /home/ubuntu/.local/share/warp/accepted-tos.txt && \
     echo -n 'yes' > /home/ubuntu/.local/share/warp/accepted-teams-tos.txt
 
 FROM scratch
 
-# Copy the base image contents to the final image
+# Copy all from base image to final image
 COPY --from=base / /
 
-# Set the entrypoint for the container to execute the entrypoint script when the container starts
+# Set entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Add a health check to verify the WARP client status
+# Health check for WARP client connection
 HEALTHCHECK --interval=2m --start-period=30s --timeout=10s --retries=3 \
   CMD su - ubuntu -c 'warp-cli status' | grep -q "Status update: Connected"
