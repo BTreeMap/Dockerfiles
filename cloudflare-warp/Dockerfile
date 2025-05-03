@@ -46,6 +46,9 @@ COPY --from=base / /
 # Set entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Health check for WARP client connection
-HEALTHCHECK --interval=2m --start-period=30s --timeout=10s --retries=3 \
-  CMD su - ubuntu -c 'warp-cli status' | grep -q "Status update: Connected"
+# Healthcheck: run every 2 minutes, allow 30s for startup, 10s timeout
+HEALTHCHECK \
+  --interval=2m \
+  --start-period=30s \
+  --timeout=10s \
+  CMD /healthcheck.sh
