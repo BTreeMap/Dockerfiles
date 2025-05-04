@@ -32,11 +32,7 @@ RUN apt-get update && \
     rm -rf /var/lib/cloudflare-warp && \
     # Make scripts executable
     chmod +x /entrypoint.sh && \
-    chmod +x /healthcheck.sh && \
-    # Create WARP config directory and pre-accept TOS
-    mkdir -p /home/ubuntu/.local/share/warp && \
-    echo -n 'yes' > /home/ubuntu/.local/share/warp/accepted-tos.txt && \
-    echo -n 'yes' > /home/ubuntu/.local/share/warp/accepted-teams-tos.txt
+    chmod +x /healthcheck.sh
 
 FROM scratch
 
