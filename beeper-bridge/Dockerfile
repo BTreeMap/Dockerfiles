@@ -27,7 +27,7 @@ RUN apk update && \
 FROM dock.mau.dev/tulir/lottieconverter:alpine-3.21 AS lottie
 
 # Main builder stage
-FROM alpine:3.21 as builder
+FROM alpine:3.21 AS builder
 
 # Install dependencies
 RUN apk update && apk upgrade && apk add \
