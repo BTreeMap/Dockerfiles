@@ -1,35 +1,31 @@
 #!/bin/bash
 set -euo pipefail
 
-# How many failures before we bail
+# Number of consecutive failures before tearing down
 THRESHOLD=3
-# Path to persistent failure counter
 CNTFILE=/tmp/hc_fail_count
 
-# Check WARP status as the ubuntu user
+# 1. Check WARP status as ubuntu user
 if su - ubuntu -c 'warp-cli status' | grep -q 'Status update: Connected'; then
-  rm -f "$CNTFILE"
+  rm -f "$CNTFILE"              # Reset failure counter on success
   exit 0
 fi
 
-# On failure, bump the counter
-count=0
-if [[ -f "$CNTFILE" ]]; then
-  read -r count < "$CNTFILE" || count=0
-fi
+# 2. Increment failure counter
+count=$(<"$CNTFILE" 2>/dev/null || echo 0)
 count=$((count + 1))
 echo "$count" > "$CNTFILE"
 
-# If we’ve failed enough times, reset and kill PID 1
+# 3. On too many failures, send SIGTERM to all, wait, then SIGKILL
 if (( count >= THRESHOLD )); then
   rm -f "$CNTFILE"
-  # graceful shutdown
-  kill -TERM 1 || true
-  # give it a moment
-  sleep 10
-  # force if still alive
-  kill -KILL 1 || true
+  echo "Health-check failed $count times: sending SIGTERM to all processes"
+  kill -TERM -- -1 || true      # Graceful shutdown of every process
+  sleep 10                      # Wait for clean exit
+  echo "Forcing SIGKILL to all processes"
+  kill -KILL -- -1 || true      # Forceful termination of any survivors
+  exit 1                        # Mark unhealthy so Docker can restart
 fi
 
-# tell Docker “unhealthy” this round
+# 4. Report unhealthy for this round
 exit 1
