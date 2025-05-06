@@ -8,8 +8,8 @@ on:
     branches: [ "main" ]
 
 env:
-  DOCKER_REGISTRY: ghcr.io
   DOCKER_IMAGE_NAME: ${{ github.repository }}
+  DOCKER_REGISTRY: ghcr.io
   GITHUB_SHA: ${{ github.sha }}
   MAX_RETRIES: 3
 
@@ -81,15 +81,16 @@ jobs:
       - name: Discover, Build, and Push Docker Images in Parallel
         run: python .github/scripts/build_docker_images.py
         env:
-          DOCKER_PLATFORM: ${{ matrix.platform }}
           DATE_STR: ${{ needs.setup-timestamp.outputs.date }}
           DATE_TIME_STR: ${{ needs.setup-timestamp.outputs.date_time }}
+          DOCKER_PLATFORM: ${{ matrix.platform }}
           SOURCE_DATE_EPOCH: ${{ needs.setup-timestamp.outputs.source_date_epoch }}
 
   create-manifest:
     needs: [setup-timestamp, build-matrix]
     runs-on: ubuntu-24.04
     permissions:
+      contents: read
       packages: write
     steps:
       - name: Checkout Repository
