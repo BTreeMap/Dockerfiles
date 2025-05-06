@@ -113,6 +113,7 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Run Python script to create and push Docker manifests
       - name: Create and Push Docker Manifests
         run: python .github/scripts/create_docker_manifests.py
         env:
