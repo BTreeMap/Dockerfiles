@@ -44,6 +44,18 @@ echo "INFO: PUID=${PUID}, PGID=${PGID}"
 echo "INFO: USER_INIT_FILE=${USER_INIT_FILE}"
 echo "INFO: USER_INIT_DIR=${USER_INIT_DIR}"
 
+# --- Function to execute a single init file ---
+execute_init_file() {
+  local file="$1"
+  echo "INFO: Processing $file"
+  if [ -x "$file" ]; then
+    echo "INFO: Launching $file in background"
+    ( s6-setuidgid "${PUID}:${PGID}" "$file" || true ) &
+  else
+    echo "WARN: $file is not executable, skipping."
+  fi
+}
+
 # --- Process single user init file ---
 if [ -n "$USER_INIT_FILE" ] && [ -f "$USER_INIT_FILE" ]; then
   echo "INFO: Processing user init file: $USER_INIT_FILE"
@@ -51,14 +63,7 @@ if [ -n "$USER_INIT_FILE" ] && [ -f "$USER_INIT_FILE" ]; then
     echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}"
     chown "${PUID}:${PGID}" "$USER_INIT_FILE"
   fi
-  if [ -x "$USER_INIT_FILE" ]; then
-    echo "INFO: Executing $USER_INIT_FILE as user ${PUID}:${PGID}"
-    s6-setuidgid "${PUID}:${PGID}" "$USER_INIT_FILE"
-  else
-    echo "WARN: $USER_INIT_FILE is not executable, skipping."
-  fi
-else
-  echo "INFO: User init file $USER_INIT_FILE not found or invalid, skipping."
+  execute_init_file "$USER_INIT_FILE"
 fi
 
 # --- Process user init directory ---
@@ -69,16 +74,8 @@ if [ -n "$USER_INIT_DIR" ] && [ -d "$USER_INIT_DIR" ]; then
     chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
   fi
   find "$USER_INIT_DIR" -type f -print0 | while IFS= read -r -d $'\0' file; do
-    echo "INFO: Processing $file from $USER_INIT_DIR"
-    if [ -x "$file" ]; then
-      echo "INFO: Executing $file as user ${PUID}:${PGID}"
-      s6-setuidgid "${PUID}:${PGID}" "$file"
-    else
-      echo "WARN: $file is not executable, skipping."
-    fi
+    execute_init_file "$file"
   done
-else
-  echo "INFO: User init directory $USER_INIT_DIR not found or invalid, skipping."
 fi
 
 # --- Completion ---
