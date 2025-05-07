@@ -5,6 +5,12 @@ set -euo pipefail
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
+# Exit if PUID and PGID are default
+if [ "$PUID" -eq 1000 ] && [ "$PGID" -eq 1000 ]; then
+    echo "INFO: PUID and PGID are default (1000:1000). Skipping ownership fix."
+    exit 0
+fi
+
 # Set VENV_DIR from environment or default to /opt/shared-venv
 VENV_DIR="${VENV_DIR:-/opt/shared-venv}"
 

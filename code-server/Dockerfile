@@ -276,8 +276,12 @@ RUN set -ex && \
 RUN set -ex && \
     \
     # Install some Python packages using pip
+    # Create Python virtual environment as root then change ownership
     python3 -m venv ${VENV_DIR} --upgrade-deps && \
-    ${VENV_DIR}/bin/pip install --no-cache-dir \
+    chown -R ${PUID}:${PGID} ${VENV_DIR} && \
+    # Install packages as the specified user
+    s6-setuidgid ${PUID}:${PGID} \
+        ${VENV_DIR}/bin/pip install --no-cache-dir \
         aiodns \
         aiohttp \
         aioitertools \
