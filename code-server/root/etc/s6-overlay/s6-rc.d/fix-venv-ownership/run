@@ -1,2 +1,21 @@
 #!/usr/bin/with-contenv bash
+set -e
 
+# Set PUID and PGID from environment or default to 1000
+PUID="${PUID:-1000}"
+PGID="${PGID:-1000}"
+
+VENV_DIR="/opt/shared-venv"
+
+if [ ! -d "$VENV_DIR" ]; then
+    echo "[fix-venv-ownership] Directory $VENV_DIR does not exist. Skipping ownership fix."
+    exit 0
+fi
+
+echo "[fix-venv-ownership] Setting ownership of $VENV_DIR to PUID=$PUID, PGID=$PGID recursively."
+if chown -R "$PUID:$PGID" "$VENV_DIR"; then
+    echo "[fix-venv-ownership] Ownership set successfully."
+else
+    echo "[fix-venv-ownership] Failed to set ownership!" >&2
+    exit 1
+fi
