@@ -1,4 +1,5 @@
 #!/usr/bin/with-contenv bash
+set -euxo pipefail
 
 # Set PUID and PGID from environment or default to 1000
 : "${PUID:=1000}"

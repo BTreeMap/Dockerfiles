@@ -1,4 +1,5 @@
 #!/usr/bin/with-contenv bash
+set -euxo pipefail
 
 # Helper function to determine if a value is "truthy"
 is_truthy() {
