@@ -36,7 +36,13 @@ patch_and_echo() {
   local source_file="$1"
   shift
   local patch_files=("$@")
-  
+
+  # Check if source file exists
+  if [ ! -f "$source_file" ]; then
+    echo "WARN: Source file '$source_file' does not exist. Skipping."
+    return 0
+  fi
+
   # Build flags based on environment variables
   local flags=""
   if is_truthy "$PATCH_JSON_USE_FORCE"; then
@@ -46,18 +52,21 @@ patch_and_echo() {
     flags+=" --no-sort-keys"
   fi
 
-  echo "Applying patch to '$source_file' using: ${patch_files[*]}. Flags: '$flags'."
-  /opt/shared-venv/bin/python /opt/code-server-scripts/patch_json.py --source "$source_file" $flags --in-place "${patch_files[@]}"
-  echo "Changing ownership of $source_file to ${PUID}:${PGID}"
+  echo "INFO: Applying patch to '$source_file' using: ${patch_files[*]}. Flags: '$flags'."
+  if ! /opt/shared-venv/bin/python /opt/code-server-scripts/patch_json.py --source "$source_file" $flags --in-place "${patch_files[@]}"; then
+    echo "WARN: Failed to patch '$source_file' with patch_json.py. Continuing."
+    return 0
+  fi
+  echo "INFO: Changing ownership of $source_file to ${PUID}:${PGID}"
   chown "${PUID}:${PGID}" "$source_file"
-  echo "Patching of '$source_file' completed."
+  echo "INFO: Patching of '$source_file' completed."
 }
 
 # Check if PATCH_JSON is set to a value representing "true"
-if is_truthy PATCH_JSON; then
+if is_truthy "$PATCH_JSON"; then
   patch_and_echo /config/data/Machine/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
   patch_and_echo /config/data/User/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
-  echo "All JSON patches applied successfully."
+  echo "INFO: All JSON patches applied successfully."
 else
-  echo "PATCH_JSON is not enabled. Skipping JSON patching."
+  echo "INFO: PATCH_JSON is not enabled. Skipping JSON patching."
 fi
