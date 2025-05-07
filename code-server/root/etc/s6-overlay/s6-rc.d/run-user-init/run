@@ -5,6 +5,9 @@ set -e
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
+# Set HOME from environment or default to /config
+HOME="${HOME:-/config}"
+
 # Set USER_INIT_FILE and USER_INIT_DIR from env or fallback to defaults
 USER_INIT_FILE="${USER_INIT_FILE:-/config/.entrypoint}"
 USER_INIT_DIR="${USER_INIT_DIR:-/config/.entrypoint.d}"
@@ -22,6 +25,19 @@ if [ -L "$USER_INIT_DIR" ]; then
   echo "INFO: USER_INIT_DIR was a symlink: $prev_user_init_dir -> $USER_INIT_DIR"
 fi
 
+# --- Path Validation ---
+# Ensure USER_INIT_FILE and USER_INIT_DIR are within $HOME for chown
+CHOWN_USER_INIT_FILE=true
+CHOWN_USER_INIT_DIR=true
+if [[ "$USER_INIT_FILE" != "$HOME/"* ]]; then
+  echo "WARN: USER_INIT_FILE ($USER_INIT_FILE) is outside $HOME, skipping chown."
+  CHOWN_USER_INIT_FILE=false
+fi
+if [[ "$USER_INIT_DIR" != "$HOME/"* ]]; then
+  echo "WARN: USER_INIT_DIR ($USER_INIT_DIR) is outside $HOME, skipping chown."
+  CHOWN_USER_INIT_DIR=false
+fi
+
 # --- Initialization Info ---
 echo "INFO: User Initialization Script started."
 echo "INFO: PUID=${PUID}, PGID=${PGID}"
@@ -29,11 +45,12 @@ echo "INFO: USER_INIT_FILE=${USER_INIT_FILE}"
 echo "INFO: USER_INIT_DIR=${USER_INIT_DIR}"
 
 # --- Process single user init file ---
-# If the user init file exists, set ownership and execute if possible
-if [ -f "$USER_INIT_FILE" ]; then
+if [ -n "$USER_INIT_FILE" ] && [ -f "$USER_INIT_FILE" ]; then
   echo "INFO: Processing user init file: $USER_INIT_FILE"
-  echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}"
-  chown "${PUID}:${PGID}" "$USER_INIT_FILE"
+  if [ "$CHOWN_USER_INIT_FILE" = true ]; then
+    echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}"
+    chown "${PUID}:${PGID}" "$USER_INIT_FILE"
+  fi
   if [ -x "$USER_INIT_FILE" ]; then
     echo "INFO: Executing $USER_INIT_FILE as user ${PUID}:${PGID}"
     s6-setuidgid "${PUID}:${PGID}" "$USER_INIT_FILE"
@@ -41,16 +58,16 @@ if [ -f "$USER_INIT_FILE" ]; then
     echo "WARN: $USER_INIT_FILE is not executable, skipping."
   fi
 else
-  echo "INFO: User init file $USER_INIT_FILE not found, skipping."
+  echo "INFO: User init file $USER_INIT_FILE not found or invalid, skipping."
 fi
 
 # --- Process user init directory ---
-# If the user init directory exists, set ownership and execute all executable files inside
-if [ -d "$USER_INIT_DIR" ]; then
+if [ -n "$USER_INIT_DIR" ] && [ -d "$USER_INIT_DIR" ]; then
   echo "INFO: Processing user init directory: $USER_INIT_DIR"
-  echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}"
-  chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
-  # Find all files (not directories) and process each
+  if [ "$CHOWN_USER_INIT_DIR" = true ]; then
+    echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}"
+    chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
+  fi
   find "$USER_INIT_DIR" -type f -print0 | while IFS= read -r -d $'\0' file; do
     echo "INFO: Processing $file from $USER_INIT_DIR"
     if [ -x "$file" ]; then
@@ -61,7 +78,7 @@ if [ -d "$USER_INIT_DIR" ]; then
     fi
   done
 else
-  echo "INFO: User init directory $USER_INIT_DIR not found, skipping."
+  echo "INFO: User init directory $USER_INIT_DIR not found or invalid, skipping."
 fi
 
 # --- Completion ---
