@@ -43,6 +43,8 @@ if [ -e "$CABAL_DIR" ] && [ ! -d "$CABAL_DIR" ]; then
   echo "WARN: $CABAL_DIR exists as a file. Removing and creating directory."
   rm -f "$CABAL_DIR"
 fi
+
+# Check if CABAL_DIR exists, if not create it
 if [ ! -d "$CABAL_DIR" ]; then
   echo "INFO: Creating directory: $CABAL_DIR"
   if ! mkdir -p "$CABAL_DIR"; then
