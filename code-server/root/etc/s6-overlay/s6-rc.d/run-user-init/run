@@ -25,17 +25,19 @@ if [ -L "$USER_INIT_DIR" ]; then
   echo "INFO: USER_INIT_DIR was a symlink: $prev_user_init_dir -> $USER_INIT_DIR"
 fi
 
-# --- Path Validation ---
-# Ensure USER_INIT_FILE and USER_INIT_DIR are within $HOME for chown
-CHOWN_USER_INIT_FILE=true
-CHOWN_USER_INIT_DIR=true
-if [[ "$USER_INIT_FILE" != "$HOME/"* ]]; then
+# --- Path Validation and chown ---
+if [[ "$USER_INIT_FILE" == "$HOME/"* ]]; then
+  echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}"
+  chown "${PUID}:${PGID}" "$USER_INIT_FILE"
+else
   echo "WARN: USER_INIT_FILE ($USER_INIT_FILE) is outside $HOME, skipping chown."
-  CHOWN_USER_INIT_FILE=false
 fi
-if [[ "$USER_INIT_DIR" != "$HOME/"* ]]; then
+
+if [[ "$USER_INIT_DIR" == "$HOME/"* ]]; then
+  echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}"
+  chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
+else
   echo "WARN: USER_INIT_DIR ($USER_INIT_DIR) is outside $HOME, skipping chown."
-  CHOWN_USER_INIT_DIR=false
 fi
 
 # --- Initialization Info ---
@@ -59,20 +61,12 @@ execute_init_file() {
 # --- Process single user init file ---
 if [ -n "$USER_INIT_FILE" ] && [ -f "$USER_INIT_FILE" ]; then
   echo "INFO: Processing user init file: $USER_INIT_FILE"
-  if [ "$CHOWN_USER_INIT_FILE" = true ]; then
-    echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}"
-    chown "${PUID}:${PGID}" "$USER_INIT_FILE"
-  fi
   execute_init_file "$USER_INIT_FILE"
 fi
 
 # --- Process user init directory ---
 if [ -n "$USER_INIT_DIR" ] && [ -d "$USER_INIT_DIR" ]; then
   echo "INFO: Processing user init directory: $USER_INIT_DIR"
-  if [ "$CHOWN_USER_INIT_DIR" = true ]; then
-    echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}"
-    chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
-  fi
   find "$USER_INIT_DIR" -type f -print0 | while IFS= read -r -d $'\0' file; do
     execute_init_file "$file"
   done
