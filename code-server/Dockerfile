@@ -321,6 +321,7 @@ RUN set -ex && \
         skl2onnx \
         sympy \
         tqdm \
+        twilio \
         ujson \
         websockets \
     && \
