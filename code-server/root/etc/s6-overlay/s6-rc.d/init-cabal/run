@@ -37,28 +37,29 @@ is_truthy() {
     esac
 }
 
-# Create CABAL_DIR if it doesn't exist
+# Ensure CABAL_DIR is a directory
+if [ -e "$CABAL_DIR" ] && [ ! -d "$CABAL_DIR" ]; then
+  echo "WARN: $CABAL_DIR exists as a file. Removing and creating directory."
+  rm -f "$CABAL_DIR"
+fi
 if [ ! -d "$CABAL_DIR" ]; then
   echo "INFO: Creating directory: $CABAL_DIR"
   if ! mkdir -p "$CABAL_DIR"; then
-    echo "WARN: Failed to create directory $CABAL_DIR" >&2
-    exit 1
+    echo "WARN: Failed to create directory $CABAL_DIR"
   fi
 fi
 
 # Set ownership of CABAL_DIR to PUID:PGID
 echo "INFO: Setting ownership of $CABAL_DIR to ${PUID}:${PGID}"
 if ! chown -R "${PUID}:${PGID}" "$CABAL_DIR"; then
-  echo "WARN: Failed to set ownership for $CABAL_DIR" >&2
-  exit 1
+  echo "WARN: Failed to set ownership for $CABAL_DIR"
 fi
 
 if is_truthy "$CABAL_UPDATE_PACKAGES"; then
   if [ ! -d "$CABAL_DIR/packages/hackage.haskell.org" ]; then
     echo "INFO: Updating cabal packages"
     if ! s6-setuidgid "${PUID}:${PGID}" cabal update; then
-      echo "WARN: cabal update failed" >&2
-      exit 1
+      echo "WARN: cabal update failed"
     fi
   else
     echo "INFO: Skipping cabal update - package list already exists"
