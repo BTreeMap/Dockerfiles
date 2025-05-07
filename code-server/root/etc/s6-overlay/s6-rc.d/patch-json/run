@@ -30,9 +30,9 @@ is_truthy() {
     esac
 }
 
-# Function: patch_and_echo
+# Function: apply_json_patch
 # Description: Applies patches to a JSON file with optional flags, and logs the operation details.
-patch_and_echo() {
+apply_json_patch() {
   local source_file="$1"
   shift
   local patch_files=("$@")
@@ -64,8 +64,8 @@ patch_and_echo() {
 
 # Check if PATCH_JSON is set to a value representing "true"
 if is_truthy "$PATCH_JSON"; then
-  patch_and_echo /config/data/Machine/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
-  patch_and_echo /config/data/User/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
+  apply_json_patch /config/data/Machine/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
+  apply_json_patch /config/data/User/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
   echo "INFO: All JSON patches applied successfully."
 else
   echo "INFO: PATCH_JSON is not enabled. Skipping JSON patching."
