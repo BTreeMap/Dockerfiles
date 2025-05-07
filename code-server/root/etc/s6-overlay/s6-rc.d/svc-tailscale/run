@@ -1,5 +1,5 @@
 #!/usr/bin/with-contenv bash
-set -euxo pipefail
+set -euo pipefail
 
 # Helper function to determine if a value is "truthy"
 is_truthy() {
@@ -47,7 +47,7 @@ else
 fi
 
 # Start tailscaled with the specified flags
-if is_truthy "${TAILSCALE_TAILSCALED_NO_LOG}"; then
+if is_truthy "${TAILSCALE_DISABLE_LOGGING}"; then
     # Redirect output to /dev/null if logging is disabled
     echo "INFO: Tailscale logging is disabled, redirecting output to /dev/null."
     echo "INFO: Starting tailscaled with flags: $FLAGS"

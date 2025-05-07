@@ -1,5 +1,5 @@
 #!/usr/bin/with-contenv bash
-set -euxo pipefail
+set -euo pipefail
 
 # This script initializes cabal by creating the specified directory,
 # optionally setting permissions to 777, and optionally updating the package list.
