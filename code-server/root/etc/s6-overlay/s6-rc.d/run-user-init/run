@@ -9,8 +9,8 @@ PGID="${PGID:-1000}"
 HOME="${HOME:-/config}"
 
 # Set USER_INIT_FILE and USER_INIT_DIR from env or fallback to defaults
-USER_INIT_FILE="${USER_INIT_FILE:-/config/.entrypoint}"
-USER_INIT_DIR="${USER_INIT_DIR:-/config/.entrypoint.d}"
+USER_INIT_FILE="${USER_INIT_FILE:-$HOME/.entrypoint}"
+USER_INIT_DIR="${USER_INIT_DIR:-$HOME/.entrypoint.d}"
 
 # --- Symlink Resolution ---
 # If USER_INIT_FILE or USER_INIT_DIR is a symlink, resolve to the actual path
