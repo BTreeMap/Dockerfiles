@@ -215,17 +215,18 @@ COPY --from=proot_builder /proot/dist/proot /usr/local/bin/proot
 
 # Copy the Racket installation from the racket_builder stage to $RACKET_HOME in the current stage
 # This allows us to use Racket for development and execution of Racket programs
-COPY --from=racket_builder $RACKET_HOME $RACKET_HOME
+COPY --from=racket_builder --chown=${PUID}:${PGID} $RACKET_HOME $RACKET_HOME
 
 # Copy the Haskell installation from the haskell_builder stage to $HASKELL_HOME in the current stage
 # This allows us to use Haskell for development and execution of Haskell programs
-COPY --from=haskell_builder $HASKELL_HOME $HASKELL_HOME
+COPY --from=haskell_builder --chown=${PUID}:${PGID} $HASKELL_HOME $HASKELL_HOME
 
 RUN set -ex && \
     \
     # Install Fast Node Manager (fnm) and Node.js
     curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir $FNM_DIR && \
     $FNM_DIR/fnm install --lts --fnm-dir=$FNM_DIR && \
+    chown -R ${PUID}:${PGID} $FNM_DIR && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
@@ -238,6 +239,9 @@ RUN set -ex && \
     \
     # Install Rust using rustup
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    chown -R ${PUID}:${PGID} $RUSTUP_HOME && \
+    chown -R ${PUID}:${PGID} $CARGO_HOME && \
+    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \

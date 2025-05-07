@@ -50,12 +50,12 @@ if [ ! -d "$CABAL_DIR" ]; then
   if ! mkdir -p "$CABAL_DIR"; then
     echo "WARN: Failed to create directory $CABAL_DIR"
   fi
-fi
 
-# Set ownership of CABAL_DIR to PUID:PGID
-echo "INFO: Setting ownership of $CABAL_DIR to ${PUID}:${PGID}"
-if ! chown -R "${PUID}:${PGID}" "$CABAL_DIR"; then
-  echo "WARN: Failed to set ownership for $CABAL_DIR"
+  # Set ownership of CABAL_DIR to PUID:PGID
+  echo "INFO: Setting ownership of $CABAL_DIR to ${PUID}:${PGID}"
+  if ! chown -R "${PUID}:${PGID}" "$CABAL_DIR"; then
+    echo "WARN: Failed to set ownership for $CABAL_DIR"
+  fi
 fi
 
 if is_truthy "$CABAL_UPDATE_PACKAGES"; then
