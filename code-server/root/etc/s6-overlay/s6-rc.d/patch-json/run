@@ -4,11 +4,26 @@
 : "${PATCH_JSON_USE_FORCE:=true}"           # Enables '--force' flag by default
 : "${PATCH_JSON_ENABLE_SORT_KEYS:=true}"    # Enables JSON key sorting by default
 
-# Function: is_true
-# Description: Returns true if the provided value is a recognized truthy string.
-is_true() {
-  local value="${1,,}"
-  [[ "$value" =~ ^(true|yes|1|on|y)$ ]]
+# Helper function to determine if a value is "truthy"
+is_truthy() {
+    local val
+    # Return false if variable is not set or empty
+    if [ -z "$1" ]; then
+        return 1
+    fi
+    
+    # Convert to lowercase
+    val=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+    
+    # Check for truthy values
+    case "$val" in
+        true|yes|1|on|y)
+            return 0 # True
+            ;;
+        *)
+            return 1 # False
+            ;;
+    esac
 }
 
 # Function: patch_and_echo
@@ -20,10 +35,10 @@ patch_and_echo() {
   
   # Build flags based on environment variables
   local flags=""
-  if is_true "$PATCH_JSON_USE_FORCE"; then
+  if is_truthy "$PATCH_JSON_USE_FORCE"; then
     flags+=" --force"
   fi
-  if ! is_true "$PATCH_JSON_ENABLE_SORT_KEYS"; then
+  if ! is_truthy "$PATCH_JSON_ENABLE_SORT_KEYS"; then
     flags+=" --no-sort-keys"
   fi
 
@@ -32,7 +47,7 @@ patch_and_echo() {
 }
 
 # Check if PATCH_JSON is set to a value representing "true"
-if [[ -n "$PATCH_JSON" && "${PATCH_JSON,,}" =~ ^(true|yes|1|on|y)$ ]]; then
+if is_truthy PATCH_JSON; then
   patch_and_echo /config/data/Machine/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
   patch_and_echo /config/data/User/settings.json /usr/share/code-server-scripts/patch_json/settings/*.json
   echo "All JSON patches applied successfully."
