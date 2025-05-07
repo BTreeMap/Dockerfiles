@@ -182,7 +182,8 @@ ENV CABAL_UPDATE_PACKAGES=true \
     PATCH_JSON_USE_FORCE=true \
     PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH \
     USER_INIT_DIR=/config/.entrypoint.d \
-    USER_INIT_FILE=/config/.entrypoint
+    USER_INIT_FILE=/config/.entrypoint \
+    VENV_DIR=/opt/shared-venv
 
 # Environment variables for Tailscale
 ENV TAILSCALE_ENABLED=false \
@@ -273,8 +274,8 @@ RUN set -ex && \
 RUN set -ex && \
     \
     # Install some Python packages using pip
-    python3 -m venv /opt/shared-venv --upgrade-deps && \
-    /opt/shared-venv/bin/pip install --no-cache-dir \
+    python3 -m venv ${VENV_DIR} --upgrade-deps && \
+    ${VENV_DIR}/bin/pip install --no-cache-dir \
         aiodns \
         aiohttp \
         aioitertools \
