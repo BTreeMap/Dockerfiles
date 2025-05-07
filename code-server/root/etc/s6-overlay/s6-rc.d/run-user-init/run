@@ -33,22 +33,6 @@ if [ -L "$USER_INIT_DIR" ]; then
   echo "INFO: USER_INIT_DIR was a symlink: $prev_user_init_dir -> $USER_INIT_DIR."
 fi
 
-# --- Path Validation and Ownership ---
-# Validate paths and set ownership to PUID and PGID
-if [[ "$USER_INIT_FILE" == "$HOME/"* ]]; then
-  echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}."
-  chown "${PUID}:${PGID}" "$USER_INIT_FILE"
-else
-  echo "WARN: USER_INIT_FILE ($USER_INIT_FILE) is outside $HOME. Skipping ownership change."
-fi
-
-if [[ "$USER_INIT_DIR" == "$HOME/"* ]]; then
-  echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}."
-  chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
-else
-  echo "WARN: USER_INIT_DIR ($USER_INIT_DIR) is outside $HOME. Skipping ownership change."
-fi
-
 # --- Function Definitions ---
 # Function to execute a single initialization file
 execute_init_file() {
@@ -66,6 +50,13 @@ execute_init_file() {
 # Execute USER_INIT_FILE if it exists
 if [ -n "$USER_INIT_FILE" ] && [ -f "$USER_INIT_FILE" ]; then
   echo "INFO: Processing the user init file: $USER_INIT_FILE."
+  # Validate path and set ownership to PUID and PGID
+  if [[ "$USER_INIT_FILE" == "$HOME/"* ]]; then
+    echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}."
+    chown "${PUID}:${PGID}" "$USER_INIT_FILE"
+  else
+    echo "WARN: USER_INIT_FILE ($USER_INIT_FILE) is outside $HOME. Skipping ownership change."
+  fi
   execute_init_file "$USER_INIT_FILE"
 fi
 
@@ -73,6 +64,13 @@ fi
 # Execute all files in USER_INIT_DIR if it exists
 if [ -n "$USER_INIT_DIR" ] && [ -d "$USER_INIT_DIR" ]; then
   echo "INFO: Processing the user init directory: $USER_INIT_DIR."
+  # Validate path and set ownership to PUID and PGID
+  if [[ "$USER_INIT_DIR" == "$HOME/"* ]]; then
+    echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}."
+    chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
+  else
+    echo "WARN: USER_INIT_DIR ($USER_INIT_DIR) is outside $HOME. Skipping ownership change."
+  fi
   find "$USER_INIT_DIR" -type f -print0 | while IFS= read -r -d $'\0' file; do
     execute_init_file "$file"
   done
