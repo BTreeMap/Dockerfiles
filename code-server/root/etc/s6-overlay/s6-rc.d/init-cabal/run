@@ -5,19 +5,36 @@
 #
 # Environment variables:
 #   CABAL_DIR             Directory for storing cabal data (default: /config/.haskell)
-#   CABAL_SET_PERMISSIONS Boolean to control if directory permissions should be set (default: true)
 #   CABAL_UPDATE_PACKAGES Boolean to control if 'cabal update' should run (default: true)
+
+# Set PUID and PGID from environment or default to 1000
+: "${PUID:=1000}"
+: "${PGID:=1000}"
 
 # Set default options for cabal behavior if not defined externally
 : "${CABAL_DIR:=/config/.haskell}" # Default directory for cabal
-: "${CABAL_SET_PERMISSIONS:=true}" # Enables setting permissions by default
 : "${CABAL_UPDATE_PACKAGES:=true}" # Enables cabal update by default
 
-# Function: is_true
-# Description: Returns true if the provided value is a recognized truthy string.
-is_true() {
-  local value="${1,,}"
-  [[ "$value" =~ ^(true|yes|1|on|y)$ ]]
+# Helper function to determine if a value is "truthy"
+is_truthy() {
+    local val
+    # Return false if variable is not set or empty
+    if [ -z "$1" ]; then
+        return 1
+    fi
+    
+    # Convert to lowercase
+    val=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+    
+    # Check for truthy values
+    case "$val" in
+        true|yes|1|on|y)
+            return 0 # True
+            ;;
+        *)
+            return 1 # False
+            ;;
+    esac
 }
 
 # Create CABAL_DIR if it doesn't exist and set permissions to 777
@@ -26,18 +43,14 @@ if [ ! -d "$CABAL_DIR" ]; then
   mkdir -p "$CABAL_DIR"
 fi
 
-# (Note: Using 777 is very permissive; consider restricting permissions if possible.)
-if is_true "$CABAL_SET_PERMISSIONS"; then
-  echo "Setting permissions for $CABAL_DIR to read, write, and execute for all users"
-  chmod -R 777 "$CABAL_DIR"
-else
-  echo "Skipping setting permissions for $CABAL_DIR"
-fi
+# Set ownership of CABAL_DIR to PUID:PGID
+echo "Setting ownership of $CABAL_DIR to ${PUID}:${PGID}"
+chown -R "${PUID}:${PGID}" "$CABAL_DIR"
 
-if is_true "$CABAL_UPDATE_PACKAGES"; then
+if is_truthy "$CABAL_UPDATE_PACKAGES"; then
   if [ ! -d "$CABAL_DIR/packages/hackage.haskell.org" ]; then
     echo "Updating cabal packages"
-    cabal update
+    s6-setuidgid "${PUID}:${PGID}" cabal update
   else
     echo "Skipping cabal update - package list already exists"
   fi

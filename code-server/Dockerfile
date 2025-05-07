@@ -176,8 +176,7 @@ RUN ./ghcup install ghc --set recommended && \
 FROM base
 
 # Set environment variables for the final image
-ENV CABAL_SET_PERMISSIONS=true \
-    CABAL_UPDATE_PACKAGES=true \
+ENV CABAL_UPDATE_PACKAGES=true \
     PATCH_JSON=true \
     PATCH_JSON_ENABLE_SORT_KEYS=true \
     PATCH_JSON_USE_FORCE=true \
