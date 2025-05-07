@@ -60,8 +60,6 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
     mkdir -p /usr/share/man/man1 && \           
     # Install Microsoft OpenJDK 21 for Java applications
     apt-get install -y msopenjdk-21 && \
-    # Download and install Tailscale using its installation script
-    curl -fsSL https://tailscale.com/install.sh | sh && \
     # Clean up apt cache to reduce image size
     apt-get clean && \
     # Remove unnecessary files to reduce final image size
@@ -73,10 +71,3 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
 
 # Optionally set JAVA_HOME for Java applications
 ENV JAVA_HOME=/usr/lib/jvm/msopenjdk-21         
-
-# Environment variables for Tailscale
-ENV TAILSCALE_ENABLED=true \
-    TAILSCALE_ACCEPT_DNS=false \
-    TAILSCALE_AUTO_UPDATE=false \
-    TAILSCALE_BE_EXIT_NODE=false \
-    TAILSCALE_USE_WEBCLIENT=true
