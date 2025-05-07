@@ -32,12 +32,13 @@ fi
 # Process files in the user init directory
 if [ -d "$USER_INIT_DIR" ]; then
   echo "INFO: Processing user init directory: $USER_INIT_DIR"
+  # Ensure correct ownership for the entire directory
+  echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}"
+  chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
   # Find all files (not directories), then iterate
   find "$USER_INIT_DIR" -type f -print0 | while IFS= read -r -d $'\0' file; do
     echo "INFO: Processing $file from $USER_INIT_DIR"
-    # Ensure correct ownership
-    echo "INFO: Setting ownership of $file to ${PUID}:${PGID}"
-    chown "${PUID}:${PGID}" "$file"
+    # Ownership is already set for the directory
     if [ -x "$file" ]; then
       echo "INFO: Executing $file as user ${PUID}:${PGID}"
       s6-setuidgid "${PUID}:${PGID}" "$file"
