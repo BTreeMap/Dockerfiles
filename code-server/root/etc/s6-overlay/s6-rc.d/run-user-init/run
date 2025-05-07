@@ -1,6 +1,7 @@
 #!/usr/bin/with-contenv bash
 set -e
 
+# --- Environment Variables ---
 # Set PUID and PGID from environment or default to 1000
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
@@ -8,12 +9,19 @@ PGID="${PGID:-1000}"
 # Set HOME from environment or default to /config
 HOME="${HOME:-/config}"
 
-# Set USER_INIT_FILE and USER_INIT_DIR from env or fallback to defaults
+# Set USER_INIT_FILE and USER_INIT_DIR from environment or fallback to defaults
 USER_INIT_FILE="${USER_INIT_FILE:-$HOME/.entrypoint}"
 USER_INIT_DIR="${USER_INIT_DIR:-$HOME/.entrypoint.d}"
 
+# --- Initialization Info ---
+# Log initialization details
+echo "INFO: User Initialization Script started."
+echo "INFO: PUID=${PUID}, PGID=${PGID}"
+echo "INFO: USER_INIT_FILE=${USER_INIT_FILE}"
+echo "INFO: USER_INIT_DIR=${USER_INIT_DIR}"
+
 # --- Symlink Resolution ---
-# If USER_INIT_FILE or USER_INIT_DIR is a symlink, resolve to the actual path
+# Resolve USER_INIT_FILE and USER_INIT_DIR if they are symlinks
 if [ -L "$USER_INIT_FILE" ]; then
   prev_user_init_file="$USER_INIT_FILE"
   USER_INIT_FILE="$(readlink -f "$USER_INIT_FILE")"
@@ -25,28 +33,24 @@ if [ -L "$USER_INIT_DIR" ]; then
   echo "INFO: USER_INIT_DIR was a symlink: $prev_user_init_dir -> $USER_INIT_DIR"
 fi
 
-# --- Path Validation and chown ---
+# --- Path Validation and Ownership ---
+# Validate paths and set ownership to PUID and PGID
 if [[ "$USER_INIT_FILE" == "$HOME/"* ]]; then
   echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}"
   chown "${PUID}:${PGID}" "$USER_INIT_FILE"
 else
-  echo "WARN: USER_INIT_FILE ($USER_INIT_FILE) is outside $HOME, skipping chown."
+  echo "WARN: USER_INIT_FILE ($USER_INIT_FILE) is outside $HOME, skipping ownership change."
 fi
 
 if [[ "$USER_INIT_DIR" == "$HOME/"* ]]; then
   echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}"
   chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
 else
-  echo "WARN: USER_INIT_DIR ($USER_INIT_DIR) is outside $HOME, skipping chown."
+  echo "WARN: USER_INIT_DIR ($USER_INIT_DIR) is outside $HOME, skipping ownership change."
 fi
 
-# --- Initialization Info ---
-echo "INFO: User Initialization Script started."
-echo "INFO: PUID=${PUID}, PGID=${PGID}"
-echo "INFO: USER_INIT_FILE=${USER_INIT_FILE}"
-echo "INFO: USER_INIT_DIR=${USER_INIT_DIR}"
-
-# --- Function to execute a single init file ---
+# --- Function Definitions ---
+# Function to execute a single initialization file
 execute_init_file() {
   local file="$1"
   echo "INFO: Processing $file"
@@ -58,13 +62,15 @@ execute_init_file() {
   fi
 }
 
-# --- Process single user init file ---
+# --- Process Single User Init File ---
+# Execute USER_INIT_FILE if it exists
 if [ -n "$USER_INIT_FILE" ] && [ -f "$USER_INIT_FILE" ]; then
   echo "INFO: Processing user init file: $USER_INIT_FILE"
   execute_init_file "$USER_INIT_FILE"
 fi
 
-# --- Process user init directory ---
+# --- Process User Init Directory ---
+# Execute all files in USER_INIT_DIR if it exists
 if [ -n "$USER_INIT_DIR" ] && [ -d "$USER_INIT_DIR" ]; then
   echo "INFO: Processing user init directory: $USER_INIT_DIR"
   find "$USER_INIT_DIR" -type f -print0 | while IFS= read -r -d $'\0' file; do
@@ -73,4 +79,5 @@ if [ -n "$USER_INIT_DIR" ] && [ -d "$USER_INIT_DIR" ]; then
 fi
 
 # --- Completion ---
+# Log completion of initialization scripts
 echo "INFO: User initialization scripts completed."
