@@ -9,6 +9,6 @@ if [ -d "$VENV_DIR" ] && [ -x "$VENV_DIR/bin/python" ]; then
     export PATH="$VENV_DIR/bin:$PATH"
     export VIRTUAL_ENV="$VENV_DIR"
 else
-    # Log a message if the virtual environment is not available
-    echo "Virtual environment not found or not executable: $VENV_DIR" >&2
+    # Fallback message if the virtual environment is not available
+    echo "Warning: Virtual environment not found or not executable in $VENV_DIR"
 fi
