@@ -1,0 +1,52 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+# Set PUID and PGID from environment or default to 1000
+PUID="${PUID:-1000}"
+PGID="${PGID:-1000}"
+
+USER_INIT_FILE="/config/.entrypoint"
+USER_INIT_DIR="/config/.entrypoint.d"
+
+echo "INFO: User Initialization Script started."
+echo "INFO: PUID=${PUID}, PGID=${PGID}"
+echo "INFO: USER_INIT_FILE=${USER_INIT_FILE}"
+echo "INFO: USER_INIT_DIR=${USER_INIT_DIR}"
+
+# Process the single user init file first
+if [ -f "$USER_INIT_FILE" ]; then
+  echo "INFO: Processing user init file: $USER_INIT_FILE"
+  # Ensure correct ownership
+  echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}"
+  chown "${PUID}:${PGID}" "$USER_INIT_FILE"
+  if [ -x "$USER_INIT_FILE" ]; then
+    echo "INFO: Executing $USER_INIT_FILE as user ${PUID}:${PGID}"
+    s6-setuidgid "${PUID}:${PGID}" "$USER_INIT_FILE"
+  else
+    echo "WARN: $USER_INIT_FILE is not executable, skipping."
+  fi
+else
+  echo "INFO: User init file $USER_INIT_FILE not found, skipping."
+fi
+
+# Process files in the user init directory
+if [ -d "$USER_INIT_DIR" ]; then
+  echo "INFO: Processing user init directory: $USER_INIT_DIR"
+  # Find all files (not directories), then iterate
+  find "$USER_INIT_DIR" -type f -print0 | while IFS= read -r -d $'\0' file; do
+    echo "INFO: Processing $file from $USER_INIT_DIR"
+    # Ensure correct ownership
+    echo "INFO: Setting ownership of $file to ${PUID}:${PGID}"
+    chown "${PUID}:${PGID}" "$file"
+    if [ -x "$file" ]; then
+      echo "INFO: Executing $file as user ${PUID}:${PGID}"
+      s6-setuidgid "${PUID}:${PGID}" "$file"
+    else
+      echo "WARN: $file is not executable, skipping."
+    fi
+  done
+else
+  echo "INFO: User init directory $USER_INIT_DIR not found, skipping."
+fi
+
+echo "INFO: User initialization scripts completed."
