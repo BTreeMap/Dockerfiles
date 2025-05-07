@@ -53,7 +53,9 @@ if [ -n "$USER_INIT_FILE" ] && [ -f "$USER_INIT_FILE" ]; then
   # Validate path and set ownership to PUID and PGID
   if [[ "$USER_INIT_FILE" == "$HOME/"* ]]; then
     echo "INFO: Setting ownership of $USER_INIT_FILE to ${PUID}:${PGID}."
-    chown "${PUID}:${PGID}" "$USER_INIT_FILE"
+    if ! chown "${PUID}:${PGID}" "$USER_INIT_FILE"; then
+      echo "WARN: Failed to set ownership for $USER_INIT_FILE."
+    fi
   else
     echo "WARN: USER_INIT_FILE ($USER_INIT_FILE) is outside $HOME. Skipping ownership change."
   fi
@@ -67,7 +69,9 @@ if [ -n "$USER_INIT_DIR" ] && [ -d "$USER_INIT_DIR" ]; then
   # Validate path and set ownership to PUID and PGID
   if [[ "$USER_INIT_DIR" == "$HOME/"* ]]; then
     echo "INFO: Setting ownership of $USER_INIT_DIR and its contents to ${PUID}:${PGID}."
-    chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"
+    if ! chown -R "${PUID}:${PGID}" "$USER_INIT_DIR"; then
+      echo "WARN: Failed to set ownership for $USER_INIT_DIR."
+    fi
   else
     echo "WARN: USER_INIT_DIR ($USER_INIT_DIR) is outside $HOME. Skipping ownership change."
   fi

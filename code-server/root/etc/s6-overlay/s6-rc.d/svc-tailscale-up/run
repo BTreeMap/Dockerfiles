@@ -45,7 +45,7 @@ fi
 
 if [ -n "${LOGIN_FLAGS}" ]; then
     echo "INFO: Logging in to Tailscale with flags: ${LOGIN_FLAGS}"
-    tailscale login ${LOGIN_FLAGS}
+    tailscale login ${LOGIN_FLAGS} || true
 fi
 
 # Configure a Tailscale hostname if set

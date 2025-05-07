@@ -59,7 +59,9 @@ apply_json_patch() {
     return 0
   fi
   echo "INFO: Changing ownership of $source_file to ${PUID}:${PGID}"
-  chown "${PUID}:${PGID}" "$source_file"
+  if ! chown "${PUID}:${PGID}" "$source_file"; then
+    echo "WARN: Failed to set ownership for $source_file"
+  fi
   echo "INFO: Patching of '$source_file' completed."
 }
 
