@@ -180,7 +180,9 @@ ENV CABAL_UPDATE_PACKAGES=true \
     PATCH_JSON=true \
     PATCH_JSON_ENABLE_SORT_KEYS=true \
     PATCH_JSON_USE_FORCE=true \
-    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH
+    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH \
+    USER_INIT_DIR=/config/.entrypoint.d \
+    USER_INIT_FILE=/config/.entrypoint
 
 # Environment variables for Tailscale
 ENV TAILSCALE_ENABLED=false \
