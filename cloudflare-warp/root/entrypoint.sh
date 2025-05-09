@@ -47,4 +47,7 @@ su -c "warp-cli --accept-tos connect" ubuntu
 
 # Execute an indefinite tail command to keep the container running
 echo "Starting indefinite tail command to keep the container running..."
-exec tail -f /dev/null -s 86400
+# The command was changed from 'exec tail' to 'tail' so that 'tail' does not run as PID 1.
+# This allows the healthcheck script to terminate the container by killing the 'tail' process,
+# causing the entrypoint script to exit naturally.
+tail -f /dev/null -s 86400 || true

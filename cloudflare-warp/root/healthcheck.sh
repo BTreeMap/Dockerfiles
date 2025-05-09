@@ -16,14 +16,15 @@ count=$(<"$CNTFILE" 2>/dev/null || echo 0)
 count=$((count + 1))
 echo "$count" > "$CNTFILE"
 
-# 3. On too many failures, send SIGTERM to all, wait, then SIGKILL
+# 3. On too many failures, send SIGTERM to all 'tail' processes, wait, then SIGKILL.
+# The entrypoint uses 'tail' to keep the container running. Killing 'tail' will cause the entrypoint to exit, thereby terminating the container.
 if (( count >= THRESHOLD )); then
   rm -f "$CNTFILE"
-  echo "Health-check failed $count times: sending SIGTERM to all processes"
-  kill -TERM -- -1 || true      # Graceful shutdown of every process
-  sleep 10                      # Wait for clean exit
-  echo "Forcing SIGKILL to all processes"
-  kill -KILL -- -1 || true      # Forceful termination of any survivors
+  echo "Health check failed $count times: sending SIGTERM to all 'tail' processes."
+  pkill -x -TERM tail || true   # Gracefully shut down all 'tail' processes
+  sleep 10                      # Wait for a clean exit
+  echo "Health check failed $count times: sending SIGKILL to all remaining 'tail' processes."
+  pkill -x -KILL tail || true   # Forcefully terminate any remaining 'tail' processes
   exit 1                        # Mark unhealthy so Docker can restart
 fi
 
