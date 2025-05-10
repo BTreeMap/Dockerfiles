@@ -33,12 +33,14 @@ RUN set -ex && \
         apt-transport-https \
         bind9-dnsutils \
         build-essential \
+        cmake \
         curl \
         git \
         iputils-ping \
         libgmp-dev \
         lsb-release \
         mtr \
+        ninja-build \
         pipx \
         python-is-python3 \
         python3-full \
