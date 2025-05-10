@@ -344,6 +344,7 @@ RUN set -ex && \
         black \
         httpie \
         isort \
+        meson \
         poetry \
         wheel \
     && \
