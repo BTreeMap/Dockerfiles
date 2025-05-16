@@ -7,6 +7,7 @@ RUN apk update && \
     apk add \
         ca-certificates \
         libcap \
+        tini \
         tzdata \
     && \
     mkdir -p /opt/dnsproxy && \
@@ -58,5 +59,5 @@ WORKDIR /opt/dnsproxy
 USER nobody
 
 # Set entrypoint and default command
-ENTRYPOINT ["/opt/dnsproxy/dnsproxy"]
+ENTRYPOINT ["/sbin/tini", "--", "/opt/dnsproxy/dnsproxy"]
 CMD ["--config-path=/opt/dnsproxy/config.yaml"]
