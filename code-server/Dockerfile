@@ -33,10 +33,13 @@ RUN set -ex && \
         apt-transport-https \
         bind9-dnsutils \
         build-essential \
+        ca-certificates \
         cmake \
         curl \
         git \
+        gzip \
         iputils-ping \
+        jq \
         libgmp-dev \
         lsb-release \
         mtr \
@@ -48,10 +51,13 @@ RUN set -ex && \
         python3-setuptools \
         python3-venv \
         screen \
+        tar \
         unzip \
         wget \
         xvfb \
         xz-utils \
+        zip \
+        zstd \
     && \
     # Remove temporary and unnecessary files
     apt-get clean && \
