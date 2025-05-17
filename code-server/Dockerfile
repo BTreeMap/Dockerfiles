@@ -200,7 +200,7 @@ RUN set -ex && \
     GO_JSON="$(curl -sSfL 'https://go.dev/dl/?mode=json')" && \
     GO_VERSION="$(echo "$GO_JSON" | jq -r '[.[] | select(.stable)][0].version')" && \
     TARBALL="${GO_VERSION}.linux-${ARCH}.tar.gz" && \
-    GO_SHA256="$(echo "$GO_JSON" | jq -r --arg TARBALL "$TARBALL" '[.[] | select(.version == env.GO_VERSION)][0].files[] | select(.filename == $TARBALL) | .sha256')" && \
+    GO_SHA256="$(echo "$GO_JSON" | jq -r --arg GO_VERSION "$GO_VERSION" --arg TARBALL "$TARBALL" '.[] | select(.version == $GO_VERSION) | .files[] | select(.filename == $TARBALL) | .sha256')" && \
     echo "Installing ${GO_VERSION} for ${ARCH}" && \
     curl -sSfL -o /tmp/go.tgz "https://go.dev/dl/${TARBALL}" && \
     echo "${GO_SHA256}  /tmp/go.tgz" | sha256sum -c - && \
