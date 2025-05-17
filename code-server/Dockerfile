@@ -18,7 +18,8 @@ ENV RACKET_HOME=/opt/racket \
     HASKELL_HOME=/opt/haskell \
     FNM_DIR=/opt/fnm \
     RUSTUP_HOME=/opt/rustup \
-    CARGO_HOME=/opt/cargo
+    CARGO_HOME=/opt/cargo \
+    GO_HOME=/opt/go
 
 # Combine RUN commands into logical groups to minimize layers and improve caching
 RUN set -ex && \
@@ -178,6 +179,35 @@ RUN ./ghcup install ghc --set recommended && \
         $HASKELL_HOME/.ghcup/trash
 
 # =============================================================================
+# Builder stage for Go - Used to install the Go programming language
+# Go is a statically typed, compiled programming language designed for simplicity and efficiency
+# This stage sets up the Go environment which will be copied into the final image
+# =============================================================================
+FROM base AS go_builder
+
+# BusyBox or coreutils are fine; we only need curl, grep, sha256sum, tar
+RUN set -eux; \
+    # 1) figure out target arch
+    case "$(uname -m)" in \
+        x86_64)  ARCH=amd64 ;; \
+        aarch64|arm64) ARCH=arm64 ;; \
+        *) echo "Unsupported arch: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    # 2) discover latest stable tag
+    GO_VERSION="$(curl -sSfL https://go.dev/VERSION?m=text)"; \
+    echo "Installing ${GO_VERSION} for ${ARCH}"; \
+    # 3) download tarball + checksum from go.dev
+    TARBALL="${GO_VERSION}.linux-${ARCH}.tar.gz"; \
+    curl -sSfL -o /tmp/go.tgz "https://go.dev/dl/${TARBALL}"; \
+    curl -sSfL -o /tmp/go.tgz.sha256 "https://go.dev/dl/${TARBALL}.sha256"; \
+    sha256sum -c /tmp/go.tgz.sha256; \
+    # 4) expand and clean up
+    tar -C /opt -xzf /tmp/go.tgz; \
+    rm -rf /tmp/go.tgz /tmp/go.tgz.sha256; \
+    # 5) basic smoke test
+    $GO_HOME/bin/go version
+
+# =============================================================================
 # Main image - Using LinuxServer's code-server as the base image
 # code-server provides VS Code in the browser with a full development environment
 # =============================================================================
@@ -188,7 +218,7 @@ ENV CABAL_UPDATE_PACKAGES=true \
     PATCH_JSON=true \
     PATCH_JSON_ENABLE_SORT_KEYS=true \
     PATCH_JSON_USE_FORCE=true \
-    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$PATH \
+    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$GO_HOME/bin:$PATH \
     USER_INIT_DIR=/config/.entrypoint.d \
     USER_INIT_FILE=/config/.entrypoint \
     VENV_DIR=/opt/shared-venv
