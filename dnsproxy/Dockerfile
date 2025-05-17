@@ -68,8 +68,8 @@ ENV HEALTHCHECK_PORT=""
 # Healthcheck: run every 30s, allow 5s for startup, 5s timeout
 HEALTHCHECK \
     --interval=30s \
-    --start-period=5s \
-    --timeout=5s \
+    --start-period=30s \
+    --timeout=10s \
     CMD /opt/dnsproxy/healthcheck.sh
 
 # Set entrypoint and default command
