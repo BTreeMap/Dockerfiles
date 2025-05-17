@@ -144,7 +144,7 @@ RUN tar xfz $RACKET_PACKAGE && \
 
 # =============================================================================
 # Builder stage for Haskell - Used to install the Haskell toolchain
-# Haskell is a statically-typed, purely functional programming language
+# Haskell is a statically typed, purely functional programming language
 # This stage sets up GHC (compiler), Cabal (package manager), and HLS (language server)
 # The Haskell environment will be copied into the final image
 # =============================================================================
@@ -158,12 +158,13 @@ ENV GHCUP_HOME=/opt/ghcup \
 WORKDIR $GHCUP_HOME
 
 # Download the appropriate GHCup binary based on architecture
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        GHCUP_URL="https://downloads.haskell.org/~ghcup/aarch64-linux-ghcup"; \
-    else \
-        GHCUP_URL="https://downloads.haskell.org/~ghcup/x86_64-linux-ghcup"; \
-    fi && \
+RUN set -ex && \
+    case "$(uname -m)" in \
+        x86_64) ARCH=x86_64 ;; \
+        aarch64|arm64) ARCH=aarch64 ;; \
+        *) echo "Unsupported arch: $(uname -m)" >&2; exit 1 ;; \
+    esac && \
+    GHCUP_URL="https://downloads.haskell.org/~ghcup/${ARCH}-linux-ghcup" && \
     curl -sSL "$GHCUP_URL" -o ghcup && \
     chmod +x ghcup
 
@@ -180,31 +181,34 @@ RUN ./ghcup install ghc --set recommended && \
 
 # =============================================================================
 # Builder stage for Go - Used to install the Go programming language
-# Go is a statically typed, compiled programming language designed for simplicity and efficiency
-# This stage sets up the Go environment which will be copied into the final image
+# Go is a statically typed, compiled language designed for simplicity and efficiency.
+# This stage downloads and installs the latest stable Go release for the detected architecture.
+# The Go environment will be copied into the final image.
 # =============================================================================
 FROM base AS go_builder
 
-# BusyBox or coreutils are fine; we only need curl, grep, sha256sum, tar
-RUN set -eux; \
-    # 1) figure out target arch
+# Set environment variable for Go installation
+ENV GO_HOME=/opt/go
+
+RUN set -ex && \
+    # Determine target architecture
     case "$(uname -m)" in \
-        x86_64)  ARCH=amd64 ;; \
+        x86_64) ARCH=amd64 ;; \
         aarch64|arm64) ARCH=arm64 ;; \
         *) echo "Unsupported arch: $(uname -m)" >&2; exit 1 ;; \
-    esac; \
-    # 2) discover latest stable tag
-    GO_VERSION="$(curl -sSfL https://go.dev/VERSION?m=text)"; \
-    echo "Installing ${GO_VERSION} for ${ARCH}"; \
-    # 3) download tarball + checksum from go.dev
-    TARBALL="${GO_VERSION}.linux-${ARCH}.tar.gz"; \
-    curl -sSfL -o /tmp/go.tgz "https://go.dev/dl/${TARBALL}"; \
-    curl -sSfL -o /tmp/go.tgz.sha256 "https://go.dev/dl/${TARBALL}.sha256"; \
-    sha256sum -c /tmp/go.tgz.sha256; \
-    # 4) expand and clean up
-    tar -C /opt -xzf /tmp/go.tgz; \
-    rm -rf /tmp/go.tgz /tmp/go.tgz.sha256; \
-    # 5) basic smoke test
+    esac && \
+    # Get the latest stable Go version
+    GO_VERSION="$(curl -sSfL https://go.dev/VERSION?m=text)" && \
+    echo "Installing ${GO_VERSION} for ${ARCH}" && \
+    # Download tarball and checksum
+    TARBALL="${GO_VERSION}.linux-${ARCH}.tar.gz" && \
+    curl -sSfL -o /tmp/go.tgz "https://go.dev/dl/${TARBALL}" && \
+    curl -sSfL -o /tmp/go.tgz.sha256 "https://go.dev/dl/${TARBALL}.sha256" && \
+    sha256sum -c /tmp/go.tgz.sha256 && \
+    # Extract Go and clean up
+    tar -C /opt -xzf /tmp/go.tgz && \
+    rm -rf /tmp/go.tgz /tmp/go.tgz.sha256 && \
+    # Verify installation
     $GO_HOME/bin/go version
 
 # =============================================================================
