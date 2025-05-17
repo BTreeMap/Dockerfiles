@@ -196,18 +196,16 @@ RUN set -ex && \
         aarch64|arm64) ARCH=arm64 ;; \
         *) echo "Unsupported arch: $(uname -m)" >&2; exit 1 ;; \
     esac && \
-    # Get the latest stable Go version
-    GO_VERSION="$(curl -sSfL https://go.dev/VERSION?m=text)" && \
-    echo "Installing ${GO_VERSION} for ${ARCH}" && \
-    # Download tarball and checksum
+    # Fetch Go releases JSON and extract latest stable version and checksum for our arch
+    GO_JSON="$(curl -sSfL 'https://go.dev/dl/?mode=json')" && \
+    GO_VERSION="$(echo "$GO_JSON" | jq -r '[.[] | select(.stable)][0].version')" && \
     TARBALL="${GO_VERSION}.linux-${ARCH}.tar.gz" && \
+    GO_SHA256="$(echo "$GO_JSON" | jq -r --arg TARBALL "$TARBALL" '[.[] | select(.version == env.GO_VERSION)][0].files[] | select(.filename == $TARBALL) | .sha256')" && \
+    echo "Installing ${GO_VERSION} for ${ARCH}" && \
     curl -sSfL -o /tmp/go.tgz "https://go.dev/dl/${TARBALL}" && \
-    curl -sSfL -o /tmp/go.tgz.sha256 "https://go.dev/dl/${TARBALL}.sha256" && \
-    sha256sum -c /tmp/go.tgz.sha256 && \
-    # Extract Go and clean up
+    echo "${GO_SHA256}  /tmp/go.tgz" | sha256sum -c - && \
     tar -C /opt -xzf /tmp/go.tgz && \
-    rm -rf /tmp/go.tgz /tmp/go.tgz.sha256 && \
-    # Verify installation
+    rm -rf /tmp/go.tgz && \
     $GO_HOME/bin/go version
 
 # =============================================================================
