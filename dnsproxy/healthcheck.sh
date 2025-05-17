@@ -4,44 +4,25 @@ set -euo pipefail
 # Number of consecutive failures before attempting to kill dnsproxy
 THRESHOLD=3
 EXECUTABLE_PATH=/opt/dnsproxy/dnsproxy
-CNTFILE_PROCESS=/tmp/hc_process_fail_count
-CNTFILE_NSLOOKUP=/tmp/hc_nslookup_fail_count
+CNTFILE=/tmp/hc_nslookup_fail_count
 
 # Check if dnsproxy process is running
 if ! pgrep -x "$EXECUTABLE_PATH" > /dev/null; then
     echo "dnsproxy process not found."
-    # Increment process failure counter
-    count_process=$(cat "$CNTFILE_PROCESS" 2>/dev/null || echo 0)
-    count_process=$((count_process + 1))
-    echo "$count_process" > "$CNTFILE_PROCESS"
-
-    if [ "$count_process" -ge "$THRESHOLD" ]; then
-        echo "Health check failed $count_process times: dnsproxy not running. Attempting to kill dnsproxy (though it seems not to be running)."
-        # Attempt to kill dnsproxy, though pgrep indicates it's not running.
-        # This is more of a safeguard or for logging purposes.
-        pkill -TERM -x "$EXECUTABLE_PATH" || true
-        sleep 2 # Give time for termination
-        pkill -KILL -x "$EXECUTABLE_PATH" || true
-        rm -f "$CNTFILE_PROCESS" # Reset counter after action
-        exit 1 # Mark unhealthy
-    fi
-    exit 1 # Mark unhealthy for this round
-else
-    # Reset process failure counter on success (if dnsproxy is running, this check passed)
-    rm -f "$CNTFILE_PROCESS"
+    exit 1 # Mark unhealthy
 fi
 
 # If HEALTHCHECK_PORT is set, perform nslookup
 if [ -n "${HEALTHCHECK_PORT:-}" ]; then
     if nslookup -port="${HEALTHCHECK_PORT}" www.google.com 127.0.0.1 > /dev/null 2>&1; then
-        rm -f "$CNTFILE_NSLOOKUP" # Reset nslookup failure counter on success
+        rm -f "$CNTFILE" # Reset nslookup failure counter on success
         exit 0 # Healthy
     else
         echo "nslookup check failed on port ${HEALTHCHECK_PORT}."
         # Increment nslookup failure counter
-        count_nslookup=$(cat "$CNTFILE_NSLOOKUP" 2>/dev/null || echo 0)
+        count_nslookup=$(cat "$CNTFILE" 2>/dev/null || echo 0)
         count_nslookup=$((count_nslookup + 1))
-        echo "$count_nslookup" > "$CNTFILE_NSLOOKUP"
+        echo "$count_nslookup" > "$CNTFILE"
 
         if [ "$count_nslookup" -ge "$THRESHOLD" ]; then
             echo "Health check failed $count_nslookup times (nslookup). Sending SIGTERM to dnsproxy."
@@ -49,7 +30,7 @@ if [ -n "${HEALTHCHECK_PORT:-}" ]; then
             sleep 10 # Wait for a clean exit
             echo "Health check failed $count_nslookup times (nslookup). Sending SIGKILL to dnsproxy."
             pkill -KILL -x "$EXECUTABLE_PATH" || true
-            rm -f "$CNTFILE_NSLOOKUP" # Reset counter after action
+            rm -f "$CNTFILE" # Reset counter after action
             exit 1 # Mark unhealthy
         fi
         exit 1 # Mark unhealthy for this round
