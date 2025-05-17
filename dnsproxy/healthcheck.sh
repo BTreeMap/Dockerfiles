@@ -14,7 +14,9 @@ fi
 
 # If HEALTHCHECK_PORT is set, perform nslookup
 if [ -n "${HEALTHCHECK_PORT:-}" ]; then
-    if nslookup -port="${HEALTHCHECK_PORT}" www.google.com 127.0.0.1 > /dev/null 2>&1; then
+    if nslookup -port="${HEALTHCHECK_PORT}" www.google.com 127.0.0.1 > /dev/null 2>&1 \
+        || nslookup -port="${HEALTHCHECK_PORT}" www.cloudflare.com 127.0.0.1 > /dev/null 2>&1 \
+        || nslookup -port="${HEALTHCHECK_PORT}" www.microsoft.com 127.0.0.1 > /dev/null 2>&1; then
         rm -f "$CNTFILE" # Reset nslookup failure counter on success
         exit 0 # Healthy
     else
