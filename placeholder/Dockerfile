@@ -32,5 +32,13 @@ COPY --from=base / /
 # Use least-privilege: run as nobody user
 USER nobody:nogroup
 
+# Healthcheck to ensure tail is running
+HEALTHCHECK \
+    --interval=30s \
+    --start-period=5s \
+    --timeout=3s \
+    --retries=3 \
+    CMD pgrep -x tail || exit 1
+
 # Minimal entrypoint to keep the container running
 ENTRYPOINT ["tail", "-f", "/dev/null", "-s", "86400"]
