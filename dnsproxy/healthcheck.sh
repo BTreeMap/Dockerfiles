@@ -20,15 +20,15 @@ if [ -n "${HEALTHCHECK_PORT:-}" ]; then
     else
         echo "nslookup check failed on port ${HEALTHCHECK_PORT}."
         # Increment nslookup failure counter
-        count_nslookup=$(cat "$CNTFILE" 2>/dev/null || echo 0)
-        count_nslookup=$((count_nslookup + 1))
-        echo "$count_nslookup" > "$CNTFILE"
+        count=$(cat "$CNTFILE" 2>/dev/null || echo 0)
+        count=$((count + 1))
+        echo "$count" > "$CNTFILE"
 
-        if [ "$count_nslookup" -ge "$THRESHOLD" ]; then
-            echo "Health check failed $count_nslookup times (nslookup). Sending SIGTERM to dnsproxy."
+        if [ "$count" -ge "$THRESHOLD" ]; then
+            echo "Health check failed $count times (nslookup). Sending SIGTERM to dnsproxy."
             pkill -TERM -x "$EXECUTABLE_PATH" || true
             sleep 10 # Wait for a clean exit
-            echo "Health check failed $count_nslookup times (nslookup). Sending SIGKILL to dnsproxy."
+            echo "Health check failed $count times (nslookup). Sending SIGKILL to dnsproxy."
             pkill -KILL -x "$EXECUTABLE_PATH" || true
             rm -f "$CNTFILE" # Reset counter after action
             exit 1 # Mark unhealthy
