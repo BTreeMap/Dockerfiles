@@ -159,11 +159,13 @@ WORKDIR $GHCUP_HOME
 
 # Download the appropriate GHCup binary based on architecture
 RUN set -ex && \
+    # Determine target architecture
     case "$(uname -m)" in \
         x86_64) ARCH=x86_64 ;; \
         aarch64|arm64) ARCH=aarch64 ;; \
         *) echo "Unsupported arch: $(uname -m)" >&2; exit 1 ;; \
     esac && \
+    # Download GHCup installer
     GHCUP_URL="https://downloads.haskell.org/~ghcup/${ARCH}-linux-ghcup" && \
     curl -sSL "$GHCUP_URL" -o ghcup && \
     chmod +x ghcup
