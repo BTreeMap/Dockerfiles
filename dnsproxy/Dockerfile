@@ -30,7 +30,7 @@ COPY \
     /opt/dnsproxy/
 
 # Copy healthcheck script
-COPY --chown=nobody:nogroup healthcheck.sh /opt/dnsproxy/healthcheck.sh
+COPY --chown=nobody:nogroup healthcheck.sh /opt/dnsproxy/
 RUN chmod +x /opt/dnsproxy/healthcheck.sh
 
 # Allow dnsproxy to bind to privileged ports without running as root
