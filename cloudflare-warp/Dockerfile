@@ -42,9 +42,9 @@ COPY --from=base / /
 # Set entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Healthcheck: run every 2 minutes, allow 30s for startup, 10s timeout
+# Healthcheck: run every 30s, allow 30s for startup, 10s timeout
 HEALTHCHECK \
-  --interval=2m \
+  --interval=30s \
   --start-period=30s \
   --timeout=10s \
   CMD /healthcheck.sh

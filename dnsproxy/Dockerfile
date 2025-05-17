@@ -29,6 +29,10 @@ COPY \
     /opt/dnsproxy/config.yaml \
     /opt/dnsproxy/
 
+# Copy healthcheck script
+COPY --chown=nobody:nogroup healthcheck.sh /opt/dnsproxy/healthcheck.sh
+RUN chmod +x /opt/dnsproxy/healthcheck.sh
+
 # Allow dnsproxy to bind to privileged ports without running as root
 RUN setcap 'cap_net_bind_service=+eip' /opt/dnsproxy/dnsproxy
 
@@ -56,7 +60,17 @@ EXPOSE 53/tcp 53/udp \
 WORKDIR /opt/dnsproxy
 
 # Define non-root user for better security
-USER nobody
+USER nobody:nogroup
+
+# Set environment variables
+ENV HEALTHCHECK_PORT=""
+
+# Healthcheck: run every 30s, allow 5s for startup, 5s timeout
+HEALTHCHECK \
+    --interval=30s \
+    --start-period=5s \
+    --timeout=5s \
+    CMD /opt/dnsproxy/healthcheck.sh
 
 # Set entrypoint and default command
 ENTRYPOINT ["/sbin/tini", "--", "/opt/dnsproxy/dnsproxy"]
