@@ -259,6 +259,10 @@ COPY --from=racket_builder --chown=${PUID}:${PGID} $RACKET_HOME $RACKET_HOME
 # This allows us to use Haskell for development and execution of Haskell programs
 COPY --from=haskell_builder --chown=${PUID}:${PGID} $HASKELL_HOME $HASKELL_HOME
 
+# Copy the Go installation from the go_builder stage to $GO_HOME in the current stage
+# This allows us to use Go for development and execution of Go programs
+COPY --from=go_builder --chown=${PUID}:${PGID} $GO_HOME $GO_HOME
+
 RUN set -ex && \
     \
     # Install Fast Node Manager (fnm) and Node.js
