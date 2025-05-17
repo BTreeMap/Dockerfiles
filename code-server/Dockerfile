@@ -189,9 +189,6 @@ RUN ./ghcup install ghc --set recommended && \
 # =============================================================================
 FROM base AS go_builder
 
-# Set environment variable for Go installation
-ENV GO_HOME=/opt/go
-
 RUN set -ex && \
     # Determine target architecture
     case "$(uname -m)" in \
