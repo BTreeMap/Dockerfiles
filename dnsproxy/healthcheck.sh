@@ -18,9 +18,9 @@ if ! pgrep -x dnsproxy > /dev/null; then
         echo "Health check failed $count_process times: dnsproxy not running. Attempting to kill dnsproxy (though it seems not to be running)."
         # Attempt to kill dnsproxy, though pgrep indicates it's not running.
         # This is more of a safeguard or for logging purposes.
-        pkill -x -TERM dnsproxy || true
+        pkill -TERM -x /opt/dnsproxy/dnsproxy || true
         sleep 2 # Give time for termination
-        pkill -x -KILL dnsproxy || true
+        pkill -KILL -x /opt/dnsproxy/dnsproxy || true
         rm -f "$CNTFILE_PROCESS" # Reset counter after action
         exit 1 # Mark unhealthy
     fi
@@ -44,10 +44,10 @@ if [ -n "${HEALTHCHECK_PORT:-}" ]; then
 
         if [ "$count_nslookup" -ge "$THRESHOLD" ]; then
             echo "Health check failed $count_nslookup times (nslookup). Sending SIGTERM to dnsproxy."
-            pkill -x -TERM dnsproxy || true
+            pkill -TERM -x /opt/dnsproxy/dnsproxy || true
             sleep 10 # Wait for a clean exit
             echo "Health check failed $count_nslookup times (nslookup). Sending SIGKILL to dnsproxy."
-            pkill -x -KILL dnsproxy || true
+            pkill -KILL -x /opt/dnsproxy/dnsproxy || true
             rm -f "$CNTFILE_NSLOOKUP" # Reset counter after action
             exit 1 # Mark unhealthy
         fi
