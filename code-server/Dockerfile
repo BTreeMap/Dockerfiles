@@ -39,6 +39,7 @@ RUN set -ex && \
         curl \
         git \
         gzip \
+        iproute2 \
         iputils-ping \
         jq \
         libgmp-dev \
