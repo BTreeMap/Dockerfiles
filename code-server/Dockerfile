@@ -42,6 +42,9 @@ RUN set -ex && \
         iproute2 \
         iputils-ping \
         jq \
+        libbpf-dev \
+        libbpf1 \
+        libelf-dev \
         libgmp-dev \
         lsb-release \
         mtr \
@@ -59,6 +62,7 @@ RUN set -ex && \
         xvfb \
         xz-utils \
         zip \
+        zlib1g-dev \
         zstd \
     && \
     # Remove temporary and unnecessary files
