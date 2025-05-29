@@ -251,6 +251,8 @@ RUN set -ex && \
     (cd /tmp && sha256sum -c ${TARBALL}.sha256sum) && \
     mkdir -p $EBPF_TOOLS_HOME && \
     tar -C $EBPF_TOOLS_HOME -xzf /tmp/${TARBALL} && \
+    # Make bpftool executable
+    chmod +x $EBPF_TOOLS_HOME/bpftool && \
     rm -rf /tmp/*
 
 # =============================================================================
