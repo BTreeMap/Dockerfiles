@@ -46,7 +46,11 @@ RUN set -ex && \
         libbpf-dev \
         libbpf1 \
         libelf-dev \
+        libffi-dev \
+        libffi8 \
         libgmp-dev \
+        libgmp10 \
+        libncurses-dev \
         lsb-release \
         mtr \
         ninja-build \
