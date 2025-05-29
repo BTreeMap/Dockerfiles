@@ -20,7 +20,9 @@ ENV RACKET_HOME=/opt/racket \
     RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
     GO_HOME=/opt/go \
-    EBPF_TOOLS_HOME=/opt/ebpf-tools
+    EBPF_TOOLS_HOME=/opt/ebpf-tools \
+    LLVM_VERSION=19 \
+    LLVM_HOME=/opt/llvm
 
 # Combine RUN commands into logical groups to minimize layers and improve caching
 RUN set -ex && \
@@ -262,7 +264,7 @@ ENV CABAL_UPDATE_PACKAGES=true \
     PATCH_JSON=true \
     PATCH_JSON_ENABLE_SORT_KEYS=true \
     PATCH_JSON_USE_FORCE=true \
-    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$GO_HOME/bin:$EBPF_TOOLS_HOME:$PATH \
+    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$GO_HOME/bin:$EBPF_TOOLS_HOME:$LLVM_HOME:$PATH \
     USER_INIT_DIR=/config/.entrypoint.d \
     USER_INIT_FILE=/config/.entrypoint \
     VENV_DIR=/opt/shared-venv
@@ -369,8 +371,19 @@ RUN set -ex && \
 
 RUN set -ex && \
     \
-    # Install Clang and LLVM tools
-    curl -fsSL https://apt.llvm.org/llvm.sh | bash -s -- all && \
+    # Install exactly the specified LLVM/Clang version
+    curl -fsSL https://apt.llvm.org/llvm.sh | bash -s -- ${LLVM_VERSION} all && \
+    \
+    # Symlink the most popular clang/llvm commands to their -${LLVM_VERSION} variants
+    for tool in \
+        clang clang++ clang-format clang-tidy clangd \
+        lldb lld llc \
+        llvm-ar llvm-as llvm-link llvm-nm llvm-objdump \
+        llvm-profdata llvm-cov; \
+    do \
+        ln -sf /usr/bin/${tool}-${LLVM_VERSION} ${LLVM_HOME}/${tool} && command -v ${tool}; \
+    done && \
+    chown -R ${PUID}:${PGID} $LLVM_HOME && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
