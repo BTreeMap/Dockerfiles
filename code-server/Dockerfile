@@ -58,6 +58,7 @@ RUN set -ex && \
         mtr \
         ninja-build \
         pipx \
+        pkgconf \
         python-is-python3 \
         python3-full \
         python3-pip \
