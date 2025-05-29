@@ -228,7 +228,6 @@ RUN set -ex && \
 # This stage fetches the latest bpftool release for the detected architecture.
 # The eBPF tools will be copied into the final image.
 # =============================================================================
-
 FROM base AS ebpf_tools_builder
 
 RUN set -ex && \
