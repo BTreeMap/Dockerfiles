@@ -371,7 +371,7 @@ RUN set -ex && \
 RUN set -ex && \
     \
     # Install Clang and LLVM tools
-    curl -fsSL https://apt.llvm.org/llvm.sh | bash -s && \
+    curl -fsSL https://apt.llvm.org/llvm.sh | bash -s -- all && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
