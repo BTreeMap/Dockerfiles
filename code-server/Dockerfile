@@ -39,6 +39,7 @@ RUN set -ex && \
         cmake \
         curl \
         git \
+        gnupg \
         gzip \
         iproute2 \
         iputils-ping \
@@ -61,6 +62,7 @@ RUN set -ex && \
         python3-setuptools \
         python3-venv \
         screen \
+        software-properties-common \
         tar \
         unzip \
         wget \
@@ -358,6 +360,18 @@ RUN set -ex && \
     \
     # Install Tailscale
     curl -fsSL https://tailscale.com/install.sh | sh && \
+    \
+    # Remove temporary and unnecessary files
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* \
+        /config/* \
+        /tmp/* \
+        /var/tmp/*
+
+RUN set -ex && \
+    \
+    # Install Clang and LLVM tools
+    curl -fsSL https://apt.llvm.org/llvm.sh | bash -s && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
