@@ -375,6 +375,7 @@ RUN set -ex && \
     curl -fsSL https://apt.llvm.org/llvm.sh | bash -s -- ${LLVM_VERSION} all && \
     \
     # Symlink the most popular clang/llvm commands to their -${LLVM_VERSION} variants
+    mkdir -p $LLVM_HOME && \
     for tool in \
         clang clang++ clang-format clang-tidy clangd \
         lldb lld llc \
