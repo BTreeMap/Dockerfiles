@@ -371,7 +371,7 @@ RUN set -ex && \
 
 RUN set -ex && \
     \
-    # Install exactly the specified LLVM/Clang version
+    # Install the specified LLVM/Clang version
     curl -fsSL https://apt.llvm.org/llvm.sh | bash -s -- ${LLVM_VERSION} all && \
     \
     # Symlink the most popular clang/llvm commands to their -${LLVM_VERSION} variants
