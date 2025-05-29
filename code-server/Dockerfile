@@ -15,12 +15,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Set environment variables for Racket, FNM, Rust, and Cargo
 ENV RACKET_HOME=/opt/racket \
     CABAL_DIR=/config/.haskell \
-    EBPF_TOOLS_HOME=/opt/ebpf-tools \
     HASKELL_HOME=/opt/haskell \
     FNM_DIR=/opt/fnm \
     RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
-    GO_HOME=/opt/go
+    GO_HOME=/opt/go \
+    EBPF_TOOLS_HOME=/opt/ebpf-tools
 
 # Combine RUN commands into logical groups to minimize layers and improve caching
 RUN set -ex && \
@@ -304,7 +304,7 @@ COPY --from=go_builder --chown=${PUID}:${PGID} $GO_HOME $GO_HOME
 
 # Copy the ebpf-tools directory from the ebpf_tools_builder stage to $EBPF_TOOLS_HOME in the current stage
 # This allows us to use bpftool for BPF-related operations
-COPY --from=ebpf_tools_builder $EBPF_TOOLS_HOME $EBPF_TOOLS_HOME
+COPY --from=ebpf_tools_builder --chown=${PUID}:${PGID} $EBPF_TOOLS_HOME $EBPF_TOOLS_HOME
 
 RUN set -ex && \
     \
