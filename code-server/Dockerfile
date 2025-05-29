@@ -15,6 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Set environment variables for Racket, FNM, Rust, and Cargo
 ENV RACKET_HOME=/opt/racket \
     CABAL_DIR=/config/.haskell \
+    EBPF_TOOLS_HOME=/opt/ebpf-tools \
     HASKELL_HOME=/opt/haskell \
     FNM_DIR=/opt/fnm \
     RUSTUP_HOME=/opt/rustup \
@@ -165,10 +166,11 @@ WORKDIR $GHCUP_HOME
 # Download the appropriate GHCup binary based on architecture
 RUN set -ex && \
     # Determine target architecture
-    case "$(uname -m)" in \
-        x86_64) ARCH=x86_64 ;; \
-        aarch64|arm64) ARCH=aarch64 ;; \
-        *) echo "Unsupported arch: $(uname -m)" >&2; exit 1 ;; \
+    ARCH=$(uname -m) && \
+    case "$ARCH" in \
+        x86_64) ARCH=amd64 ;; \
+        aarch64|arm64) ARCH=arm64 ;; \
+        *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac && \
     # Download GHCup installer
     GHCUP_URL="https://downloads.haskell.org/~ghcup/${ARCH}-linux-ghcup" && \
@@ -196,10 +198,11 @@ FROM base AS go_builder
 
 RUN set -ex && \
     # Determine target architecture
-    case "$(uname -m)" in \
+    ARCH=$(uname -m) && \
+    case "$ARCH" in \
         x86_64) ARCH=amd64 ;; \
         aarch64|arm64) ARCH=arm64 ;; \
-        *) echo "Unsupported arch: $(uname -m)" >&2; exit 1 ;; \
+        *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
     esac && \
     # Fetch Go releases JSON and extract latest stable version and checksum for our arch
     GO_JSON="$(curl -sSfL 'https://go.dev/dl/?mode=json')" && \
@@ -214,6 +217,36 @@ RUN set -ex && \
     $GO_HOME/bin/go version
 
 # =============================================================================
+# Builder stage for eBPF tools - Used to install the latest standalone eBPF tools.
+# Currently includes bpftool, which is used for managing BPF programs and maps.
+# This stage fetches the latest bpftool release for the detected architecture.
+# The eBPF tools will be copied into the final image.
+# =============================================================================
+
+FROM base AS ebpf_tools_builder
+
+RUN set -ex && \
+    # Determine target architecture
+    ARCH=$(uname -m) && \
+    case "$ARCH" in \
+        x86_64) ARCH=amd64 ;; \
+        aarch64|arm64) ARCH=arm64 ;; \
+        *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
+    esac && \
+    echo "Fetching latest bpftool version" && \
+    BPFTOOL_LATEST=$(curl -sSL https://api.github.com/repos/libbpf/bpftool/releases/latest | jq -r .tag_name) && \
+    echo "Latest bpftool version: $BPFTOOL_LATEST" && \
+    TARBALL="bpftool-${BPFTOOL_LATEST}-${ARCH}.tar.gz" && \
+    URL="https://github.com/libbpf/bpftool/releases/download/${BPFTOOL_LATEST}/${TARBALL}" && \
+    echo "Downloading $URL" && \
+    curl -sSL -o /tmp/${TARBALL} ${URL} && \
+    curl -sSL -o /tmp/${TARBALL}.sha256sum ${URL}.sha256sum && \
+    sha256sum -c /tmp/${TARBALL}.sha256sum && \
+    mkdir -p $EBPF_TOOLS_HOME && \
+    tar -C $EBPF_TOOLS_HOME -xzf /tmp/${TARBALL} && \
+    rm -rf /tmp/*
+
+# =============================================================================
 # Main image - Using LinuxServer's code-server as the base image
 # code-server provides VS Code in the browser with a full development environment
 # =============================================================================
@@ -224,7 +257,7 @@ ENV CABAL_UPDATE_PACKAGES=true \
     PATCH_JSON=true \
     PATCH_JSON_ENABLE_SORT_KEYS=true \
     PATCH_JSON_USE_FORCE=true \
-    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$GO_HOME/bin:$PATH \
+    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$GO_HOME/bin:$EBPF_TOOLS_HOME:$PATH \
     USER_INIT_DIR=/config/.entrypoint.d \
     USER_INIT_FILE=/config/.entrypoint \
     VENV_DIR=/opt/shared-venv
@@ -268,6 +301,10 @@ COPY --from=haskell_builder --chown=${PUID}:${PGID} $HASKELL_HOME $HASKELL_HOME
 # Copy the Go installation from the go_builder stage to $GO_HOME in the current stage
 # This allows us to use Go for development and execution of Go programs
 COPY --from=go_builder --chown=${PUID}:${PGID} $GO_HOME $GO_HOME
+
+# Copy the ebpf-tools directory from the ebpf_tools_builder stage to $EBPF_TOOLS_HOME in the current stage
+# This allows us to use bpftool for BPF-related operations
+COPY --from=ebpf_tools_builder $EBPF_TOOLS_HOME $EBPF_TOOLS_HOME
 
 RUN set -ex && \
     \
