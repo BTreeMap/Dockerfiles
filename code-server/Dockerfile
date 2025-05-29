@@ -241,7 +241,7 @@ RUN set -ex && \
     echo "Downloading $URL" && \
     curl -sSL -o /tmp/${TARBALL} ${URL} && \
     curl -sSL -o /tmp/${TARBALL}.sha256sum ${URL}.sha256sum && \
-    sha256sum -c /tmp/${TARBALL}.sha256sum && \
+    (cd /tmp && sha256sum -c ${TARBALL}.sha256sum) && \
     mkdir -p $EBPF_TOOLS_HOME && \
     tar -C $EBPF_TOOLS_HOME -xzf /tmp/${TARBALL} && \
     rm -rf /tmp/*
