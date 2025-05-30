@@ -66,6 +66,7 @@ RUN set -ex && \
         python3-venv \
         screen \
         software-properties-common \
+        strace \
         tar \
         unzip \
         wget \
