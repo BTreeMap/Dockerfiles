@@ -28,6 +28,7 @@ RUN mkdir -p $DOCKER_TMP_DIR && \
         bind9-dnsutils \
         curl \
         git \
+        iproute2 \
         iptables \
         iputils-ping \
         jq \

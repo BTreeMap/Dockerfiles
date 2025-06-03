@@ -14,7 +14,14 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get upgrade -y && \
     # Install utilities for package management and GPG
-    apt-get install -y curl gnupg lsb-release ethtool && \
+    apt-get install -y \
+      curl \
+      ethtool \
+      gnupg \
+      iproute2 \
+      iptables \
+      lsb-release \
+    && \
     # Import Cloudflare GPG key
     curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | \
     gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg && \

@@ -9,6 +9,7 @@ RUN apk update && \
         ca-certificates \
         curl \
         ethtool \
+        iproute2 \
         iptables \
     && \
     mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale && \
