@@ -44,6 +44,7 @@ RUN set -ex && \
         gnupg \
         gzip \
         iproute2 \
+        iptables \
         iputils-ping \
         jq \
         libbpf-dev \
