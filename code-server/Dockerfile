@@ -435,6 +435,7 @@ RUN set -ex && \
         matplotlib \
         numpy \
         openai \
+        orjson \
         pandas \
         pillow \
         psycopg[binary,pool] \
