@@ -12,6 +12,7 @@ RUN apk update \
         curl \
         iproute2 \
         iputils-ping \
+        tini \
     && \
     rm -rf \
         /var/cache/apk/* \
@@ -41,4 +42,4 @@ HEALTHCHECK \
     CMD pgrep -x tail || exit 1
 
 # Minimal entrypoint to keep the container running
-ENTRYPOINT ["tail", "-f", "/dev/null", "-s", "86400"]
+ENTRYPOINT ["/sbin/tini", "--", "tail", "-f", "/dev/null", "-s", "86400"]
