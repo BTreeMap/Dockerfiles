@@ -103,7 +103,7 @@ ARG PROOT_REPOSITORY=https://github.com/BTreeMap/proot-2025-02-26-archive.git
 RUN set -eux && \
     apt-get update -y && \
     apt-get upgrade -y && \
-    apt-get install -y && \
+    apt-get install -y \
         clang-tools-14 \
         curl \
         docutils-common \
