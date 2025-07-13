@@ -104,7 +104,7 @@ RUN set -eux && \
     apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y && \
-        clang-tools-15 \
+        clang-tools-14 \
         curl \
         docutils-common \
         gdb \
