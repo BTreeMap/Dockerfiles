@@ -448,6 +448,7 @@ RUN set -ex && \
         python-dotenv \
         python-telegram-bot \
         PyYAML \
+        reedsolo \
         requests[socks] \
         scapy \
         scikit-learn \
