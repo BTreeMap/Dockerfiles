@@ -104,11 +104,11 @@ RUN set -eux && \
     apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y && \
-        git \
         clang-tools-15 \
         curl \
         docutils-common \
         gdb \
+        git \
         lcov \
         libarchive-dev \
         libtalloc-dev \
