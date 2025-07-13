@@ -88,7 +88,7 @@ RUN set -ex && \
 # Builder stage for proot - Used to compile the proot binary from source
 # proot allows for containerized chroot-like functionality without root privileges
 # =============================================================================
-FROM gcc:7.4.0 AS proot_builder
+FROM gcc:12.4.0-bookworm AS proot_builder
 
 # Specify the proot version to ensure reproducible builds
 ARG PROOT_VERSION=v5.4.0
@@ -100,21 +100,22 @@ ARG PROOT_REPOSITORY=https://github.com/BTreeMap/proot-2025-02-26-archive.git
 # - libarchive-dev: For archive manipulation support
 # - libtalloc-dev: For memory allocation pooling
 # - Other tools for building, testing and documentation
-RUN apt-get update -qq && \
-    apt-get upgrade -qq && \
-    apt-get install -qq \
-    git \
-    clang-tools-6.0 \
-    curl \
-    docutils-common \
-    gdb \
-    lcov \
-    libarchive-dev \
-    libtalloc-dev \
-    strace \
-    swig \
-    uthash-dev \
-    xsltproc
+RUN set -eux && \
+    apt-get update -y && \
+    apt-get upgrade -y && \
+    apt-get install -y && \
+        git \
+        clang-tools-15 \
+        curl \
+        docutils-common \
+        gdb \
+        lcov \
+        libarchive-dev \
+        libtalloc-dev \
+        strace \
+        swig \
+        uthash-dev \
+        xsltproc
 
 # Clone the specific version of proot from GitHub
 # Using --depth 1 to minimize download size (shallow clone)
