@@ -5,7 +5,10 @@ RUN \
     apk update && \ 
     apk upgrade && \ 
     apk add \
+        ffmpeg \
+        imagemagick \
         perl \
+        supervisor \
     && \
     # Clean up to reduce image size
     rm -rf \
