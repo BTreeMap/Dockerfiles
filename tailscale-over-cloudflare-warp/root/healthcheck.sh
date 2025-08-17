@@ -9,12 +9,15 @@ CNTFILE=/tmp/hc_fail_count
 FIRST_FAIL_TIME_FILE=/tmp/hc_first_fail_time
 
 # 1. Check WARP status as ubuntu user
-if su - ubuntu -c 'warp-cli status' | grep -q 'Status update: Connected'; then
-  echo "WARP status check: Passed."
-  rm -f "$CNTFILE"              # Reset failure counter on success
-  rm -f "$FIRST_FAIL_TIME_FILE" # Reset first failure time on success
-  exit 0
-fi
+warp_status=$(su - ubuntu -c 'warp-cli status' 2>/dev/null || true)
+case "$warp_status" in
+  *"Status update: Connected"*)
+    echo "WARP status check: Passed."
+    rm -f "$CNTFILE"              # Reset failure counter on success
+    rm -f "$FIRST_FAIL_TIME_FILE" # Reset first failure time on success
+    exit 0
+    ;;
+esac
 
 # 2. Increment failure counter
 echo "WARP status check: Failed. Incrementing failure counter."
