@@ -3,17 +3,24 @@ set -euo pipefail
 
 # Number of consecutive failures before tearing down
 THRESHOLD=3
+# Minimum time (in seconds) that must pass since first failure before terminating
+MIN_FAIL_DURATION=30
 CNTFILE=/tmp/hc_fail_count
+FIRST_FAIL_TIME_FILE=/tmp/hc_first_fail_time
 
 # 1. Check WARP status as ubuntu user
 if su - ubuntu -c 'warp-cli status' | grep -q 'Status update: Connected'; then
   echo "WARP status check: Passed."
   rm -f "$CNTFILE"              # Reset failure counter on success
+  rm -f "$FIRST_FAIL_TIME_FILE" # Reset first failure time on success
   exit 0
 fi
 
 # 2. Increment failure counter
 echo "WARP status check: Failed. Incrementing failure counter."
+
+# Get current timestamp
+current_time=$(date +%s)
 
 # Initialize count variable
 count=0 # Default to 0
@@ -41,16 +48,38 @@ count=$(expr "$count" + 1)
 # Write the new count back to the file atomically
 echo "$count" > "$CNTFILE"
 
+# Store the first failure time if this is the first failure
+if [ "$count" -eq 1 ]; then
+  echo "$current_time" > "$FIRST_FAIL_TIME_FILE"
+fi
+
 # 3. On too many failures, send SIGTERM to all 'tail' processes, wait, then SIGKILL.
 # The entrypoint uses 'tail' to keep the container running. Killing 'tail' will cause the entrypoint to exit, thereby terminating the container.
 if [ "$count" -ge "$THRESHOLD" ]; then
-  rm -f "$CNTFILE"
-  echo "Health check failed $count times. Sending SIGTERM to all 'tail' processes."
-  pkill -x -TERM tail || true   # Gracefully shut down all 'tail' processes
-  sleep 10                      # Wait for a clean exit
-  echo "Health check failed $count times. Sending SIGKILL to all remaining 'tail' processes."
-  pkill -x -KILL tail || true   # Forcefully terminate any remaining 'tail' processes
-  exit 1                        # Mark unhealthy so Docker can restart
+  # Check if at least 30 seconds have passed since the first failure
+  first_fail_time=0
+  if [ -f "$FIRST_FAIL_TIME_FILE" ]; then
+    first_fail_time=$(head -n 1 "$FIRST_FAIL_TIME_FILE" 2>/dev/null || echo "0")
+    # Validate that first_fail_time is a number
+    case "$first_fail_time" in
+      ''|*[!0-9]*) first_fail_time=0 ;;
+    esac
+  fi
+  
+  time_since_first_fail=$((current_time - first_fail_time))
+  
+  if [ "$time_since_first_fail" -ge "$MIN_FAIL_DURATION" ]; then
+    rm -f "$CNTFILE"
+    rm -f "$FIRST_FAIL_TIME_FILE"
+    echo "Health check failed $count times over $time_since_first_fail seconds. Sending SIGTERM to all 'tail' processes."
+    pkill -x -TERM tail || true   # Gracefully shut down all 'tail' processes
+    sleep 10                      # Wait for a clean exit
+    echo "Health check failed $count times. Sending SIGKILL to all remaining 'tail' processes."
+    pkill -x -KILL tail || true   # Forcefully terminate any remaining 'tail' processes
+    exit 1                        # Mark unhealthy so Docker can restart
+  else
+    echo "Health check failed $count times but only $time_since_first_fail seconds since first failure (need $MIN_FAIL_DURATION). Not terminating yet."
+  fi
 fi
 
 # 4. Report unhealthy for this round
