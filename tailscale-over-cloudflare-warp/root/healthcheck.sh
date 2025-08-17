@@ -4,7 +4,7 @@ set -euo pipefail
 # Number of consecutive failures before tearing down
 THRESHOLD=3
 # Minimum time (in seconds) that must pass since first failure before terminating
-MIN_FAIL_DURATION=30
+MIN_FAIL_DURATION=60
 CNTFILE=/tmp/hc_fail_count
 FIRST_FAIL_TIME_FILE=/tmp/hc_first_fail_time
 
