@@ -10,6 +10,10 @@
 # Exit the script immediately if any command fails
 set -e
 
+# Sleep / wait durations (customizable via environment variables; defaults preserve original behavior)
+# Time to wait after starting warp-svc before running warp-cli commands
+WARP_INIT_SLEEP="${WARP_INIT_SLEEP:-10}"
+
 # Create the /run/dbus directory if it does not already exist
 echo "Creating /run/dbus directory..."
 mkdir -p /run/dbus
@@ -34,8 +38,8 @@ echo "Starting the Cloudflare WARP service and accepting terms of service..."
 warp-svc --accept-tos &
 
 # Allow the daemons to initialize by sleeping for an additional 5 seconds
-echo "Sleeping for 10 seconds to allow WARP service to initialize..."
-sleep 10
+echo "Sleeping for ${WARP_INIT_SLEEP}s to allow WARP service to initialize..."
+sleep "${WARP_INIT_SLEEP}"
 
 # Disable qlog debugging for the Warp client to reduce logging verbosity
 echo "Disabling qlog debugging for Warp client..."

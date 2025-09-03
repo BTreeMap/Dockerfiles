@@ -46,6 +46,12 @@ FROM scratch
 # Copy all files from the base image
 COPY --from=base / /
 
+# Default wait durations (can be overridden at runtime)
+ENV \
+  TAILSCALE_INIT_SLEEP=5 \
+  TAILSCALE_POST_UP_SLEEP=5 \
+  WARP_INIT_SLEEP=10
+
 # Set entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
 

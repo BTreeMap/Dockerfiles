@@ -18,6 +18,14 @@ TAILSCALED_EXTRA_ARGS="${TAILSCALED_EXTRA_ARGS:-}"
 # Default: "--advertise-exit-node --accept-dns=false --accept-routes=false --webclient"
 TAILSCALE_EXTRA_ARGS="${TAILSCALE_EXTRA_ARGS:---advertise-exit-node --accept-dns=false --accept-routes=false --webclient}"
 
+# Sleep / wait durations (customizable via environment variables; defaults preserve original behavior)
+# Time to wait after starting tailscaled before applying settings
+TAILSCALE_INIT_SLEEP="${TAILSCALE_INIT_SLEEP:-5}"
+# Time to wait after 'tailscale up' to allow connection establishment
+TAILSCALE_POST_UP_SLEEP="${TAILSCALE_POST_UP_SLEEP:-5}"
+# Time to wait after starting warp-svc before running warp-cli commands
+WARP_INIT_SLEEP="${WARP_INIT_SLEEP:-10}"
+
 # Create the /run/dbus directory if it does not already exist
 echo "Creating /run/dbus directory..."
 mkdir -p /run/dbus
@@ -42,8 +50,8 @@ echo "Starting the Tailscale daemon with extra args: ${TAILSCALED_EXTRA_ARGS}"
 tailscaled --statedir=/var/lib/tailscale ${TAILSCALED_EXTRA_ARGS} &
 
 # Sleep for 5 seconds to allow Tailscale daemon to initialize
-echo "Sleeping for 5 seconds to allow the Tailscale daemon to initialize..."
-sleep 5
+echo "Sleeping for ${TAILSCALE_INIT_SLEEP}s to allow the Tailscale daemon to initialize..."
+sleep "${TAILSCALE_INIT_SLEEP}"
 
 # Apply configuration settings with tailscale set.
 echo "Setting Tailscale configuration with extra args: ${TAILSCALE_EXTRA_ARGS}"
@@ -54,16 +62,16 @@ echo "Connecting Tailscale..."
 tailscale up
 
 # Allow some time (5 seconds) for the Tailscale connection to establish
-echo "Sleeping for 5 seconds to allow Tailscale connection to establish..."
-sleep 5
+echo "Sleeping for ${TAILSCALE_POST_UP_SLEEP}s to allow Tailscale connection to establish..."
+sleep "${TAILSCALE_POST_UP_SLEEP}"
 
 # Start the Cloudflare WARP service daemon and accept the terms of service
 echo "Starting the Cloudflare WARP service and accepting terms of service..."
 warp-svc --accept-tos &
 
 # Allow the daemons to initialize by sleeping for an additional 5 seconds
-echo "Sleeping for 10 seconds to allow WARP service to initialize..."
-sleep 10
+echo "Sleeping for ${WARP_INIT_SLEEP}s to allow WARP service to initialize..."
+sleep "${WARP_INIT_SLEEP}"
 
 # Disable qlog debugging for the Warp client to reduce logging verbosity
 echo "Disabling qlog debugging for Warp client..."
