@@ -14,6 +14,11 @@ set -e
 # Time to wait after starting warp-svc before running warp-cli commands
 WARP_INIT_SLEEP="${WARP_INIT_SLEEP:-10}"
 
+# Reset Cloudflare WARP crash report directory (remove & recreate)
+echo "Resetting /var/lib/cloudflare-warp/crash_reports directory..."
+rm -rf /var/lib/cloudflare-warp/crash_reports || true
+mkdir -p /var/lib/cloudflare-warp/crash_reports || true
+
 # Create the /run/dbus directory if it does not already exist
 echo "Creating /run/dbus directory..."
 mkdir -p /run/dbus
