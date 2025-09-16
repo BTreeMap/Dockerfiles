@@ -1,4 +1,4 @@
-FROM seafileltd/seafile-pro-mc:12.0-latest
+FROM seafileltd/seafile-pro-mc:13.0-latest
 
 ENV \
     SEAFILE_VOLUME=/opt/seafile-data \
