@@ -1,0 +1,4 @@
+FROM mariadb:10.11
+
+ENV \
+    MARIADB_AUTO_UPGRADE=true
