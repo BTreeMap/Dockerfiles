@@ -35,6 +35,7 @@ RUN set -ex && \
     apt-get install -y --no-install-recommends \
         7zip \
         apt-transport-https \
+        bc \
         bind9-dnsutils \
         build-essential \
         ca-certificates \
