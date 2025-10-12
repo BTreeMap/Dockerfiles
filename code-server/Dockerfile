@@ -56,6 +56,7 @@ RUN set -ex && \
         libgmp-dev \
         libgmp10 \
         libncurses-dev \
+        libnsl2 \
         lsb-release \
         mtr \
         ninja-build \
