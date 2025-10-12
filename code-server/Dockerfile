@@ -50,12 +50,14 @@ RUN set -ex && \
         jq \
         libbpf-dev \
         libbpf1 \
+        libc6-dev \
         libelf-dev \
         libffi-dev \
         libffi8 \
         libgmp-dev \
         libgmp10 \
         libncurses-dev \
+        libnsl-dev \
         libnsl2 \
         lsb-release \
         mtr \
