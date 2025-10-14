@@ -60,6 +60,7 @@ RUN set -ex && \
         libnsl-dev \
         libnsl2 \
         lsb-release \
+        mininet \
         mtr \
         ninja-build \
         pipx \
@@ -472,6 +473,7 @@ RUN set -ex && \
         isort \
         meson \
         poetry \
+        uv \
         wheel \
     && \
     # Remove temporary and unnecessary files
