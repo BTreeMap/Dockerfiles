@@ -75,6 +75,7 @@ RUN set -ex && \
         strace \
         tar \
         unzip \
+        valgrind \
         wget \
         xvfb \
         xz-utils \
