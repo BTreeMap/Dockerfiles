@@ -77,6 +77,7 @@ RUN set -ex && \
         unzip \
         wget \
         xvfb \
+        xxd \
         xz-utils \
         zip \
         zlib1g-dev \
