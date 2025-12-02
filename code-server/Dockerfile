@@ -41,6 +41,7 @@ RUN set -ex && \
         ca-certificates \
         cmake \
         curl \
+        fuse3 \
         git \
         gnupg \
         gzip \
@@ -54,6 +55,9 @@ RUN set -ex && \
         libelf-dev \
         libffi-dev \
         libffi8 \
+        libfuse-dev \
+        libfuse2t64 \
+        libfuse3-dev \
         libgmp-dev \
         libgmp10 \
         libncurses-dev \
