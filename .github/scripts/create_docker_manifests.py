@@ -4,8 +4,10 @@ import glob
 import logging
 import multiprocessing
 import os
+import random
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 
 
@@ -18,10 +20,16 @@ class ManifestResult:
     error_msg: str | None = None
 
 
-def init_logger():
+def init_logger() -> logging.Logger:
     """Initializes and configures a logger for each process."""
     logger = logging.getLogger(f"docker_manifest_creator_{os.getpid()}")
     logger.setLevel(logging.INFO)
+
+    # Avoid adding duplicate handlers if init_logger() is called more than once
+    # in the same process.
+    if logger.handlers:
+        return logger
+
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
         "[%(asctime)s][%(levelname)s][PID %(process)d] %(message)s",
@@ -29,6 +37,9 @@ def init_logger():
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+    # Prevent duplication via root logger propagation in some environments.
+    logger.propagate = False
     return logger
 
 
@@ -38,6 +49,19 @@ def get_env_var(var_name, default=None):
     if value is None:
         raise ValueError(f"Environment variable '{var_name}' is not set")
     return value
+
+
+def _compute_backoff_seconds(
+    attempt: int,
+    base_delay_seconds: float = 1.0,
+    max_delay_seconds: float = 60.0,
+) -> float:
+    """
+    Capped exponential backoff with full jitter:
+      sleep = random_between(0, min(max_delay, base_delay * 2^(attempt-1)))
+    """
+    cap = min(max_delay_seconds, base_delay_seconds * (2 ** (attempt - 1)))
+    return random.uniform(0.0, cap)
 
 
 def create_and_push_manifest_for_image(
@@ -56,7 +80,7 @@ def create_and_push_manifest_for_image(
     arm64_tag = f"{base_image}:{image_name_dir}.{github_sha}.{date_time_str}.arm64"
 
     # Prepare the --tag options for all base_tags
-    tag_options = []
+    tag_options: list[str] = []
     for tag in base_tags:
         manifest_tag = f"{base_image}:{tag}"
         tag_options.extend(["--tag", manifest_tag])
@@ -75,24 +99,44 @@ def create_and_push_manifest_for_image(
         ]
     )
 
-    # Retry logic
-    for attempt in range(1, max_retries + 1):
+    unlimited_retries = max_retries <= 0
+    attempt = 0
+    error_msg: str | None = None
+
+    # Unlimited retries when MAX_RETRIES <= 0; otherwise, preserve original attempt bounds.
+    while unlimited_retries or attempt < max_retries:
+        attempt += 1
+
         try:
+            if unlimited_retries:
+                attempt_suffix = f"{attempt}/∞"
+            else:
+                attempt_suffix = f"{attempt}/{max_retries}"
+
             logger.info(
-                f"Creating and pushing manifest for '{image_name_dir}' with tags {base_tags} using source images '{amd64_tag}' and '{arm64_tag}' (Attempt {attempt}/{max_retries})"
+                f"Creating and pushing manifest for '{image_name_dir}' with tags {base_tags} using source images '{amd64_tag}' and '{arm64_tag}' (Attempt {attempt_suffix})"
             )
             subprocess.run(imagetools_create_cmd, check=True)
             logger.info(
                 f"Successfully created and pushed manifest for '{image_name_dir}'"
             )
             return ManifestResult(image_name=image_name_dir, success=True)
+
+        except KeyboardInterrupt:
+            # Ensure cancellations interrupt promptly (e.g., CI job cancel).
+            raise
+
         except subprocess.CalledProcessError as e:
             logger.warning(
                 f"Attempt {attempt} failed for image '{image_name_dir}': {e}"
             )
             error_msg = str(e)
-        if attempt < max_retries:
+
+        # Preserve the original "Retrying..." log line exactly (no added text).
+        if unlimited_retries or attempt < max_retries:
             logger.info(f"Retrying manifest creation for '{image_name_dir}'...")
+            time.sleep(_compute_backoff_seconds(attempt=attempt))
+
     logger.error(
         f"Failed to create and push manifest for '{image_name_dir}' after {max_retries} attempts"
     )
