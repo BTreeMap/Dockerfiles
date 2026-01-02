@@ -4,8 +4,10 @@ import glob
 import logging
 import multiprocessing
 import os
+import random
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 
 
@@ -18,6 +20,19 @@ class BuildResult:
     attempts: int
     error_msg: str | None = None
     system_metrics: dict | None = None
+
+
+def _compute_backoff_seconds(
+    attempt: int,
+    base_delay_seconds: float = 1.0,
+    max_delay_seconds: float = 60.0,
+) -> float:
+    """
+    Capped exponential backoff with full jitter:
+      sleep = random_between(0, min(max_delay, base_delay * 2^(attempt-1)))
+    """
+    cap = min(max_delay_seconds, base_delay_seconds * (2 ** (attempt - 1)))
+    return random.uniform(0.0, cap)
 
 
 def remove_packages(pkg_patterns: list[str]) -> None:
@@ -108,16 +123,24 @@ def free_disk_space():
     subprocess.run(["df", "-h"], check=False)
 
 
-def init_logger():
+def init_logger() -> logging.Logger:
     """Initializes and configures a logger for build operations."""
     logger = logging.getLogger("docker_builder")
     logger.setLevel(logging.INFO)
+
+    # Prevent duplicate handlers if init_logger() is called multiple times.
+    if logger.handlers:
+        return logger
+
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
         "[%(asctime)s][%(levelname)s] %(message)s", datefmt="%Y-%m-%d.%H-%M-%S"
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+    # Avoid duplication via root logger propagation in some environments.
+    logger.propagate = False
     return logger
 
 
@@ -265,7 +288,11 @@ def build_and_push_image(build_args) -> BuildResult:
         error_msg = "Unknown error"
         subprocess.run(create_builder_command, check=True)
 
-        for attempt in range(1, max_retries + 1):
+        unlimited_retries = max_retries <= 0
+        attempt = 0
+
+        while unlimited_retries or attempt < max_retries:
+            attempt += 1
             try:
                 with logger_lock:
                     logger.info(
@@ -273,12 +300,14 @@ def build_and_push_image(build_args) -> BuildResult:
                     )
                     for tag in tags:
                         logger.info(f"  - {tag}")
+
                 subprocess.run(buildx_command, check=True)
                 return BuildResult(
                     image_name=tags[0],
                     success=True,
                     attempts=attempt,
                 )
+
             except BaseException as e:
                 error_msg = str(e)
                 with logger_lock:
@@ -287,10 +316,18 @@ def build_and_push_image(build_args) -> BuildResult:
                         exc_info=True,
                     )
 
+                # If retries are bounded and we've exhausted them, fall through to failure handling.
+                if (not unlimited_retries) and attempt >= max_retries:
+                    break
+
+                # Backoff before next retry (silent to minimize behavior/log changes).
+                time.sleep(_compute_backoff_seconds(attempt=attempt))
+
         with logger_lock:
             logger.error(
                 f"All {max_retries} build attempts failed for image '{tags[0]}'."
             )
+
         return BuildResult(
             image_name=tags[0],
             success=False,
