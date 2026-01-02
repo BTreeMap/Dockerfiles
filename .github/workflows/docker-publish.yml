@@ -11,7 +11,7 @@ env:
   DOCKER_IMAGE_NAME: ${{ github.repository }}
   DOCKER_REGISTRY: ghcr.io
   GITHUB_SHA: ${{ github.sha }}
-  MAX_RETRIES: 3
+  MAX_RETRIES: 0
 
 jobs:
   setup-timestamp:
