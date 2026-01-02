@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 import glob
 import logging
 import multiprocessing
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -22,13 +24,13 @@ class ManifestResult:
 
 def init_logger() -> logging.Logger:
     """Initializes and configures a logger for each process."""
-    logger = logging.getLogger(f"docker_manifest_creator_{os.getpid()}")
-    logger.setLevel(logging.INFO)
+    logger_obj = logging.getLogger(f"docker_manifest_creator_{os.getpid()}")
+    logger_obj.setLevel(logging.INFO)
 
     # Avoid adding duplicate handlers if init_logger() is called more than once
     # in the same process.
-    if logger.handlers:
-        return logger
+    if logger_obj.handlers:
+        return logger_obj
 
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
@@ -36,14 +38,14 @@ def init_logger() -> logging.Logger:
         datefmt="%Y-%m-%d.%H-%M-%S",
     )
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    logger_obj.addHandler(handler)
 
     # Prevent duplication via root logger propagation in some environments.
-    logger.propagate = False
-    return logger
+    logger_obj.propagate = False
+    return logger_obj
 
 
-def get_env_var(var_name, default=None):
+def get_env_var(var_name: str, default: str | None = None) -> str:
     """Retrieves an environment variable, returning default if provided, else raises ValueError."""
     value = os.environ.get(var_name, default)
     if value is None:
@@ -69,7 +71,7 @@ def create_and_push_manifest_for_image(
     image_name_dir: str,
     base_tags: list[str],
     max_retries: int,
-):
+) -> ManifestResult:
     """Creates and pushes a Docker manifest for an image with all the provided tags."""
     logger = init_logger()
     github_sha = get_env_var("GITHUB_SHA")
@@ -143,7 +145,7 @@ def create_and_push_manifest_for_image(
     return ManifestResult(image_name=image_name_dir, success=False, error_msg=error_msg)
 
 
-def create_and_push_manifest_in_process(args):
+def create_and_push_manifest_in_process(args: tuple[Any, ...]) -> ManifestResult:
     """Wrapper function to create and push manifest in a separate process."""
     base_image, image_name_dir, base_tags, max_retries = args
     return create_and_push_manifest_for_image(
@@ -154,7 +156,7 @@ def create_and_push_manifest_in_process(args):
     )
 
 
-def main():
+def main() -> None:
     logger = init_logger()
 
     # Retrieve necessary environment variables
@@ -177,7 +179,7 @@ def main():
     dockerfiles.sort(reverse=True)
     logger.info(f"Found {len(dockerfiles)} Dockerfiles:")
 
-    tasks = []
+    tasks: list[tuple[Any, ...]] = []
 
     for dockerfile in dockerfiles:
         dir_path = os.path.dirname(dockerfile)
