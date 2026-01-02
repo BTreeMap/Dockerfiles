@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 import glob
 import logging
 import multiprocessing
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -43,7 +45,7 @@ def remove_packages(pkg_patterns: list[str]) -> None:
         pkg_patterns: List of package name patterns, supporting globbing.
     """
     try:
-        all_packages = []
+        all_packages: list[str] = []
         for pattern in pkg_patterns:
             # Call dpkg directly and process output in Python
             result = subprocess.run(
@@ -83,7 +85,7 @@ def remove_packages(pkg_patterns: list[str]) -> None:
         logger.error(f"Failed to get package list: {e}, continuing with cleanup")
 
 
-def free_disk_space():
+def free_disk_space() -> None:
     """
     Removes unnecessary packages and directories to free up disk space for Docker builds.
 
@@ -125,26 +127,26 @@ def free_disk_space():
 
 def init_logger() -> logging.Logger:
     """Initializes and configures a logger for build operations."""
-    logger = logging.getLogger("docker_builder")
-    logger.setLevel(logging.INFO)
+    logger_obj = logging.getLogger("docker_builder")
+    logger_obj.setLevel(logging.INFO)
 
     # Prevent duplicate handlers if init_logger() is called multiple times.
-    if logger.handlers:
-        return logger
+    if logger_obj.handlers:
+        return logger_obj
 
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
         "[%(asctime)s][%(levelname)s] %(message)s", datefmt="%Y-%m-%d.%H-%M-%S"
     )
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    logger_obj.addHandler(handler)
 
     # Avoid duplication via root logger propagation in some environments.
-    logger.propagate = False
-    return logger
+    logger_obj.propagate = False
+    return logger_obj
 
 
-def get_env_var(var_name, default=None):
+def get_env_var(var_name: str, default: str | None = None) -> str:
     """Retrieves an environment variable, returning default if provided, else raises ValueError."""
     value = os.environ.get(var_name, default)
     if value is None:
@@ -152,9 +154,9 @@ def get_env_var(var_name, default=None):
     return value
 
 
-def collect_system_metrics():
+def collect_system_metrics() -> dict[str, str]:
     """Collects system metrics to diagnose resource-related build failures."""
-    metrics = {}
+    metrics: dict[str, str] = {}
 
     # Process list helps identify resource contention
     try:
@@ -191,7 +193,7 @@ def collect_system_metrics():
     return metrics
 
 
-def log_system_metrics(metrics: dict | None = None):
+def log_system_metrics(metrics: dict[str, str] | None = None) -> None:
     """Logs system metrics using the global logger with error handling.
 
     Args:
@@ -233,7 +235,7 @@ def log_system_metrics(metrics: dict | None = None):
         )
 
 
-def build_and_push_image(build_args) -> BuildResult:
+def build_and_push_image(build_args: tuple[Any, ...]) -> BuildResult:
     """Builds and pushes a Docker image with retry logic and metrics collection."""
     (
         dockerfile_path,
@@ -294,9 +296,15 @@ def build_and_push_image(build_args) -> BuildResult:
         while unlimited_retries or attempt < max_retries:
             attempt += 1
             try:
+                # Match the sample script’s attempt formatting for unlimited retries.
+                if unlimited_retries:
+                    attempt_suffix = f"{attempt}/∞"
+                else:
+                    attempt_suffix = f"{attempt}/{max_retries}"
+
                 with logger_lock:
                     logger.info(
-                        f"Attempting build for image '{tags[0]}' (attempt {attempt} of {max_retries}) with tags:"
+                        f"Attempting build for image '{tags[0]}' (attempt {attempt_suffix}) with tags:"
                     )
                     for tag in tags:
                         logger.info(f"  - {tag}")
@@ -340,7 +348,7 @@ def build_and_push_image(build_args) -> BuildResult:
         subprocess.run(remove_builder_command, check=False)
 
 
-def main():
+def main() -> None:
     global logger
 
     logger = init_logger()
@@ -375,7 +383,7 @@ def main():
         logger.info(f"  - {dockerfile}")
 
     # Prepare parallel build arguments
-    args_list = []
+    args_list: list[tuple[Any, ...]] = []
     manager = multiprocessing.Manager()
     logger_lock = manager.Lock()
 
