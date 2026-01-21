@@ -70,10 +70,10 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     # Install Microsoft OpenJDK 25
     apt-get install -y msopenjdk-25 && \
     \
-    # Install InCommon cert system-wide (download -> sha256 verify -> trust store)
-    wget -O /tmp/InCommon.crt https://s.joefang.org/InCommon.crt && \
-    echo "87e01cc4dd0c9d92a3dbd49092ff13f9cd387445cdc57e5b984e1b7721b5b029  /tmp/InCommon.crt" | sha256sum -c - && \
-    install -m 0644 /tmp/InCommon.crt /usr/local/share/ca-certificates/InCommon.crt && \
+    # Install InCommon cert system-wide (download -> sha256 verify -> DER->PEM -> trust store)
+    wget -O /tmp/InCommon.der https://s.joefang.org/InCommon.crt && \
+    echo "87e01cc4dd0c9d92a3dbd49092ff13f9cd387445cdc57e5b984e1b7721b5b029  /tmp/InCommon.der" | sha256sum -c - && \
+    openssl x509 -inform DER -outform PEM -in /tmp/InCommon.der -out /usr/local/share/ca-certificates/InCommon.crt && \
     update-ca-certificates -f && \
     \
     # Resolve JAVA_HOME in a multi-arch way and standardize it with a stable symlink
