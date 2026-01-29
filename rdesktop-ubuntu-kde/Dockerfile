@@ -41,6 +41,7 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
         lsb-release \
         mtr \
         nano \
+        okular \
         python-is-python3 \
         screen \
         unzip \
