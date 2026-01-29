@@ -70,6 +70,8 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     \
     # Install Microsoft OpenJDK 25
     apt-get install -y msopenjdk-25 && \
+    # Install OpenJDK 8
+    apt-get install -y openjdk-8-jre && \
     \
     # Install InCommon cert system-wide (download -> sha256 verify -> DER->PEM -> trust store)
     wget -O /tmp/InCommon.der https://s.joefang.org/InCommon.crt && \
@@ -77,25 +79,57 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     openssl x509 -inform DER -outform PEM -in /tmp/InCommon.der -out /usr/local/share/ca-certificates/InCommon.crt && \
     update-ca-certificates -f && \
     \
-    # Resolve JAVA_HOME in a multi-arch way and standardize it with a stable symlink
-    JAVA_BIN="$(readlink -f "$(command -v java)")" && \
-    REAL_JAVA_HOME="$(dirname "$(dirname "$JAVA_BIN")")" && \
-    ln -sfn "$REAL_JAVA_HOME" /usr/lib/jvm/msopenjdk-25 && \
+    # Helper: point a given Java home at the system Java truststore
+    # Handles both layouts:
+    #   $JAVA_HOME/lib/security/cacerts
+    #   $JAVA_HOME/jre/lib/security/cacerts
+    link_java_cacerts() { \
+      _home="$1"; \
+      if [ -e "${_home}/lib/security/cacerts" ]; then \
+        rm -f "${_home}/lib/security/cacerts"; \
+        ln -s /etc/ssl/certs/java/cacerts "${_home}/lib/security/cacerts"; \
+      elif [ -e "${_home}/jre/lib/security/cacerts" ]; then \
+        rm -f "${_home}/jre/lib/security/cacerts"; \
+        ln -s /etc/ssl/certs/java/cacerts "${_home}/jre/lib/security/cacerts"; \
+      else \
+        echo "ERROR: could not find cacerts under ${_home}" >&2; \
+        exit 1; \
+      fi; \
+    } && \
     \
-    # Ensure Microsoft OpenJDK uses the system-generated Java truststore
-    rm -f "${REAL_JAVA_HOME}/lib/security/cacerts" && \
-    ln -s /etc/ssl/certs/java/cacerts "${REAL_JAVA_HOME}/lib/security/cacerts" && \
+    # Resolve suites and homes in a platform-agnostic way
+    MS_ALT="$(update-java-alternatives -l | awk '$1 ~ /^msopenjdk-25/ {print $1; exit}')" && \
+    MS_HOME="$(update-java-alternatives -l | awk '$1 ~ /^msopenjdk-25/ {print $3; exit}')" && \
+    J8_ALT="$(update-java-alternatives -l | awk '$1 ~ /^java-1\.8\.0-openjdk/ {print $1; exit}')" && \
+    J8_HOME="$(update-java-alternatives -l | awk '$1 ~ /^java-1\.8\.0-openjdk/ {print $3; exit}')" && \
     \
-    # Clean up the apt cache to reduce the final image size
+    if [ -z "$MS_ALT" ] || [ -z "$MS_HOME" ] || [ -z "$J8_ALT" ] || [ -z "$J8_HOME" ]; then \
+      echo "ERROR: could not locate Java suites via update-java-alternatives -l" >&2; \
+      update-java-alternatives -l >&2 || true; \
+      exit 1; \
+    fi && \
+    \
+    # Resolve symlinks so our stable links point at real directories
+    MS_HOME="$(readlink -f "$MS_HOME")" && \
+    J8_HOME="$(readlink -f "$J8_HOME")" && \
+    \
+    # Pin the entire Java alternatives suite to Java 25 (not just /usr/bin/java)
+    update-java-alternatives --set "$MS_ALT" && \
+    \
+    # Stable cross-arch paths
+    ln -sfn "$MS_HOME" /usr/lib/jvm/msopenjdk-25 && \
+    ln -sfn "$J8_HOME" /usr/lib/jvm/jre8 && \
+    \
+    # Ensure both JVMs use the system-generated Java truststore
+    link_java_cacerts "$MS_HOME" && \
+    link_java_cacerts "$J8_HOME" && \
+    \
     apt-get clean && \
-    \
-    # Remove unnecessary files to minimize image size
     rm -rf \
         /config/.cache \
         /var/lib/apt/lists/* \
         /var/tmp/* \
         /tmp/*
 
-
-# Optionally set JAVA_HOME for Java applications (stable path, works across arch)
 ENV JAVA_HOME=/usr/lib/jvm/msopenjdk-25
+ENV JAVA8_HOME=/usr/lib/jvm/jre8
