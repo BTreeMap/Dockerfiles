@@ -85,16 +85,25 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     #   $JAVA_HOME/jre/lib/security/cacerts
     link_java_cacerts() { \
       _home="$1"; \
+      _target="/etc/ssl/certs/java/cacerts"; \
       if [ -e "${_home}/lib/security/cacerts" ]; then \
-        rm -f "${_home}/lib/security/cacerts"; \
-        ln -s /etc/ssl/certs/java/cacerts "${_home}/lib/security/cacerts"; \
+        _cacerts="${_home}/lib/security/cacerts"; \
       elif [ -e "${_home}/jre/lib/security/cacerts" ]; then \
-        rm -f "${_home}/jre/lib/security/cacerts"; \
-        ln -s /etc/ssl/certs/java/cacerts "${_home}/jre/lib/security/cacerts"; \
+        _cacerts="${_home}/jre/lib/security/cacerts"; \
       else \
         echo "ERROR: could not find cacerts under ${_home}" >&2; \
         exit 1; \
       fi; \
+      if [ ! -e "$_target" ]; then \
+        echo "WARNING: expected ${_target} to exist (from ca-certificates-java). Attempting to regenerate." >&2; \
+        update-ca-certificates || true; \
+      fi; \
+      if [ -L "$_cacerts" ] && [ "$(readlink -f "$_cacerts")" = "$_target" ]; then \
+        return 0; \
+      fi; \
+      echo "WARNING: ca-certificates-java did not configure ${_cacerts} -> ${_target} for ${_home}. Repairing." >&2; \
+      rm -f "$_cacerts"; \
+      ln -s "$_target" "$_cacerts"; \
     } && \
     \
     # Resolve suites and homes in a platform-agnostic way
@@ -124,7 +133,10 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     link_java_cacerts "$MS_HOME" && \
     link_java_cacerts "$J8_HOME" && \
     \
+    # Clean up the apt cache to reduce the final image size
     apt-get clean && \
+    \
+    # Remove unnecessary files to minimize image size
     rm -rf \
         /config/.cache \
         /var/lib/apt/lists/* \
