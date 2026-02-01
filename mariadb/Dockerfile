@@ -1,4 +1,4 @@
-FROM mariadb:12-noble
+FROM mariadb:noble
 
 ENV \
     MARIADB_AUTO_UPGRADE=true
