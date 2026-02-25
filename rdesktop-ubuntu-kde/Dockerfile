@@ -34,6 +34,7 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
         ca-certificates-java \
         curl \
         git \
+        gnupg \
         iproute2 \
         iptables \
         iputils-ping \
@@ -62,16 +63,21 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     # Remove the downloaded Microsoft package to free up space
     rm "$MS_PACKAGES_DEB_PATH" && \
     \
-    # Update package lists again after adding the Microsoft repository
+    # Add Google Antigravity apt repository
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://us-central1-apt.pkg.dev/doc/repo-signing-key.gpg | \
+      gpg --dearmor --yes -o /etc/apt/keyrings/antigravity-repo-key.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/antigravity-repo-key.gpg] https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/ antigravity-debian main" \
+      > /etc/apt/sources.list.d/antigravity.list && \
+    \
+    # Update package lists again after adding repositories
     apt-get update && \
     \
     # Ensure the man1 directory exists for storing manual pages
     mkdir -p /usr/share/man/man1 && \
     \
-    # Install Microsoft OpenJDK 25
-    apt-get install -y msopenjdk-25 && \
-    # Install OpenJDK 8
-    apt-get install -y openjdk-8-jre && \
+    # Install Microsoft OpenJDK 25, OpenJDK 8, and Google Antigravity
+    apt-get install -y msopenjdk-25 openjdk-8-jre antigravity && \
     \
     # Install InCommon cert system-wide (download -> sha256 verify -> DER->PEM -> trust store)
     wget -O /tmp/InCommon.der https://s.joefang.org/InCommon.crt && \
