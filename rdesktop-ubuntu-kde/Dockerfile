@@ -33,6 +33,7 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
         ca-certificates \
         ca-certificates-java \
         curl \
+        gawk \
         git \
         gnupg \
         iproute2 \
@@ -40,16 +41,21 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
         iputils-ping \
         jq \
         lsb-release \
+        make \
         mtr \
         nano \
         okular \
         python-is-python3 \
+        ripgrep \
         screen \
+        tmux \
         unzip \
         vim \
         wget \
         xz-utils \
+        yq \
     && \
+    update-alternatives --set awk /usr/bin/gawk && \
     \
     # Get the current Ubuntu version to construct the Microsoft package URL
     ubuntu_release=$(lsb_release -rs) && \
