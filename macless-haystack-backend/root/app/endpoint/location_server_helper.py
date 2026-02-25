@@ -68,14 +68,14 @@ def generate_map_for_device(df, device_name, filename):
                 folium.Marker(
                     [row["lat"], row["lon"]],
                     popup=f"Timestamp: {row['isodatetime']} Start Point",
-                    tooltip=f"Start Point",
+                    tooltip="Start Point",
                     icon=folium.Icon(color="green"),
                 ).add_to(m)
             elif index == df.index[-1]:  # Last marker
                 folium.Marker(
                     [row["lat"], row["lon"]],
                     popup=f"Timestamp: {row['isodatetime']} End Point",
-                    tooltip=f"End Point",
+                    tooltip="End Point",
                     icon=folium.Icon(color="red"),
                 ).add_to(m)
             else:  # Other markers
