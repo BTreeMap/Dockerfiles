@@ -33,6 +33,9 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
         ca-certificates \
         ca-certificates-java \
         curl \
+        fonts-noto-cjk \
+        fonts-noto-cjk-extra \
+        fonts-noto-color-emoji \
         gawk \
         git \
         gnupg \
