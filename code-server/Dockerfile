@@ -481,8 +481,7 @@ RUN set -ex && \
         ujson \
         websockets \
     && \
-    # Install some Python applications using pipx
-    # Install global CLI tools using uv tool (pipx replacement)
+    # Install global CLI tools using uv tool
     uv tool install httpie@latest && \
     uv tool install meson@latest && \
     uv tool install ruff@latest && \
