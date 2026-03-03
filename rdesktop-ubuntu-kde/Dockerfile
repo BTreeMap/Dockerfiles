@@ -64,11 +64,11 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     && \
     update-alternatives --set awk /usr/bin/gawk && \
     \
-    # Install uv into a persisted location and symlink it into /usr/local/bin
+    # Install uv into a persisted location and symlink into /usr/local/bin
     mkdir -p "${UV_INSTALL_DIR}" && \
-    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${UV_INSTALL_DIR}" sh && \
-    if [ -x "${UV_INSTALL_DIR}/uv" ]; then ln -sf "${UV_INSTALL_DIR}/uv" /usr/local/bin/uv; fi && \
-    if [ -x "${UV_INSTALL_DIR}/uvx" ]; then ln -sf "${UV_INSTALL_DIR}/uvx" /usr/local/bin/uvx; fi && \
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ln -sf "${UV_INSTALL_DIR}/uv" /usr/local/bin/uv && \
+    ln -sf "${UV_INSTALL_DIR}/uvx" /usr/local/bin/uvx && \
     \
     # Install fnm into a persisted location (avoid /config)
     mkdir -p "${FNM_DIR}" && \
@@ -77,22 +77,21 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
       --skip-shell && \
     ln -sf "${FNM_DIR}/fnm" /usr/local/bin/fnm && \
     \
-    # Configure this build shell to see the Node selected by fnm (fnm env sets PATH)
-    eval "$("${FNM_DIR}/fnm" env --use-on-cd --shell bash --fnm-dir "${FNM_DIR}")" && \
+    # Configure this build shell to see the Node selected by fnm
+    eval "$(fnm env --use-on-cd --shell bash)" && \
     \
     # Install and use latest Node LTS, then upgrade npm and install Gemini CLI
-    "${FNM_DIR}/fnm" use lts/latest --install-if-missing && \
-    node -v && \
-    npm -v && \
+    fnm use lts/latest --install-if-missing && \
     npm install -g npm@latest --no-audit --no-fund && \
     npm install -g @google/gemini-cli --no-audit --no-fund && \
+    node -v && \
     npm -v && \
     npm cache clean --force && \
     rm -rf /root/.npm /root/.cache && \
     \
-    # System-wide shell integration for fnm (ENV already provides FNM_DIR)
+    # System-wide shell integration for fnm (/etc/profile.d is sufficient for our use cases)
     cat >/etc/profile.d/fnm.sh <<'EOF' && \
-eval "$(/opt/fnm/fnm env --use-on-cd --shell bash --fnm-dir /opt/fnm)"
+eval "$(fnm env --use-on-cd --shell bash)"
 EOF
     chmod 0644 /etc/profile.d/fnm.sh && \
     \
