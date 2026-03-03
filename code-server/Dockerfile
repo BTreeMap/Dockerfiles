@@ -72,7 +72,6 @@ RUN set -ex && \
         python3-full \
         python3-pip \
         python3-setuptools \
-        python3-venv \
         ripgrep \
         screen \
         software-properties-common \
