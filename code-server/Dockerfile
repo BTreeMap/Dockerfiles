@@ -437,7 +437,6 @@ RUN set -ex && \
         aiosqlite \
         anthropic \
         beautifulsoup4 \
-        black \
         click \
         cohere \
         cryptography \
@@ -448,7 +447,6 @@ RUN set -ex && \
         google-cloud-storage \
         google-genai \
         httpx[brotli,http2,socks,zstd] \
-        isort \
         json5 \
         jupyter \
         langchain \
@@ -486,12 +484,10 @@ RUN set -ex && \
     # Install some Python applications using pipx
     # Install global CLI tools using uv tool (pipx replacement)
     uv tool install \
-        black \
-        httpie \
-        isort \
-        meson \
-        poetry \
-        wheel \
+        httpie@latest \
+        meson@latest \
+        ruff@latest \
+        wheel@latest \
     && \
     # Remove temporary and unnecessary files
     apt-get clean && \

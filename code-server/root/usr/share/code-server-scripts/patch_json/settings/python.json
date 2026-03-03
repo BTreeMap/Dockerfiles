@@ -1,7 +1,18 @@
 {
-  "black-formatter.importStrategy": "fromEnvironment",
-  "isort.importStrategy": "fromEnvironment",
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit",
+    },
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+  },
+  "notebook.codeActionsOnSave": {
+    "notebook.source.fixAll": "explicit",
+    "notebook.source.organizeImports": "explicit",
+  },
+  "notebook.formatOnSave.enabled": true,
+  "python-envs.alwaysUseUv": true,
   "python.defaultInterpreterPath": "${env:VENV_DIR}/bin/python",
   "python.languageServer": "Jedi",
-  "python-envs.alwaysUseUv": true,
 }
