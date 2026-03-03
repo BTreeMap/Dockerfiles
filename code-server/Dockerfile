@@ -67,7 +67,6 @@ RUN set -ex && \
         mininet \
         mtr \
         ninja-build \
-        pipx \
         pkgconf \
         python-is-python3 \
         python3-full \
@@ -303,10 +302,11 @@ ENV \
     TAILSCALE_SERVE_MODE=https \
     TAILSCALE_SERVE_PORT=8443
 
-# Environment variables for pipx
-ARG PIPX_HOME=/opt/pipx \
-    PIPX_BIN_DIR=/usr/local/bin \
-    PIPX_MAN_DIR=/usr/local/share/man
+# Environment variables for uv
+ENV UV_INSTALL_DIR=/opt/uv \
+    UV_TOOL_DIR=/opt/uv-tools \
+    UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_NO_MODIFY_PATH=1
 
 ## Copy application files and s6-overlay config to container root
 COPY root/ /
@@ -411,15 +411,26 @@ RUN set -ex && \
         /tmp/* \
         /var/tmp/*
 
+ARG UV_NO_CACHE=1
+
 RUN set -ex && \
     \
     # Install some Python packages using pip
+    # Install uv and uvx using the official installer script (latest)
+    mkdir -p ${UV_INSTALL_DIR} && \
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ln -sf ${UV_INSTALL_DIR}/uv /usr/local/bin/uv && \
+    ln -sf ${UV_INSTALL_DIR}/uvx /usr/local/bin/uvx && \
+    mkdir -p ${UV_TOOL_DIR} && \
+    uv --version && \
+    uvx --version && \
+    \
     # Create Python virtual environment as root then change ownership
-    python3 -m venv ${VENV_DIR} --upgrade-deps && \
+    uv venv ${VENV_DIR} && \
     chown -R ${PUID}:${PGID} ${VENV_DIR} && \
     # Install packages as the specified user
     s6-setuidgid ${PUID}:${PGID} \
-        ${VENV_DIR}/bin/pip install --no-cache-dir \
+        uv pip install --python ${VENV_DIR}/bin/python \
         aiodns \
         aiohttp \
         aioitertools \
@@ -474,13 +485,13 @@ RUN set -ex && \
         websockets \
     && \
     # Install some Python applications using pipx
-    pipx install --pip-args='--no-cache-dir' \
+    # Install global CLI tools using uv tool (pipx replacement)
+    uv tool install \
         black \
         httpie \
         isort \
         meson \
         poetry \
-        uv \
         wheel \
     && \
     # Remove temporary and unnecessary files
