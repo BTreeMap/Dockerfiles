@@ -90,10 +90,8 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     rm -rf /root/.npm /root/.cache && \
     \
     # System-wide shell integration for fnm (/etc/profile.d is sufficient for our use cases)
-    { cat >/etc/profile.d/fnm.sh <<'EOF'
-    eval "$(fnm env --use-on-cd --shell bash)"
-    EOF
-    } && \
+    printf '%s\n' 'eval "$(/opt/fnm/fnm env --use-on-cd --shell bash --fnm-dir /opt/fnm)"' \
+      > /etc/profile.d/fnm.sh && \
     chmod 0644 /etc/profile.d/fnm.sh && \
     \
     # Get the current Ubuntu version to construct the Microsoft package URL
