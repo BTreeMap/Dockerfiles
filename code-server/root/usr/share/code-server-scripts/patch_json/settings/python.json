@@ -3,4 +3,5 @@
   "isort.importStrategy": "fromEnvironment",
   "python.defaultInterpreterPath": "${env:VENV_DIR}/bin/python",
   "python.languageServer": "Jedi",
+  "python-envs.alwaysUseUv": true,
 }
