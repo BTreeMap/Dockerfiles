@@ -483,12 +483,11 @@ RUN set -ex && \
     && \
     # Install some Python applications using pipx
     # Install global CLI tools using uv tool (pipx replacement)
-    uv tool install \
-        httpie@latest \
-        meson@latest \
-        ruff@latest \
-        wheel@latest \
-    && \
+    uv tool install httpie@latest && \
+    uv tool install meson@latest && \
+    uv tool install ruff@latest && \
+    uv tool install wheel@latest && \
+    \
     # Remove temporary and unnecessary files
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* \
