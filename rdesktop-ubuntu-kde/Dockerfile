@@ -122,6 +122,28 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     # Install Microsoft OpenJDK 25, OpenJDK 8, and Google Antigravity
     apt-get install -y msopenjdk-25 openjdk-8-jre antigravity && \
     \
+    # Patch the Antigravity desktop entry to launch with a clean D-Bus session
+    # and stable software-rendering defaults inside the container.
+    desktop_file="/usr/share/applications/antigravity.desktop" && \
+    main_exec_old='Exec=/usr/share/antigravity/antigravity %F' && \
+    main_exec_new='Exec=env -u DBUS_SESSION_BUS_ADDRESS dbus-run-session -- /usr/share/antigravity/antigravity --password-store=basic --disable-gpu --disable-gpu-compositing %F' && \
+    new_window_exec_old='Exec=/usr/share/antigravity/antigravity --new-window %F' && \
+    new_window_exec_new='Exec=env -u DBUS_SESSION_BUS_ADDRESS dbus-run-session -- /usr/share/antigravity/antigravity --password-store=basic --disable-gpu --disable-gpu-compositing --new-window %F' && \
+    if [ -f "$desktop_file" ]; then \
+      if grep -Fqx "$main_exec_old" "$desktop_file"; then \
+        sed -i "s|^${main_exec_old}$|${main_exec_new}|" "$desktop_file"; \
+      else \
+        echo "WARNING: expected main Exec line not found in ${desktop_file}; leaving it unchanged" >&2; \
+      fi; \
+      if grep -Fqx "$new_window_exec_old" "$desktop_file"; then \
+        sed -i "s|^${new_window_exec_old}$|${new_window_exec_new}|" "$desktop_file"; \
+      else \
+        echo "WARNING: expected new-window Exec line not found in ${desktop_file}; leaving it unchanged" >&2; \
+      fi; \
+    else \
+      echo "WARNING: ${desktop_file} not found; skipping Antigravity desktop entry patch" >&2; \
+    fi && \
+    \
     # Install InCommon cert system-wide (download -> sha256 verify -> DER->PEM -> trust store)
     wget -O /tmp/InCommon.der https://s.joefang.org/InCommon.crt && \
     echo "87e01cc4dd0c9d92a3dbd49092ff13f9cd387445cdc57e5b984e1b7721b5b029  /tmp/InCommon.der" | sha256sum -c - && \
