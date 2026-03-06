@@ -83,7 +83,8 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     # Install and use latest Node LTS, then upgrade npm and install Gemini CLI
     fnm use lts/latest --install-if-missing && \
     npm install -g npm@latest --no-audit --no-fund && \
-    npm install -g @google/gemini-cli --no-audit --no-fund && \
+    npm install -g @google/gemini-cli@latest --no-audit --no-fund && \
+    npm install -g @openai/codex@latest --no-audit --no-fund && \
     node -v && \
     npm -v && \
     npm cache clean --force && \
