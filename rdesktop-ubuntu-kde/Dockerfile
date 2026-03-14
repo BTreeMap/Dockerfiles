@@ -7,7 +7,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Persisted tool installs (avoid /config, which is a mount in LinuxServer images)
 ENV \
   FNM_DIR=/opt/fnm \
-  UV_INSTALL_DIR=/opt/uv
+  UV_INSTALL_DIR=/opt/uv \
+  GO_HOME=/opt/go
 
 # Copy application files and s6-overlay config to container root.
 COPY root/ /
@@ -63,6 +64,27 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
         yq \
     && \
     update-alternatives --set awk /usr/bin/gawk && \
+    \
+    # Install the latest stable Go toolchain into /opt/go
+    # Follow code-server pattern: fetch JSON, pick latest stable, verify checksum, extract, clean
+    ARCH=$(uname -m) && \
+    case "$ARCH" in \
+      x86_64) ARCH=amd64 ;; \
+      aarch64|arm64) ARCH=arm64 ;; \
+      *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
+    esac && \
+    GO_JSON="$(curl -sSfL 'https://go.dev/dl/?mode=json')" && \
+    GO_VERSION="$(echo "$GO_JSON" | jq -r '[.[] | select(.stable)][0].version')" && \
+    TARBALL="${GO_VERSION}.linux-${ARCH}.tar.gz" && \
+    GO_SHA256="$(echo "$GO_JSON" | jq -r --arg GO_VERSION "$GO_VERSION" --arg TARBALL "$TARBALL" '.[] | select(.version == $GO_VERSION) | .files[] | select(.filename == $TARBALL) | .sha256')" && \
+    echo "Installing ${GO_VERSION} for ${ARCH}" && \
+    curl -sSfL -o /tmp/go.tgz "https://go.dev/dl/${TARBALL}" && \
+    echo "${GO_SHA256}  /tmp/go.tgz" | sha256sum -c - && \
+    tar -C /opt -xzf /tmp/go.tgz && \
+    ln -sf "$GO_HOME/bin/go" /usr/local/bin/go && \
+    ln -sf "$GO_HOME/bin/gofmt" /usr/local/bin/gofmt && \
+    rm -rf /tmp/go.tgz && \
+    $GO_HOME/bin/go version && \
     \
     # Install uv into a persisted location and symlink into /usr/local/bin
     mkdir -p "${UV_INSTALL_DIR}" && \
