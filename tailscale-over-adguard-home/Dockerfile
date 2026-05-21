@@ -1,5 +1,5 @@
-# Using Alpine 3.21 as the base image.
-FROM alpine:3.21 AS base
+# Using Alpine 3.23 as the base image.
+FROM alpine:3.23 AS base
 
 # Install necessary packages
 RUN apk update && \
@@ -23,7 +23,7 @@ RUN chmod +x /entrypoint.sh
 COPY --from=adguard/adguardhome:latest /opt/adguardhome/AdGuardHome /usr/local/bin/
 
 # Set necessary capabilities for AdGuardHome to bind to privileged ports
-RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/AdGuardHome
+RUN setcap 'cap_net_bind_service=+eip' /usr/local/bin/AdGuardHome
 
 # Create necessary directories with proper permissions
 RUN mkdir -p /opt/adguardhome/conf /opt/adguardhome/work /var/lib/tailscale && \
