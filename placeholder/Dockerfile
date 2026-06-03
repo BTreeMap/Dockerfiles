@@ -11,6 +11,7 @@ RUN apk update \
         ca-certificates \
         curl \
         iproute2 \
+        iptables \
         iputils-ping \
         tini \
     && \
