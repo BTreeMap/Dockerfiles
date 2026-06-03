@@ -13,6 +13,7 @@ RUN apk update \
         iproute2 \
         iptables \
         iputils-ping \
+        su-exec \
         tini \
     && \
     rm -rf \
