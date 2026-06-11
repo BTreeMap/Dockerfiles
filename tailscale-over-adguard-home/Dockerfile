@@ -54,7 +54,7 @@ ENV ADGUARD_CONFIG_PATH="/opt/adguardhome/conf/AdGuardHome.yaml" \
 # Environment variables for Tailscale
 ENV TAILSCALE_AUTH_KEY="" \
     TAILSCALE_HOSTNAME="" \
-    TAILSCALE_EXTRA_ARGS="" \
+    TAILSCALE_EXTRA_ARGS="--accept-dns=false --accept-routes=false" \
     TAILSCALED_EXTRA_ARGS="" \
     TAILSCALED_CUSTOM_STATE_DIR="" \
     TAILSCALE_SET_EXTRA_ARGS="--webclient"
