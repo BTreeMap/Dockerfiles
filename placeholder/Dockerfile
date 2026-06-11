@@ -1,7 +1,7 @@
 ########################################
 # 1. Build stage: Alpine base, upgraded
 ########################################
-FROM alpine:3.21 AS base
+FROM alpine:3.23 AS base
 
 # Upgrade all packages and install minimal debug tools
 RUN apk update \
@@ -11,7 +11,9 @@ RUN apk update \
         ca-certificates \
         curl \
         iproute2 \
+        iptables \
         iputils-ping \
+        su-exec \
         tini \
     && \
     rm -rf \
