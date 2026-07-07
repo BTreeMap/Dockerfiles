@@ -136,14 +136,19 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     echo "deb [signed-by=/etc/apt/keyrings/antigravity-repo-key.gpg] https://us-central1-apt.pkg.dev/projects/antigravity-auto-updater-dev/ antigravity-debian main" \
       > /etc/apt/sources.list.d/antigravity.list && \
     \
+    # Add Claude Desktop apt repository
+    curl -fsSLo /usr/share/keyrings/claude-desktop-archive-keyring.asc https://downloads.claude.ai/claude-desktop/key.asc && \
+    echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main" \
+      > /etc/apt/sources.list.d/claude-desktop.list && \
+    \
     # Update package lists again after adding repositories
     apt-get update && \
     \
     # Ensure the man1 directory exists for storing manual pages
     mkdir -p /usr/share/man/man1 && \
     \
-    # Install Microsoft OpenJDK 25, OpenJDK 8, and Google Antigravity
-    apt-get install -y msopenjdk-25 openjdk-8-jre antigravity && \
+    # Install Microsoft OpenJDK 25, OpenJDK 8, Google Antigravity, and Claude Desktop
+    apt-get install -y msopenjdk-25 openjdk-8-jre antigravity claude-desktop && \
     \
     # Patch the Antigravity desktop entry to launch with a clean D-Bus session
     # and stable software-rendering defaults inside the container.
