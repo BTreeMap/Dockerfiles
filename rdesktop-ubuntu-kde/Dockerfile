@@ -102,16 +102,18 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     # Configure this build shell to see the Node selected by fnm
     eval "$(fnm env --use-on-cd --shell bash)" && \
     \
-    # Install and use latest Node LTS, then upgrade npm and install Gemini CLI
+    # Install and use latest Node LTS, then upgrade npm and install AI CLIs
     fnm use lts/latest --install-if-missing && \
     npm install -g npm@latest --no-audit --no-fund && \
-    npm install -g @google/gemini-cli@latest --no-audit --no-fund && \
     npm install -g @openai/codex@latest --no-audit --no-fund && \
     npm install -g @anthropic-ai/claude-code@latest --no-audit --no-fund && \
     node -v && \
     npm -v && \
     npm cache clean --force && \
     rm -rf /root/.npm /root/.cache && \
+    \
+    # Install Antigravity CLI globally via official script
+    curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && \
     \
     # System-wide shell integration for fnm (/etc/profile.d is sufficient for our use cases)
     printf '%s\n' 'eval "$(fnm env --use-on-cd --shell bash)"' \
