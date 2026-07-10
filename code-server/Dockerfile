@@ -332,9 +332,28 @@ COPY --from=ebpf_tools_builder --chown=${PUID}:${PGID} $EBPF_TOOLS_HOME $EBPF_TO
 
 RUN set -ex && \
     \
-    # Install Fast Node Manager (fnm) and Node.js
+    # Install fnm binary
     curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir $FNM_DIR && \
-    $FNM_DIR/fnm install --lts --fnm-dir=$FNM_DIR && \
+    \
+    # Hook fnm into the current build step
+    eval "$($FNM_DIR/fnm env --shell bash)" && \
+    \
+    # Download Node LTS and activate it in the current shell simultaneously
+    fnm use --install-if-missing lts/latest && \
+    \
+    # Upgrade npm and install global AI CLIs (npm is now instantly available)
+    npm install -g npm@latest --no-audit --no-fund && \
+    npm install -g @openai/codex@latest --no-audit --no-fund && \
+    npm install -g @anthropic-ai/claude-code@latest --no-audit --no-fund && \
+    \
+    # Clear npm cache
+    npm cache clean --force && \
+    rm -rf /root/.npm /root/.cache && \
+    \
+    # Install Antigravity CLI globally
+    curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && \
+    \
+    # Fix ownership for the fnm directory
     chown -R ${PUID}:${PGID} $FNM_DIR && \
     \
     # Remove temporary and unnecessary files
