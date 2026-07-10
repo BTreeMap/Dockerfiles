@@ -107,6 +107,7 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     npm install -g npm@latest --no-audit --no-fund && \
     npm install -g @google/gemini-cli@latest --no-audit --no-fund && \
     npm install -g @openai/codex@latest --no-audit --no-fund && \
+    npm install -g @anthropic-ai/claude-code@latest --no-audit --no-fund && \
     node -v && \
     npm -v && \
     npm cache clean --force && \
