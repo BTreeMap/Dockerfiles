@@ -106,7 +106,7 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     fnm use lts/latest --install-if-missing && \
     npm install -g npm@latest --no-audit --no-fund && \
     npm install -g @openai/codex@latest --no-audit --no-fund && \
-    npm install -g @anthropic-ai/claude-code@latest --no-audit --no-fund && \
+    npm install -g @anthropic-ai/claude-code@latest --no-audit --no-fund --allow-scripts=@anthropic-ai/claude-code && \
     node -v && \
     npm -v && \
     npm cache clean --force && \
