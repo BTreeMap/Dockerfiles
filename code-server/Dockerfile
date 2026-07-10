@@ -89,10 +89,7 @@ RUN set -ex && \
     && \
     # Remove temporary and unnecessary files
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* \
-        /config/* \
-        /tmp/* \
-        /var/tmp/*
+    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
 
 # =============================================================================
 # Builder stage for proot - Used to compile the proot binary from source
@@ -348,7 +345,6 @@ RUN set -ex && \
     \
     # Clear npm cache
     npm cache clean --force && \
-    rm -rf /config/.npm /config/.cache && \
     \
     # Install Antigravity CLI globally
     curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && \
@@ -358,10 +354,7 @@ RUN set -ex && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* \
-        /config/* \
-        /tmp/* \
-        /var/tmp/*
+    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
 
 RUN set -ex && \
     \
@@ -372,10 +365,7 @@ RUN set -ex && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* \
-        /config/* \
-        /tmp/* \
-        /var/tmp/*
+    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
 
 RUN set -ex && \
     \
@@ -388,10 +378,7 @@ RUN set -ex && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* \
-        /config/* \
-        /tmp/* \
-        /var/tmp/*
+    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
 
 RUN set -ex && \
     \
@@ -400,10 +387,7 @@ RUN set -ex && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* \
-        /config/* \
-        /tmp/* \
-        /var/tmp/*
+    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
 
 RUN set -ex && \
     \
@@ -424,10 +408,7 @@ RUN set -ex && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* \
-        /config/* \
-        /tmp/* \
-        /var/tmp/*
+    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
 
 ARG UV_NO_CACHE=1
 
@@ -508,10 +489,7 @@ RUN set -ex && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* \
-        /config/* \
-        /tmp/* \
-        /var/tmp/*
+    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
 
 # Expose the necessary port
 EXPOSE 8443
