@@ -110,7 +110,6 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     node -v && \
     npm -v && \
     npm cache clean --force && \
-    rm -rf /root/.npm /root/.cache && \
     \
     # Install Antigravity CLI globally via official script
     curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && \
@@ -235,15 +234,9 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     link_java_cacerts "$MS_HOME" && \
     link_java_cacerts "$J8_HOME" && \
     \
-    # Clean up the apt cache to reduce the final image size
+    # Remove temporary and unnecessary files
     apt-get clean && \
-    \
-    # Remove unnecessary files to minimize image size
-    rm -rf \
-        /config/.cache \
-        /var/lib/apt/lists/* \
-        /var/tmp/* \
-        /tmp/*
+    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
 
 ENV JAVA_HOME=/usr/lib/jvm/msopenjdk-25
 ENV JAVA8_HOME=/usr/lib/jvm/jre8
