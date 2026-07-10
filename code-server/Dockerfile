@@ -348,7 +348,7 @@ RUN set -ex && \
     \
     # Clear npm cache
     npm cache clean --force && \
-    rm -rf /root/.npm /root/.cache && \
+    rm -rf /config/.npm /config/.cache && \
     \
     # Install Antigravity CLI globally
     curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && \
