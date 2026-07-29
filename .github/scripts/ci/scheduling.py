@@ -22,7 +22,15 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import assert_never
 
-from ci.domain import BuildOutcome, PeerEmpty, PeerUnreachable, StealOutcome, Stolen, Task
+from ci.domain import (
+    BuildFailed,
+    BuildOutcome,
+    PeerEmpty,
+    PeerUnreachable,
+    StealOutcome,
+    Stolen,
+    Task,
+)
 
 logger = logging.getLogger("ci.scheduling")
 
@@ -165,10 +173,26 @@ def run_worker(
         # A task that raises outside its own retry loop must not take the slot
         # down with it: the slot has peers' stolen work still to get through,
         # and a dead slot silently reduces this worker's capacity.
+        #
+        # It must still be *recorded*, though. Swallowing it without an outcome
+        # would let a failure that affects every task -- a missing buildx
+        # plugin, an unreachable Docker daemon -- produce an empty result set
+        # and a green exit, reporting "0 succeeded, 0 failed" while having built
+        # nothing at all.
+        started = clock()
         try:
             record(execute(task))
-        except Exception:
+        except Exception as error:
             logger.exception("Unhandled error building %s", task.image)
+            record(
+                BuildFailed(
+                    task=task,
+                    attempts=0,
+                    duration_seconds=clock() - started,
+                    error=f"unhandled {type(error).__name__}: {error}",
+                    metrics={},
+                )
+            )
 
     def slot(index: int) -> None:
         idle_since: float | None = None

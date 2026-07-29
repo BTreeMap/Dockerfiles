@@ -10,7 +10,15 @@ from __future__ import annotations
 
 import threading
 
-from ci.domain import BuildSucceeded, PeerEmpty, PeerUnreachable, Platform, Stolen, Task
+from ci.domain import (
+    BuildFailed,
+    BuildSucceeded,
+    PeerEmpty,
+    PeerUnreachable,
+    Platform,
+    Stolen,
+    Task,
+)
 from ci.scheduling import Build, Stop, TaskQueue, WaitAndRetry, decide_idle, run_worker
 
 
@@ -168,7 +176,7 @@ def test_a_raising_build_does_not_kill_its_slot() -> None:
         seen.append(t.image)
         return BuildSucceeded(task=t, attempts=1, duration_seconds=0.0)
 
-    run_worker(
+    outcomes = run_worker(
         queue=queue,
         mesh=FakeMesh(drained_after=1),
         execute=execute,
@@ -177,6 +185,36 @@ def test_a_raising_build_does_not_kill_its_slot() -> None:
     )
     # The slot survived the exception and went on to the next task.
     assert seen == ["fine"]
+    # And the exception was recorded rather than swallowed.
+    assert len(outcomes) == 2
+    failed = [o for o in outcomes if isinstance(o, BuildFailed)]
+    assert len(failed) == 1
+    assert failed[0].task.image == "poison"
+    assert "builder exploded" in failed[0].error
+
+
+def test_a_failure_affecting_every_task_cannot_exit_green() -> None:
+    """Guards a regression: swallowing exceptions produced an empty result set.
+
+    A missing buildx plugin or an unreachable Docker daemon makes every task
+    raise. Recording nothing would report "0 succeeded, 0 failed" and exit 0
+    while having built nothing.
+    """
+    tasks = [task(f"t{index}") for index in range(3)]
+
+    def always_raises(_t: Task):
+        raise FileNotFoundError("docker: command not found")
+
+    outcomes = run_worker(
+        queue=TaskQueue(tasks),
+        mesh=FakeMesh(drained_after=1),
+        execute=always_raises,
+        slots=2,
+        sleep=lambda _: None,
+    )
+
+    assert len(outcomes) == len(tasks)
+    assert all(isinstance(outcome, BuildFailed) for outcome in outcomes)
 
 
 def test_worker_terminates_with_no_peers_and_no_work() -> None:
