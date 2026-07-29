@@ -14,10 +14,11 @@ from __future__ import annotations
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from itertools import product
+from pathlib import Path
 
 import httpx
 
+from ci.discovery import discover
 from ci.docker import build_and_push, free_disk_space, run_tag, tag_exists
 from ci.domain import BuildFailed, Platform, Task, succeeded
 from ci.env import BuildIdentity, require, require_int, require_json, write_summary
@@ -66,15 +67,31 @@ def main() -> int:
         ).cleanup()
         logger.info("Cleaned up %d mesh ref(s).", removed)
 
-    expected = tuple(product(images, platforms))
+    # Re-derive the task set from the tree rather than reconstructing paths from
+    # image names. It is the same checkout at the same commit, so discovery is
+    # the single definition of where an image's Dockerfile and context live --
+    # reconstructing them here would quietly assume every Dockerfile sits one
+    # directory down, which discovery itself does not require.
+    expected = discover(Path.cwd(), platforms, max_retries)
+
+    if {task.image for task in expected} != set(images):
+        logger.error(
+            "Discovery disagrees with the planned image list; refusing to guess. "
+            "planned-only=%s discovered-only=%s",
+            sorted(set(images) - {task.image for task in expected}),
+            sorted({task.image for task in expected} - set(images)),
+        )
+        return 1
+
     logger.info("Verifying %d expected platform image(s)...", len(expected))
 
-    with ThreadPoolExecutor(max_workers=_INSPECT_CONCURRENCY) as pool:
-        present = tuple(
-            pool.map(lambda pair: tag_exists(run_tag(pair[0], str(pair[1]), identity)), expected)
-        )
+    def landed(task: Task) -> bool:
+        return tag_exists(run_tag(task.image, str(task.platform), identity))
 
-    missing = tuple(pair for pair, found in zip(expected, present, strict=True) if not found)
+    with ThreadPoolExecutor(max_workers=_INSPECT_CONCURRENCY) as pool:
+        present = tuple(pool.map(landed, expected))
+
+    missing = tuple(task for task, found in zip(expected, present, strict=True) if not found)
 
     if not missing:
         logger.info("All expected images are present. Nothing to reconcile.")
@@ -83,24 +100,13 @@ def main() -> int:
     logger.warning(
         "%d image(s) missing after the build stage: %s",
         len(missing),
-        ", ".join(f"{image}.{platform}" for image, platform in missing),
+        ", ".join(f"{task.image}.{task.platform}" for task in missing),
     )
 
     free_disk_space()
 
-    rebuilt = tuple(
-        Task(
-            image=image,
-            dockerfile=f"{image}/Dockerfile",
-            context=image,
-            platform=platform,
-            max_retries=max_retries,
-        )
-        for image, platform in missing
-    )
-
-    with ThreadPoolExecutor(max_workers=max(1, len(rebuilt))) as pool:
-        outcomes = tuple(pool.map(lambda task: build_and_push(task, identity), rebuilt))
+    with ThreadPoolExecutor(max_workers=max(1, len(missing))) as pool:
+        outcomes = tuple(pool.map(lambda task: build_and_push(task, identity), missing))
 
     write_summary(
         [
