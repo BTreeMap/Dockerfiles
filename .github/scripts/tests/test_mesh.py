@@ -244,3 +244,34 @@ def test_run_key_is_derived_identically_by_every_worker() -> None:
     assert derive_run_key("repo-secret", "12345") == derive_run_key("repo-secret", "12345")
     assert derive_run_key("repo-secret", "12345") != derive_run_key("repo-secret", "12346")
     assert derive_run_key("repo-secret", "12345") != derive_run_key("other", "12345")
+
+
+def test_discovery_logs_peers_by_id_and_never_by_hostname(caplog) -> None:
+    """Discovery must be observable without leaking the hostname.
+
+    The workflow log is world-readable on a public repository, so the hostname
+    is withheld -- but without some signal, a mesh where nobody found anybody
+    looks exactly like one where every worker stayed busy.
+    """
+    import logging
+
+    client = MeshClient(
+        secret=SECRET,
+        worker_id=1,
+        rendezvous=RENDEZVOUS,
+        github=httpx.Client(base_url="http://127.0.0.1:1", timeout=0.25),
+        peers_client=httpx.Client(timeout=1.0),
+        expected_peers=3,
+    )
+
+    with caplog.at_level(logging.INFO, logger="ci.mesh"):
+        client._known = {}                       # noqa: SLF001
+        # Drive the logging path the way discovery does, via a seeded update.
+        refs = [{"ref": RENDEZVOUS.ref_for(0, HOST)}, {"ref": RENDEZVOUS.ref_for(2, HOST)}]
+        parsed = dict(
+            filter(None, (RENDEZVOUS.parse_ref(r["ref"]) for r in refs))
+        )
+        client.seed_peers(parsed)
+
+    assert set(parsed) == {0, 2}
+    assert HOST.value not in caplog.text

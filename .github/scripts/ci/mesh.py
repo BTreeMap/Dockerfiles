@@ -302,6 +302,10 @@ class MeshClient:
                 json={"ref": ref, "sha": commit_sha},
             )
             response.raise_for_status()
+            logger.info(
+                "Published worker %d to the rendezvous (hostname withheld from logs)",
+                self._worker_id,
+            )
             return True
         except httpx.HTTPError as error:
             logger.warning("Could not publish mesh ref (%s); continuing solo", error)
@@ -326,13 +330,27 @@ class MeshClient:
             return dict(self._known)
 
         parsed = (self._rendezvous.parse_ref(entry.get("ref", "")) for entry in entries)
-        self._known.update(
-            {
-                worker_id: hostname
-                for worker_id, hostname in filter(None, parsed)
-                if worker_id != self._worker_id
-            }
-        )
+        discovered = {
+            worker_id: hostname
+            for worker_id, hostname in filter(None, parsed)
+            if worker_id != self._worker_id
+        }
+
+        # Logged by worker id only, never by hostname: the whole point of
+        # withholding the hostname is that the workflow log is world-readable on
+        # a public repository. Without this line, "every peer was found" and
+        # "discovery is silently broken" look identical whenever no worker
+        # happens to go idle.
+        appeared = sorted(set(discovered) - set(self._known))
+        if appeared:
+            logger.info(
+                "Discovered peer(s) %s; now know %d of %d expected",
+                appeared,
+                len(discovered),
+                self._expected_peers,
+            )
+
+        self._known.update(discovered)
         return dict(self._known)
 
     def cleanup(self) -> int:
