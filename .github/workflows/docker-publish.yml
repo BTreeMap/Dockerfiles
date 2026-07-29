@@ -6,6 +6,23 @@ on:
     - cron: '0 16 * * *'
   push:
     branches: [ "main" ]
+  workflow_dispatch:
+
+# Serialise every run of this workflow. A run publishes 31 images across 8
+# workers and only then fuses the multi-arch manifests, so two overlapping runs
+# would race on the floating tags and leave `:image` and `:image.latest` pointing
+# at different commits.
+#
+# cancel-in-progress is deliberately false. Cancelling mid-run is the one
+# outcome that tears a publish: some images would carry the new commit and some
+# the old, with no manifest fusing them and no reconcile stage to repair it,
+# because run-level cancellation skips `if: always()` jobs too. Queueing costs
+# latency instead, and GitHub bounds that for us -- only one run may be pending
+# per group, so a third push supersedes the second *before it starts*, where
+# cancelling is harmless.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 env:
   DOCKER_IMAGE_NAME: ${{ github.repository }}
@@ -16,11 +33,10 @@ env:
   # from its peers when it runs dry, so this only needs to be in the right
   # neighbourhood -- it is not a partition that has to be balanced.
   WORKER_COUNT: 4
+  UV_PROJECT: .github/scripts
 
 jobs:
   plan:
-    # Run the job if triggered by a scheduled event or a push with a specific commit message
-    if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04
     outputs:
       date: ${{ steps.timestamp.outputs.date }}
@@ -34,17 +50,23 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: .github/scripts/uv.lock
+
       - name: Generate build timestamp
         id: timestamp
         run: |
-          # Capture the current time as a Unix timestamp
+          # One timestamp for the whole run, so every image in it agrees.
           now=$(date '+%s')
 
-          # Format the date variables using the captured timestamp
           date=$(date -u -d "@$now" '+%Y-%m-%d')
           date_time=$(date -u -d "@$now" '+%Y-%m-%d.%H-%M-%S')
 
-          # Get the first day of the current month at 00:00 UTC
+          # Pin SOURCE_DATE_EPOCH to the start of the month so image digests
+          # stay reproducible across the runs within it.
           year_month=$(date -u -d "@$now" '+%Y-%m')
           source_date_epoch=$(date -u -d "${year_month}-01 00:00:00" '+%s')
 
@@ -56,7 +78,7 @@ jobs:
       # the workers and mints the run-scoped mesh secret.
       - name: Discover and deal build tasks
         id: discover
-        run: python3 .github/scripts/discover_tasks.py
+        run: uv run python .github/scripts/discover_tasks.py
         env:
           PLATFORMS: amd64,arm64
           WORKER_COUNT: ${{ env.WORKER_COUNT }}
@@ -66,8 +88,8 @@ jobs:
     needs: plan
     runs-on: ${{ matrix.runner }}
     strategy:
-      # One worker's failure must not cancel its peers: they may already be
-      # holding tasks stolen from it, and reconcile handles whatever is left.
+      # One worker's failure must not cancel its peers: they may already hold
+      # tasks stolen from it, and reconcile handles whatever is left over.
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     permissions:
@@ -78,7 +100,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      # Login to Docker Registry
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: .github/scripts/uv.lock
+
       - name: Log into Docker Registry ${{ env.DOCKER_REGISTRY }}
         uses: docker/login-action@v4
         with:
@@ -86,20 +113,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Quick tunnels need no Cloudflare account and no inbound connectivity,
-      # which is what makes an ad-hoc mesh between ephemeral runners possible.
-      - name: Install cloudflared
-        run: |
-          arch=$([ "${{ matrix.platform }}" = "arm64" ] && echo arm64 || echo amd64)
-          curl -fsSL -o /tmp/cloudflared \
-            "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}"
-          sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
-          cloudflared --version
-
+      # cloudflared is fetched, digest-checked, and cached by ci/tunnel.py at a
+      # pinned version -- see that module for why it is not installed here.
       - name: Build and push assigned images, stealing when idle
-        run: python3 .github/scripts/build_docker_images.py
+        run: uv run python .github/scripts/build_docker_images.py
         env:
-          PYTHONPATH: .github/scripts
           DATE_STR: ${{ needs.plan.outputs.date }}
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
           DOCKER_PLATFORM: ${{ matrix.platform }}
@@ -110,8 +128,8 @@ jobs:
           MESH_SECRET: ${{ needs.plan.outputs.mesh_secret }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Runs regardless of how the build stage ended. The registry decides what
-  # actually got built; anything missing is rebuilt here.
+  # Runs however the build stage ended. The registry decides what actually got
+  # built; anything missing is rebuilt here.
   reconcile:
     needs: [plan, build]
     if: always() && needs.plan.result == 'success'
@@ -123,6 +141,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: .github/scripts/uv.lock
+
       - name: Log into Docker Registry ${{ env.DOCKER_REGISTRY }}
         uses: docker/login-action@v4
         with:
@@ -131,12 +155,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify every expected image landed, rebuild what did not
-        run: python3 .github/scripts/reconcile_builds.py
+        run: uv run python .github/scripts/reconcile_builds.py
         env:
-          PYTHONPATH: .github/scripts
           DATE_STR: ${{ needs.plan.outputs.date }}
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
           SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
+          MAX_RETRIES: ${{ env.MAX_RETRIES }}
           IMAGES: ${{ needs.plan.outputs.images }}
           PLATFORMS: ${{ needs.plan.outputs.platforms }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -151,11 +175,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      # Set up Docker Buildx (Builder for multi-platform images)
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: .github/scripts/uv.lock
 
-      # Login to Docker Registry
       - name: Log into Docker Registry ${{ env.DOCKER_REGISTRY }}
         uses: docker/login-action@v4
         with:
@@ -163,11 +188,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Run Python script to create and push Docker manifests
       - name: Create and Push Docker Manifests
-        run: python3 .github/scripts/create_docker_manifests.py
+        run: uv run python .github/scripts/create_docker_manifests.py
         env:
           DATE_STR: ${{ needs.plan.outputs.date }}
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
           IMAGES: ${{ needs.plan.outputs.images }}
+          PLATFORMS: ${{ needs.plan.outputs.platforms }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}
+
+  # Fast feedback on the orchestration code itself, independent of any build.
+  check-scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: .github/scripts/uv.lock
+
+      - name: Lint
+        run: uv run ruff check .github/scripts
+
+      - name: Test
+        run: uv run pytest
+        working-directory: .github/scripts

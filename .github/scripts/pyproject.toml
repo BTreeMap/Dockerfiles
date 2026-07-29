@@ -1,0 +1,32 @@
+[project]
+name = "dockerfiles-ci"
+version = "0.1.0"
+description = "Build orchestration for the Dockerfiles image matrix: task discovery, an ad-hoc peer-to-peer build mesh, and post-build reconciliation."
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.4",
+    "ruff>=0.9.4",
+]
+
+[tool.uv]
+# These are entry-point scripts run in place, not a distributable library, so
+# there is nothing to build: `uv sync` resolves dependencies only, and `ci` is
+# imported from the scripts directory on sys.path. Skipping the build backend
+# keeps CI setup to a dependency install.
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RET"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

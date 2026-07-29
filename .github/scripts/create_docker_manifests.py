@@ -1,220 +1,129 @@
 #!/usr/bin/env python3
 
+"""Entry point: fuse the per-platform images into multi-arch manifests."""
 
-import json
+from __future__ import annotations
+
 import logging
-import multiprocessing
-import os
-import random
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
+
+from ci.docker import backoff_seconds, run_tag
+from ci.domain import Platform
+from ci.env import BuildIdentity, require_int, require_json
+from ci.logs import configure
+
+logger = logging.getLogger("ci.manifests")
 
 
-@dataclass
-class ManifestResult:
-    """Tracks the outcome of a Docker manifest creation attempt."""
-
-    image_name: str
-    success: bool
-    error_msg: str | None = None
+@dataclass(frozen=True, slots=True)
+class ManifestPushed:
+    image: str
+    attempts: int
 
 
-def init_logger() -> logging.Logger:
-    """Initializes and configures a logger for each process."""
-    logger_obj = logging.getLogger(f"docker_manifest_creator_{os.getpid()}")
-    logger_obj.setLevel(logging.INFO)
+@dataclass(frozen=True, slots=True)
+class ManifestFailed:
+    image: str
+    attempts: int
+    error: str
 
-    # Avoid adding duplicate handlers if init_logger() is called more than once
-    # in the same process.
-    if logger_obj.handlers:
-        return logger_obj
 
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        "[%(asctime)s][%(levelname)s][PID %(process)d] %(message)s",
-        datefmt="%Y-%m-%d.%H-%M-%S",
+ManifestOutcome = ManifestPushed | ManifestFailed
+
+
+def manifest_tags(image: str, identity: BuildIdentity) -> tuple[str, ...]:
+    """The architecture-independent tags that point at the fused manifest."""
+    stem = f"{identity.base_image}:{image}"
+    return (
+        stem,
+        f"{stem}.latest",
+        f"{stem}.{identity.date}",
+        f"{stem}.{identity.date_time}",
+        f"{stem}.{identity.commit_sha}",
+        f"{stem}.{identity.commit_sha}.{identity.date}",
+        f"{stem}.{identity.commit_sha}.{identity.date_time}",
     )
-    handler.setFormatter(formatter)
-    logger_obj.addHandler(handler)
-
-    # Prevent duplication via root logger propagation in some environments.
-    logger_obj.propagate = False
-    return logger_obj
 
 
-def get_env_var(var_name: str, default: str | None = None) -> str:
-    """Retrieves an environment variable, returning default if provided, else raises ValueError."""
-    value = os.environ.get(var_name, default)
-    if value is None:
-        raise ValueError(f"Environment variable '{var_name}' is not set")
-    return value
-
-
-def _compute_backoff_seconds(
-    attempt: int,
-    base_delay_seconds: float = 1.0,
-    max_delay_seconds: float = 60.0,
-) -> float:
-    """
-    Capped exponential backoff with full jitter:
-      sleep = random_between(0, min(max_delay, base_delay * 2^(attempt-1)))
-    """
-    cap = min(max_delay_seconds, base_delay_seconds * (2 ** (attempt - 1)))
-    return random.uniform(0.0, cap)
-
-
-def create_and_push_manifest_for_image(
-    base_image: str,
-    image_name_dir: str,
-    base_tags: list[str],
+def push_manifest(
+    image: str,
+    platforms: tuple[Platform, ...],
+    identity: BuildIdentity,
     max_retries: int,
-) -> ManifestResult:
-    """Creates and pushes a Docker manifest for an image with all the provided tags."""
-    logger = init_logger()
-    github_sha = get_env_var("GITHUB_SHA")
-    date_time_str = get_env_var("DATE_TIME_STR")
+) -> ManifestOutcome:
+    """Fuses one image's per-platform builds, retrying to the configured budget.
 
-    # The most specific tags for the platform-specific images
-    amd64_tag = f"{base_image}:{image_name_dir}.{github_sha}.{date_time_str}.amd64"
-    arm64_tag = f"{base_image}:{image_name_dir}.{github_sha}.{date_time_str}.arm64"
-
-    # Prepare the --tag options for all base_tags
-    tag_options: list[str] = []
-    for tag in base_tags:
-        manifest_tag = f"{base_image}:{tag}"
-        tag_options.extend(["--tag", manifest_tag])
-
-    imagetools_create_cmd = (
-        [
-            "docker",
-            "buildx",
-            "imagetools",
-            "create",
-        ]
-        + tag_options
-        + [
-            amd64_tag,
-            arm64_tag,
-        ]
+    Sources are the run-unique per-platform tags, so a manifest can only ever be
+    assembled from images this run produced -- never from a previous day's
+    leftovers still sitting under a floating tag.
+    """
+    command = (
+        "docker",
+        "buildx",
+        "imagetools",
+        "create",
+        *(argument for tag in manifest_tags(image, identity) for argument in ("--tag", tag)),
+        *(run_tag(image, str(platform), identity) for platform in platforms),
     )
 
-    unlimited_retries = max_retries <= 0
+    unlimited = max_retries <= 0
+    budget = "∞" if unlimited else str(max_retries)
     attempt = 0
-    error_msg: str | None = None
+    last_error = "no attempt was made"
 
-    # Unlimited retries when MAX_RETRIES <= 0; otherwise, preserve original attempt bounds.
-    while unlimited_retries or attempt < max_retries:
+    while unlimited or attempt < max_retries:
         attempt += 1
-
+        logger.info("Creating manifest for '%s' (attempt %d/%s)", image, attempt, budget)
         try:
-            if unlimited_retries:
-                attempt_suffix = f"{attempt}/∞"
-            else:
-                attempt_suffix = f"{attempt}/{max_retries}"
+            subprocess.run(command, check=True)
+            logger.info("Pushed manifest for '%s'", image)
+            return ManifestPushed(image=image, attempts=attempt)
+        except (subprocess.CalledProcessError, OSError) as error:
+            last_error = str(error)
+            logger.warning("Attempt %d/%s failed for '%s': %s", attempt, budget, image, error)
 
-            logger.info(
-                f"Creating and pushing manifest for '{image_name_dir}' with tags {base_tags} using source images '{amd64_tag}' and '{arm64_tag}' (Attempt {attempt_suffix})"
-            )
-            subprocess.run(imagetools_create_cmd, check=True)
-            logger.info(
-                f"Successfully created and pushed manifest for '{image_name_dir}'"
-            )
-            return ManifestResult(image_name=image_name_dir, success=True)
+        if not unlimited and attempt >= max_retries:
+            break
+        time.sleep(backoff_seconds(attempt))
 
-        except KeyboardInterrupt:
-            # Ensure cancellations interrupt promptly (e.g., CI job cancel).
-            raise
-
-        except subprocess.CalledProcessError as e:
-            logger.warning(
-                f"Attempt {attempt} failed for image '{image_name_dir}': {e}"
-            )
-            error_msg = str(e)
-
-        # Preserve the original "Retrying..." log line exactly (no added text).
-        if unlimited_retries or attempt < max_retries:
-            logger.info(f"Retrying manifest creation for '{image_name_dir}'...")
-            time.sleep(_compute_backoff_seconds(attempt=attempt))
-
-    logger.error(
-        f"Failed to create and push manifest for '{image_name_dir}' after {max_retries} attempts"
-    )
-    return ManifestResult(image_name=image_name_dir, success=False, error_msg=error_msg)
+    logger.error("Failed to push manifest for '%s' after %d attempt(s)", image, attempt)
+    return ManifestFailed(image=image, attempts=attempt, error=last_error)
 
 
-def create_and_push_manifest_in_process(args: tuple[Any, ...]) -> ManifestResult:
-    """Wrapper function to create and push manifest in a separate process."""
-    base_image, image_name_dir, base_tags, max_retries = args
-    return create_and_push_manifest_for_image(
-        base_image=base_image,
-        image_name_dir=image_name_dir,
-        base_tags=base_tags,
-        max_retries=max_retries,
-    )
+def main() -> int:
+    configure()
 
+    identity = BuildIdentity.from_environment()
+    max_retries = require_int("MAX_RETRIES", 50)
+    images: list[str] = require_json("IMAGES")
+    platforms = tuple(filter(None, map(Platform.parse, require_json("PLATFORMS"))))
 
-def main() -> None:
-    logger = init_logger()
+    if not images or not platforms:
+        logger.error("Discovery supplied no images or no platforms.")
+        return 1
 
-    # Retrieve necessary environment variables
-    docker_registry = get_env_var("DOCKER_REGISTRY").lower()
-    docker_image_name = get_env_var("DOCKER_IMAGE_NAME").lower()
-    max_retries = int(get_env_var("MAX_RETRIES", "3"))
-    github_sha = get_env_var("GITHUB_SHA")
-    date_str = get_env_var("DATE_STR")
-    date_time_str = get_env_var("DATE_TIME_STR")
+    logger.info("Creating manifests for %d image(s) across %s", len(images), list(platforms))
 
-    base_image = f"{docker_registry}/{docker_image_name}"
-    logger.info(f"Base image: {base_image}")
+    # imagetools work is registry-side and I/O bound, so these run concurrently.
+    with ThreadPoolExecutor(max_workers=max(1, len(images))) as pool:
+        outcomes = tuple(
+            pool.map(lambda image: push_manifest(image, platforms, identity, max_retries), images)
+        )
 
-    # The image list comes from the discovery stage rather than a second glob,
-    # so the build and manifest stages cannot disagree about which images exist.
-    images = json.loads(get_env_var("IMAGES"))
-    if not images:
-        logger.error("No images supplied by the discovery stage.")
-        sys.exit(1)
-
-    logger.info(f"Creating manifests for {len(images)} image(s):")
-
-    tasks: list[tuple[Any, ...]] = []
-
-    for image_name_dir in images:
-        logger.info(f"Processing image: {image_name_dir}")
-
-        base_tags = [
-            f"{image_name_dir}",
-            f"{image_name_dir}.latest",
-            f"{image_name_dir}.{date_str}",
-            f"{image_name_dir}.{date_time_str}",
-            f"{image_name_dir}.{github_sha}",
-            f"{image_name_dir}.{github_sha}.{date_str}",
-            f"{image_name_dir}.{github_sha}.{date_time_str}",
-        ]
-
-        tasks.append((base_image, image_name_dir, base_tags, max_retries))
-
-    # Use multiprocessing Pool to run create_and_push_manifest in parallel
-    num_processes = multiprocessing.cpu_count()
-    logger.info(f"Running tasks in parallel with {num_processes} processes.")
-
-    with multiprocessing.Pool(processes=num_processes) as pool:
-        results = pool.map(create_and_push_manifest_in_process, tasks)
-
-    failed_manifests = [result for result in results if not result.success]
-
-    if failed_manifests:
+    failures = tuple(outcome for outcome in outcomes if isinstance(outcome, ManifestFailed))
+    if failures:
         logger.error("Some manifests failed to create:")
-        for manifest in failed_manifests:
-            logger.error(
-                f"Manifest '{manifest.image_name}' failed: {manifest.error_msg}"
-            )
-        sys.exit(1)
-    else:
-        logger.info("All manifests created and pushed successfully.")
+        for failure in failures:
+            logger.error("  '%s': %s", failure.image, failure.error)
+        return 1
+
+    logger.info("All manifests created and pushed successfully.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
