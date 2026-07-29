@@ -8,21 +8,11 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
-# Serialise every run of this workflow. A run publishes 31 images across 8
-# workers and only then fuses the multi-arch manifests, so two overlapping runs
-# would race on the floating tags and leave `:image` and `:image.latest` pointing
-# at different commits.
-#
-# cancel-in-progress is deliberately false. Cancelling mid-run is the one
-# outcome that tears a publish: some images would carry the new commit and some
-# the old, with no manifest fusing them and no reconcile stage to repair it,
-# because run-level cancellation skips `if: always()` jobs too. Queueing costs
-# latency instead, and GitHub bounds that for us -- only one run may be pending
-# per group, so a third push supersedes the second *before it starts*, where
-# cancelling is harmless.
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
+# No workflow-level concurrency: the expensive stages are safe to overlap.
+# A manifest is fused only from tags carrying both the commit and the run's
+# timestamp (see ci/docker.run_tag), so two runs building simultaneously cannot
+# contribute images to each other's manifest. Only the final publish of the
+# floating multi-arch tags is serialised -- see the create-manifest job.
 
 env:
   DOCKER_IMAGE_NAME: ${{ github.repository }}
@@ -171,6 +161,15 @@ jobs:
   create-manifest:
     needs: [plan, reconcile]
     runs-on: ubuntu-24.04
+    # The only serialised stage. It is the one that moves the floating
+    # multi-arch tags users actually pull, so two runs must not write them at
+    # once. cancel-in-progress stays false: cancelling here mid-way would leave
+    # some images fused and some not, which is the one tear that is visible to
+    # anyone pulling by name. The job is registry-side and short, so the queue
+    # it creates is short too.
+    concurrency:
+      group: ${{ github.workflow }}-publish
+      cancel-in-progress: false
     permissions:
       contents: read
       packages: write

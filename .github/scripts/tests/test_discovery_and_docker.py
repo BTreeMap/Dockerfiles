@@ -142,3 +142,36 @@ def test_backoff_is_capped_and_jittered() -> None:
     assert backoff_seconds(4, uniform=lambda _lo, hi: hi) == 8.0
     assert backoff_seconds(50, uniform=lambda _lo, hi: hi) == 60.0
     assert backoff_seconds(3, uniform=lambda lo, _hi: lo) == 0.0
+
+
+# --- manifest sources must never be floating -------------------------------
+
+
+def test_manifest_sources_are_run_unique_never_floating() -> None:
+    """The property that makes concurrent runs safe to overlap.
+
+    A manifest is fused only from tags carrying both the commit and the run's
+    timestamp, so two runs building at the same time cannot contribute images to
+    each other's manifest. If a source ever became a floating tag, an overlapping
+    run could swap an image out from under a manifest mid-publish.
+    """
+    from ci.docker import run_tag
+    from create_docker_manifests import manifest_tags
+
+    platforms = (Platform.AMD64, Platform.ARM64)
+    sources = [run_tag("redis", str(platform), IDENTITY) for platform in platforms]
+
+    for source in sources:
+        assert IDENTITY.commit_sha in source, source
+        assert IDENTITY.date_time in source, source
+
+    # None of the floating tags the build or manifest stages publish may appear
+    # as a manifest source.
+    task = Task("redis", "redis/Dockerfile", "redis", Platform.AMD64, 50)
+    floating = {
+        tag
+        for tag in (*tags_for(task, IDENTITY), *manifest_tags("redis", IDENTITY))
+        if IDENTITY.date_time not in tag
+    }
+    assert floating, "expected some floating tags to exist"
+    assert not (set(sources) & floating)
