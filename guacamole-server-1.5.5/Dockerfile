@@ -64,7 +64,10 @@ ARG WITH_FREERDP='2.11.7'
 ARG WITH_LIBSSH2='libssh2-\d+(\.\d+)+'
 ARG WITH_LIBTELNET='\d+(\.\d+)+'
 ARG WITH_LIBVNCCLIENT='LibVNCServer-\d+(\.\d+)+'
-ARG WITH_LIBWEBSOCKETS='v\d+(\.\d+)+'
+# Pinned to the v4 series: libwebsockets v5.0.0 (tagged 2026-07-26) enables
+# LWS_WITH_HTTP3 by default, which force-sets LWS_WITH_GNUTLS=ON and fails the
+# build with "GnuTLS not found" at lib/tls/gnutls/CMakeLists.txt:54.
+ARG WITH_LIBWEBSOCKETS='v4(\.\d+)+'
 
 #
 # Default build options for each core protocol support library, as well as
