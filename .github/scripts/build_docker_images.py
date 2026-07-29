@@ -75,6 +75,7 @@ def main() -> int:
     worker_count = require_int("WORKER_COUNT", 4)
     token = require("GITHUB_TOKEN")
     run_id = require("GITHUB_RUN_ID")
+    run_attempt = optional("GITHUB_RUN_ATTEMPT", "1")
 
     # The mesh credential is optional by design. Without it a worker builds
     # the share it was dealt and reconcile covers the rest, so a missing
@@ -133,7 +134,7 @@ def main() -> int:
             peers = scope.enter_context(httpx.Client(timeout=15.0))
 
             client = MeshClient(
-                secret=derive_run_key(repository_secret, run_id),
+                secret=derive_run_key(repository_secret, run_id, run_attempt),
                 worker_id=worker_id,
                 rendezvous=rendezvous,
                 github=github,

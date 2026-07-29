@@ -96,18 +96,24 @@ def _as_key(material: bytes) -> bytes:
     return hashlib.blake2b(material, digest_size=_MAX_BLAKE2B_KEY).digest()
 
 
-def derive_run_key(repository_secret: str, run_id: str) -> bytes:
-    """Derives this run's mesh key from the long-lived repository secret.
+def derive_run_key(repository_secret: str, run_id: str, run_attempt: str = "1") -> bytes:
+    """Derives this execution's mesh key from the long-lived repository secret.
 
     Every worker computes it independently from values it already holds, so the
     key never passes through a job output -- which is what broke an earlier
-    design, since GitHub scrubs masked values out of outputs entirely.
+    design, since GitHub scrubs masked values out of outputs entirely. Only
+    32-byte tags derived from this key ever cross the wire, and recovering the
+    repository secret from one would mean key recovery against keyed BLAKE2b.
+
+    The attempt number is mixed in because GITHUB_RUN_ID is stable across
+    re-runs while only GITHUB_RUN_ATTEMPT increments; without it, "re-run failed
+    jobs" would reuse a key that may already have been exposed.
 
     Scoped to KEY_SCOPE so a derivation tag can never be replayed as a request
     signature, even though both use one key and one primitive.
     """
     return hashlib.blake2b(
-        run_id.encode(),
+        f"{run_id}/{run_attempt}".encode(),
         key=_as_key(repository_secret.encode()),
         person=KEY_SCOPE,
         digest_size=32,

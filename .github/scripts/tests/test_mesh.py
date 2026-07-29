@@ -136,6 +136,13 @@ def test_an_oversized_repository_secret_is_accepted() -> None:
     assert len(derive_run_key("x" * 5000, "run-1")) == 32
 
 
+def test_a_re_run_does_not_reuse_the_previous_attempts_key() -> None:
+    """GITHUB_RUN_ID is stable across re-runs; only the attempt increments."""
+    first = derive_run_key("secret", "999", "1")
+    second = derive_run_key("secret", "999", "2")
+    assert first != second
+
+
 def test_key_derivation_is_scoped_apart_from_request_signing() -> None:
     """Personalisation keeps one key's two uses from colliding."""
     key = derive_run_key("secret", "run-1")
