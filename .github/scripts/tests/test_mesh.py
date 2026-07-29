@@ -207,3 +207,40 @@ def test_drained_is_only_true_for_a_confirmed_empty_queue() -> None:
         client = client_for(1, port, expected_peers=1)
         assert client.health_of(HOST) == Working(1)
         assert client.peers_drained() is False
+
+
+# --- degradation without a credential --------------------------------------
+
+
+def test_solo_mesh_stops_a_slot_immediately() -> None:
+    """With no peers to wait for, an empty queue means done -- not 'wait 90s'."""
+    from ci.mesh import SoloMesh
+
+    solo = SoloMesh()
+    assert isinstance(solo.attempt_steal(), PeerUnreachable)
+    assert solo.peers_drained() is True
+
+
+def test_solo_mesh_still_builds_every_dealt_task() -> None:
+    from ci.domain import BuildSucceeded
+    from ci.mesh import SoloMesh
+    from ci.scheduling import run_worker
+
+    tasks = [task(f"t{index}") for index in range(5)]
+    outcomes = run_worker(
+        queue=TaskQueue(tasks),
+        mesh=SoloMesh(),
+        execute=lambda t: BuildSucceeded(task=t, attempts=1, duration_seconds=0.0),
+        slots=2,
+        sleep=lambda _: None,
+    )
+    assert sorted(o.task.image for o in outcomes) == sorted(t.image for t in tasks)
+
+
+def test_run_key_is_derived_identically_by_every_worker() -> None:
+    """The key never travels; each worker computes it from what it already has."""
+    from ci.mesh import derive_run_key
+
+    assert derive_run_key("repo-secret", "12345") == derive_run_key("repo-secret", "12345")
+    assert derive_run_key("repo-secret", "12345") != derive_run_key("repo-secret", "12346")
+    assert derive_run_key("repo-secret", "12345") != derive_run_key("other", "12345")

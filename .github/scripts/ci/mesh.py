@@ -201,6 +201,33 @@ def serve_mesh(worker_id: int, secret: str, queue: TaskQueue) -> Iterator[int]:
         server.server_close()
 
 
+@dataclass(frozen=True, slots=True)
+class SoloMesh:
+    """The MeshView used when no mesh credential is configured.
+
+    Reports no peers and, crucially, `peers_drained() is True`: with nobody to
+    wait for, a slot that empties its queue should stop immediately rather than
+    sit out the grace period. The run degrades to static partitioning, which is
+    exactly what dealing disjoint shares was designed to make safe.
+    """
+
+    def attempt_steal(self) -> StealOutcome:
+        return PeerUnreachable("mesh disabled: no MESH_SECRET configured")
+
+    def peers_drained(self) -> bool:
+        return True
+
+
+def derive_run_key(repository_secret: str, run_id: str) -> str:
+    """Derives a per-run mesh key from the long-lived repository secret.
+
+    Every worker computes this independently from values it already has, so the
+    key never travels through a job output -- which is what broke the previous
+    design, since GitHub scrubs masked values out of outputs entirely.
+    """
+    return sign(repository_secret, run_id, b"mesh-key-v1")
+
+
 # --- client ----------------------------------------------------------------
 
 
@@ -249,7 +276,7 @@ class MeshClient:
         expected_peers: int,
         peer_origin: Callable[[Hostname], str] = lambda hostname: f"https://{hostname}",
     ) -> None:
-        self._secret = secret
+        self.secret = secret
         self._worker_id = worker_id
         self._rendezvous = rendezvous
         self._github = github
@@ -365,7 +392,7 @@ class MeshClient:
         return {
             "Content-Type": "application/json",
             "X-Mesh-Ts": timestamp,
-            "X-Mesh-Auth": sign(self._secret, timestamp, body),
+            "X-Mesh-Auth": sign(self.secret, timestamp, body),
         }
 
     # -- MeshView -----------------------------------------------------------

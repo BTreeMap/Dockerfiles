@@ -28,9 +28,9 @@ from ci.domain import (
     TunnelUnavailable,
     succeeded,
 )
-from ci.env import BuildIdentity, require, require_int, require_json, write_summary
+from ci.env import BuildIdentity, optional, require, require_int, require_json, write_summary
 from ci.logs import configure
-from ci.mesh import MeshClient, Rendezvous, serve_mesh
+from ci.mesh import MeshClient, Rendezvous, SoloMesh, derive_run_key, serve_mesh
 from ci.scheduling import TaskQueue, run_worker
 from ci.tunnel import Installed, InstallFailed, quick_tunnel, resolve_binary
 
@@ -73,8 +73,13 @@ def main() -> int:
     identity = BuildIdentity.from_environment()
     worker_id = require_int("WORKER_ID")
     worker_count = require_int("WORKER_COUNT", 4)
-    secret = require("MESH_SECRET")
     token = require("GITHUB_TOKEN")
+    run_id = require("GITHUB_RUN_ID")
+
+    # The mesh credential is optional by design. Without it a worker builds
+    # the share it was dealt and reconcile covers the rest, so a missing
+    # secret costs stealing -- never an image.
+    repository_secret = optional("MESH_SECRET", "")
 
     platform = Platform.parse(require("DOCKER_PLATFORM"))
     if platform is None:
@@ -98,56 +103,64 @@ def main() -> int:
 
     queue = TaskQueue(tasks)
     rendezvous = Rendezvous(
-        repository=require("GITHUB_REPOSITORY"), run_id=require("GITHUB_RUN_ID"), platform=platform
+        repository=require("GITHUB_REPOSITORY"), run_id=run_id, platform=platform
     )
 
-    with ExitStack() as scope:
-        github = scope.enter_context(
-            httpx.Client(
-                base_url=GITHUB_API,
-                timeout=15.0,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                },
+    slots = max(1, os.cpu_count() or 1)
+
+    def build(task: Task) -> BuildOutcome:
+        return build_and_push(task, identity)
+
+    if not repository_secret:
+        logger.warning(
+            "MESH_SECRET is not configured; work stealing is disabled and this "
+            "worker will build only the %d task(s) it was dealt.",
+            len(tasks),
+        )
+        outcomes = run_worker(queue=queue, mesh=SoloMesh(), execute=build, slots=slots)
+    else:
+        with ExitStack() as scope:
+            github = scope.enter_context(
+                httpx.Client(
+                    base_url=GITHUB_API,
+                    timeout=15.0,
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github+json",
+                    },
+                )
             )
-        )
-        peers = scope.enter_context(httpx.Client(timeout=15.0))
+            peers = scope.enter_context(httpx.Client(timeout=15.0))
 
-        client = MeshClient(
-            secret=secret,
-            worker_id=worker_id,
-            rendezvous=rendezvous,
-            github=github,
-            peers_client=peers,
-            expected_peers=worker_count - 1,
-        )
+            client = MeshClient(
+                secret=derive_run_key(repository_secret, run_id),
+                worker_id=worker_id,
+                rendezvous=rendezvous,
+                github=github,
+                peers_client=peers,
+                expected_peers=worker_count - 1,
+            )
 
-        port = scope.enter_context(serve_mesh(worker_id, secret, queue))
+            port = scope.enter_context(serve_mesh(worker_id, client.secret, queue))
 
-        # Joining the mesh is best-effort throughout. Every failure below leaves
-        # the worker building the share it was dealt, which is the whole point of
-        # dealing disjointly in the first place.
-        match resolve_binary(platform):
-            case Installed(path, version):
-                logger.info("Using cloudflared %s", version)
-                match scope.enter_context(quick_tunnel(path, port)):
-                    case TunnelReady(hostname):
-                        client.publish(hostname, identity.commit_sha)
-                    case TunnelUnavailable(reason):
-                        logger.warning("No tunnel (%s); building solo", reason)
-            case InstallFailed(reason):
-                logger.warning("cloudflared unavailable (%s); building solo", reason)
+            # Joining the mesh is best-effort throughout. Every failure below
+            # leaves the worker building the share it was dealt, which is the
+            # whole point of dealing disjointly in the first place.
+            match resolve_binary(platform):
+                case Installed(path, version):
+                    logger.info("Using cloudflared %s", version)
+                    match scope.enter_context(quick_tunnel(path, port)):
+                        case TunnelReady(hostname):
+                            client.publish(hostname, identity.commit_sha)
+                        case TunnelUnavailable(reason):
+                            logger.warning("No tunnel (%s); building solo", reason)
+                case InstallFailed(reason):
+                    logger.warning("cloudflared unavailable (%s); building solo", reason)
 
-        outcomes = run_worker(
-            queue=queue,
-            mesh=client,
-            execute=lambda task: build_and_push(task, identity),
             # cpu_count() concurrent builds: these builds are dominated by
             # network fetches and layer I/O rather than compute, so running one
-            # per core raises throughput well past what a single build achieves.
-            slots=max(1, os.cpu_count() or 1),
-        )
+            # per core raises throughput well past a single build.
+            outcomes = run_worker(queue=queue, mesh=client, execute=build, slots=slots)
 
     summarise(worker_id, outcomes, dealt)
 

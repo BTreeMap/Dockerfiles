@@ -12,6 +12,7 @@ not save survives to fail the run.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -105,7 +106,14 @@ def main() -> int:
 
     free_disk_space()
 
-    with ThreadPoolExecutor(max_workers=max(1, len(missing))) as pool:
+    # Bounded to the core count, not to len(missing). Reconcile runs on a single
+    # runner, and if a whole build stage failed this list is every image in the
+    # repository -- one thread each would put 60+ concurrent multi-gigabyte
+    # layer writes on one disk.
+    concurrency = min(len(missing), max(1, os.cpu_count() or 1))
+    logger.info("Rebuilding %d image(s), %d at a time.", len(missing), concurrency)
+
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
         outcomes = tuple(pool.map(lambda task: build_and_push(task, identity), missing))
 
     write_summary(

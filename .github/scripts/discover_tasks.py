@@ -6,13 +6,12 @@ from __future__ import annotations
 
 import json
 import logging
-import secrets
 import sys
 from pathlib import Path
 
 from ci.discovery import deal, discover, seed_for
 from ci.domain import Platform
-from ci.env import mask, optional, require_int, write_output
+from ci.env import optional, require_int, write_output
 from ci.logs import configure
 
 logger = logging.getLogger("ci.discover")
@@ -35,12 +34,6 @@ def main() -> int:
         return 1
 
     logger.info("Discovered %d tasks across %d platform(s).", len(tasks), len(platforms))
-
-    # One secret per run, masked before it can reach a log line. Scoped to the
-    # run and dying with the tunnels, so there is nothing to rotate and no
-    # repository secret to provision.
-    mesh_secret = secrets.token_hex(32)
-    mask(mesh_secret)
 
     entries = [
         {
@@ -68,7 +61,6 @@ def main() -> int:
         )
 
     write_output("matrix", json.dumps({"include": entries}))
-    write_output("mesh_secret", mesh_secret)
     write_output("images", json.dumps(sorted({task.image for task in tasks})))
     write_output("platforms", json.dumps([str(platform) for platform in platforms]))
     return 0
