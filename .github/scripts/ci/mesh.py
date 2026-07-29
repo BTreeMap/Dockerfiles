@@ -52,10 +52,19 @@ logger = logging.getLogger("ci.mesh")
 # Bounds how long a captured request stays replayable.
 MAX_CLOCK_SKEW_SECONDS = 120.0
 
-# A steal body is one small JSON object. The cap matters because the body must
-# be read before its signature can be checked, so reading it is an
-# unauthenticated operation on a publicly discoverable endpoint.
-MAX_REQUEST_BODY_BYTES = 8 * 1024
+# Generous headroom for protocol growth -- a task descriptor is ~150 bytes, so
+# this accommodates tens of thousands of them. The cap exists because the body
+# must be read before its signature can be checked, making that read an
+# unauthenticated operation on a publicly discoverable endpoint. It is only safe
+# to set this high because MAX_CONCURRENT_REQUESTS bounds how many such reads can
+# be in flight at once; the two constants must be considered together, since the
+# worst case is their product.
+MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024
+
+# Worst-case pre-auth memory is this times MAX_REQUEST_BODY_BYTES (128 MiB),
+# which a runner absorbs comfortably alongside its builds. Without it,
+# ThreadingHTTPServer would spawn a thread per connection with no ceiling.
+MAX_CONCURRENT_REQUESTS = 16
 
 # Drops connections that stall mid-request. Without it a peer that opens a
 # socket and never finishes holds a server thread for the rest of the run.
@@ -119,6 +128,10 @@ class _MeshHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     timeout = REQUEST_TIMEOUT_SECONDS
 
+    # Shared by every connection this server accepts. Bounds concurrent
+    # unauthenticated body reads, which is what makes the generous body cap safe.
+    in_flight = threading.Semaphore(MAX_CONCURRENT_REQUESTS)
+
     def log_message(self, fmt: str, *args: Any) -> None:
         # Route through the module logger at debug level so peer chatter does
         # not drown out build output on stderr.
@@ -174,6 +187,21 @@ class _MeshHandler(BaseHTTPRequestHandler):
             self._respond(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
 
+        # Shed load rather than queue it: a peer that is refused simply tries
+        # another victim, and a steal is an optimisation the caller can lose.
+        if not self.in_flight.acquire(blocking=False):
+            logger.warning("Shedding a mesh request: %d already in flight", MAX_CONCURRENT_REQUESTS)
+            self._respond(
+                HTTPStatus.SERVICE_UNAVAILABLE, {"error": "busy"}, close=True
+            )
+            return
+
+        try:
+            self._serve_authenticated(handle)
+        finally:
+            self.in_flight.release()
+
+    def _serve_authenticated(self, handle: Any) -> None:
         match self._authenticate():
             case Authenticated(body):
                 self._respond(HTTPStatus.OK, handle(body))

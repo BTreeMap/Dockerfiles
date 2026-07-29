@@ -293,7 +293,7 @@ def test_oversized_body_is_refused_without_being_read() -> None:
     with serve_mesh(worker_id=0, secret=SECRET, queue=queue) as port:
         connection = socketlib.create_connection(("127.0.0.1", port), timeout=5)
         connection.sendall(
-            b"POST /steal HTTP/1.1\r\nHost: x\r\nContent-Length: 500000000\r\n\r\n"
+            b"POST /steal HTTP/1.1\r\nHost: x\r\nContent-Length: 5000000000\r\n\r\n"
         )
         connection.settimeout(5.0)
         response = connection.recv(200)
@@ -331,3 +331,29 @@ def test_a_body_at_the_limit_is_still_served() -> None:
 
     assert response.status_code == 200
     assert len(response.json()["tasks"]) == 1
+
+
+def test_concurrent_request_load_is_shed_not_queued() -> None:
+    """The bound is what makes an 8 MiB body cap safe to allow.
+
+    Worst-case pre-authentication memory is the body cap times this limit, so
+    the two constants only make sense read together.
+    """
+    from ci.mesh import MAX_CONCURRENT_REQUESTS, MAX_REQUEST_BODY_BYTES, _MeshHandler
+
+    worst_case = MAX_CONCURRENT_REQUESTS * MAX_REQUEST_BODY_BYTES
+    assert worst_case <= 256 * 1024 * 1024, f"{worst_case} bytes of pre-auth memory"
+
+    # Exhausting the semaphore makes the endpoint shed rather than block.
+    acquired = [
+        _MeshHandler.in_flight.acquire(blocking=False)
+        for _ in range(MAX_CONCURRENT_REQUESTS)
+    ]
+    try:
+        assert all(acquired)
+        queue = TaskQueue([task("a"), task("b")])
+        with serve_mesh(worker_id=0, secret=SECRET, queue=queue) as port:
+            assert _local(port, "/health").status_code == 503
+    finally:
+        for _ in acquired:
+            _MeshHandler.in_flight.release()
