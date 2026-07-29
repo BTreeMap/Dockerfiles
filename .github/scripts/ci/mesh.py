@@ -52,6 +52,15 @@ logger = logging.getLogger("ci.mesh")
 # Bounds how long a captured request stays replayable.
 MAX_CLOCK_SKEW_SECONDS = 120.0
 
+# A steal body is one small JSON object. The cap matters because the body must
+# be read before its signature can be checked, so reading it is an
+# unauthenticated operation on a publicly discoverable endpoint.
+MAX_REQUEST_BODY_BYTES = 8 * 1024
+
+# Drops connections that stall mid-request. Without it a peer that opens a
+# socket and never finishes holds a server thread for the rest of the run.
+REQUEST_TIMEOUT_SECONDS = 30.0
+
 
 # --- wire protocol ---------------------------------------------------------
 
@@ -108,6 +117,7 @@ class _MeshHandler(BaseHTTPRequestHandler):
     queue: TaskQueue
 
     protocol_version = "HTTP/1.1"
+    timeout = REQUEST_TIMEOUT_SECONDS
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Route through the module logger at debug level so peer chatter does
@@ -117,20 +127,45 @@ class _MeshHandler(BaseHTTPRequestHandler):
     def _authenticate(self) -> AuthOutcome:
         import time
 
-        length = int(self.headers.get("Content-Length", "0") or "0")
+        # The body is read *before* the signature can be checked, because the
+        # signature covers it. That makes the read itself an unauthenticated
+        # operation, and this endpoint is publicly discoverable: its hostname
+        # sits in a world-readable git ref. So the length is bounded first.
+        # A steal body is a single small JSON object; anything larger is either
+        # a mistake or an attempt to make a worker allocate on demand.
+        declared = self.headers.get("Content-Length", "0") or "0"
+        try:
+            length = int(declared)
+        except ValueError:
+            return Rejected(f"malformed Content-Length {declared!r}")
+
+        if length < 0 or length > MAX_REQUEST_BODY_BYTES:
+            return Rejected(f"body of {length} bytes exceeds the {MAX_REQUEST_BODY_BYTES} limit")
+
+        body = self.rfile.read(length) if length else b""
+        if len(body) != length:
+            return Rejected("request body ended early")
+
         return verify(
             secret=self.secret,
             timestamp=self.headers.get("X-Mesh-Ts", ""),
             presented=self.headers.get("X-Mesh-Auth", ""),
-            body=self.rfile.read(length) if length else b"",
+            body=body,
             now=time.time(),
         )
 
-    def _respond(self, status: HTTPStatus, payload: Mapping[str, Any]) -> None:
+    def _respond(
+        self, status: HTTPStatus, payload: Mapping[str, Any], close: bool = False
+    ) -> None:
         encoded = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
+        if close:
+            # A rejected request may have left an unread body on the socket, so
+            # the connection cannot safely be reused for a following request.
+            self.send_header("Connection", "close")
+            self.close_connection = True
         self.end_headers()
         self.wfile.write(encoded)
 
@@ -144,7 +179,9 @@ class _MeshHandler(BaseHTTPRequestHandler):
                 self._respond(HTTPStatus.OK, handle(body))
             case Rejected(reason):
                 logger.warning("Rejected a mesh request: %s", reason)
-                self._respond(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"})
+                self._respond(
+                    HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"}, close=True
+                )
             case other:
                 assert_never(other)
 

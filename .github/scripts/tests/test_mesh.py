@@ -275,3 +275,59 @@ def test_discovery_logs_peers_by_id_and_never_by_hostname(caplog) -> None:
 
     assert set(parsed) == {0, 2}
     assert HOST.value not in caplog.text
+
+
+# --- pre-authentication hardening ------------------------------------------
+
+
+def test_oversized_body_is_refused_without_being_read() -> None:
+    """The endpoint is publicly discoverable, so pre-auth work must be bounded.
+
+    The signature covers the body, so the body has to be read before it can be
+    checked -- which makes that read an unauthenticated operation reachable by
+    anyone who can read the rendezvous ref.
+    """
+    import socket as socketlib
+
+    queue = TaskQueue([task("a"), task("b")])
+    with serve_mesh(worker_id=0, secret=SECRET, queue=queue) as port:
+        connection = socketlib.create_connection(("127.0.0.1", port), timeout=5)
+        connection.sendall(
+            b"POST /steal HTTP/1.1\r\nHost: x\r\nContent-Length: 500000000\r\n\r\n"
+        )
+        connection.settimeout(5.0)
+        response = connection.recv(200)
+        connection.close()
+
+    assert b"401" in response          # refused, promptly
+    assert len(queue) == 2             # and nothing handed out
+
+
+def test_malformed_content_length_is_refused() -> None:
+    import socket as socketlib
+
+    with serve_mesh(worker_id=0, secret=SECRET, queue=TaskQueue([])) as port:
+        connection = socketlib.create_connection(("127.0.0.1", port), timeout=5)
+        connection.sendall(
+            b"POST /steal HTTP/1.1\r\nHost: x\r\nContent-Length: not-a-number\r\n\r\n"
+        )
+        connection.settimeout(5.0)
+        response = connection.recv(200)
+        connection.close()
+
+    assert b"400" in response or b"401" in response
+
+
+def test_a_body_at_the_limit_is_still_served() -> None:
+    """The cap must not break a legitimate request."""
+    from ci.mesh import MAX_REQUEST_BODY_BYTES
+
+    padded = json.dumps({"count": 1, "pad": "x" * (MAX_REQUEST_BODY_BYTES - 100)}).encode()
+    assert len(padded) < MAX_REQUEST_BODY_BYTES
+
+    queue = TaskQueue([task(f"t{i}") for i in range(3)])
+    with serve_mesh(worker_id=0, secret=SECRET, queue=queue) as port:
+        response = _local(port, "/steal", padded)
+
+    assert response.status_code == 200
+    assert len(response.json()["tasks"]) == 1
