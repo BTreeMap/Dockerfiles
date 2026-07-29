@@ -223,6 +223,27 @@ class Rejected:
 AuthOutcome = Authenticated | Rejected
 
 
+@dataclass(frozen=True, slots=True)
+class HeadersAuthentic:
+    """The caller proved knowledge of the key using headers alone.
+
+    This exists so a request can be rejected before its body is read. The body
+    is what makes a request expensive to receive, so an unauthenticated caller
+    must never get that far -- otherwise the endpoint's capacity limits become
+    something an attacker can exhaust without holding the key at all.
+
+    The declared length and digest are carried forward because they are covered
+    by the signature: having been authenticated, the length is safe to allocate
+    against and the digest is safe to check the body against.
+    """
+
+    content_length: int
+    body_digest: str
+
+
+HeaderAuthOutcome = HeadersAuthentic | Rejected
+
+
 # --- tunnel ----------------------------------------------------------------
 
 

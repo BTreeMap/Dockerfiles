@@ -59,7 +59,7 @@ def main() -> int:
         },
     ) as github:
         removed = MeshClient(
-            secret="",
+            secret=b"",
             worker_id=-1,
             rendezvous=rendezvous,
             github=github,

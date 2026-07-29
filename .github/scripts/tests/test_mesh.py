@@ -10,6 +10,7 @@ import pytest
 
 from ci.domain import (
     Authenticated,
+    HeadersAuthentic,
     Hostname,
     PeerEmpty,
     PeerUnreachable,
@@ -19,10 +20,19 @@ from ci.domain import (
     Task,
     Working,
 )
-from ci.mesh import MeshClient, Rendezvous, serve_mesh, sign, verify
+from ci.mesh import (
+    MeshClient,
+    Rendezvous,
+    body_digest,
+    derive_run_key,
+    serve_mesh,
+    sign_request,
+    verify_body,
+    verify_headers,
+)
 from ci.scheduling import TaskQueue
 
-SECRET = "s3cret"
+SECRET = derive_run_key("s3cret", "run-42")
 HOST = Hostname("busy-blue-cat.trycloudflare.com")
 
 
@@ -39,34 +49,98 @@ def task(name: str) -> Task:
 # --- signing ---------------------------------------------------------------
 
 
+def signed(method: str, path: str, body: bytes, key: bytes = SECRET, ts: str = "1000.0"):
+    digest = body_digest(body)
+    return verify_headers(
+        key=key, method=method, path=path, timestamp=ts,
+        declared_length=str(len(body)), digest=digest,
+        presented=sign_request(key, method, path, ts, len(body), digest),
+        now=1000.0,
+    )
+
+
 def test_a_correct_signature_authenticates() -> None:
-    body, ts = b'{"count": 1}', "1000.0"
-    outcome = verify(SECRET, ts, sign(SECRET, ts, body), body, now=1000.0)
-    assert outcome == Authenticated(body)
+    outcome = signed("POST", "/steal", b'{"count": 1}')
+    assert isinstance(outcome, HeadersAuthentic)
+    assert outcome.content_length == 12
 
 
-def test_a_wrong_secret_is_rejected() -> None:
+def test_a_wrong_key_is_rejected() -> None:
     body, ts = b"{}", "1000.0"
-    outcome = verify(SECRET, ts, sign("other", ts, body), body, now=1000.0)
+    digest = body_digest(body)
+    outcome = verify_headers(
+        key=SECRET, method="POST", path="/steal", timestamp=ts,
+        declared_length="2", digest=digest,
+        presented=sign_request(derive_run_key("other", "run-42"), "POST", "/steal", ts, 2, digest),
+        now=1000.0,
+    )
     assert isinstance(outcome, Rejected) and "signature" in outcome.reason
 
 
-def test_a_signature_cannot_be_lifted_onto_a_different_body() -> None:
+def test_a_health_credential_cannot_be_replayed_as_a_steal() -> None:
+    """Regression: the signature must bind the method and path.
+
+    Previously it covered only the timestamp and body, and both endpoints carry
+    an empty body -- so a captured read-only /health credential verified
+    unchanged against the destructive /steal endpoint and drained the queue.
+    """
     ts = "1000.0"
-    stolen_mac = sign(SECRET, ts, b'{"count": 1}')
-    outcome = verify(SECRET, ts, stolen_mac, b'{"count": 9999}', now=1000.0)
-    assert isinstance(outcome, Rejected)
+    digest = body_digest(b"")
+    health_mac = sign_request(SECRET, "GET", "/health", ts, 0, digest)
+
+    lifted = verify_headers(
+        key=SECRET, method="POST", path="/steal", timestamp=ts,
+        declared_length="0", digest=digest, presented=health_mac, now=1000.0,
+    )
+    assert isinstance(lifted, Rejected) and "signature" in lifted.reason
 
 
 def test_a_stale_request_is_rejected() -> None:
-    body, ts = b"{}", "1000.0"
-    outcome = verify(SECRET, ts, sign(SECRET, ts, body), body, now=2000.0)
+    body, ts = b"", "1000.0"
+    digest = body_digest(body)
+    outcome = verify_headers(
+        key=SECRET, method="GET", path="/health", timestamp=ts,
+        declared_length="0", digest=digest,
+        presented=sign_request(SECRET, "GET", "/health", ts, 0, digest),
+        now=2000.0,
+    )
     assert isinstance(outcome, Rejected) and "skew" in outcome.reason
 
 
 def test_a_malformed_timestamp_is_rejected_rather_than_raising() -> None:
-    outcome = verify(SECRET, "not-a-number", "whatever", b"", now=1000.0)
-    assert isinstance(outcome, Rejected) and "malformed" in outcome.reason
+    outcome = verify_headers(
+        key=SECRET, method="GET", path="/health", timestamp="not-a-number",
+        declared_length="0", digest=body_digest(b""), presented="x", now=1000.0,
+    )
+    assert isinstance(outcome, Rejected) and "malformed timestamp" in outcome.reason
+
+
+def test_an_oversized_declared_length_is_rejected_before_any_read() -> None:
+    outcome = verify_headers(
+        key=SECRET, method="POST", path="/steal", timestamp="1000.0",
+        declared_length="5000000000", digest=body_digest(b""), presented="x", now=1000.0,
+    )
+    assert isinstance(outcome, Rejected) and "exceeds" in outcome.reason
+
+
+def test_a_body_that_does_not_match_its_signed_digest_is_rejected() -> None:
+    """The digest is what lets the signature cover a body it has not read."""
+    authentic = signed("POST", "/steal", b'{"count": 1}')
+    assert isinstance(authentic, HeadersAuthentic)
+    assert isinstance(verify_body(b'{"count": 9}', authentic), Rejected)
+    assert isinstance(verify_body(b'{"count": 1}', authentic), Authenticated)
+
+
+def test_an_oversized_repository_secret_is_accepted() -> None:
+    """BLAKE2b raises on keys over 64 bytes, unlike HMAC which pre-hashes."""
+    assert len(derive_run_key("x" * 5000, "run-1")) == 32
+
+
+def test_key_derivation_is_scoped_apart_from_request_signing() -> None:
+    """Personalisation keeps one key's two uses from colliding."""
+    key = derive_run_key("secret", "run-1")
+    assert key != derive_run_key("secret", "run-2")
+    assert sign_request(key, "GET", "/health", "1.0", 0, body_digest(b"")) != key.hex()
 
 
 # --- rendezvous ------------------------------------------------------------
@@ -119,8 +193,14 @@ def client_for(worker_id: int, port: int, expected_peers: int = 1) -> MeshClient
 
 
 def _local(port: int, path: str, body: bytes = b"") -> httpx.Response:
+    method = "POST" if body else "GET"
     ts = f"{time.time():.3f}"
-    headers = {"X-Mesh-Ts": ts, "X-Mesh-Auth": sign(SECRET, ts, body)}
+    digest = body_digest(body)
+    headers = {
+        "X-Mesh-Ts": ts,
+        "X-Mesh-Body": digest,
+        "X-Mesh-Auth": sign_request(SECRET, method, path, ts, len(body), digest),
+    }
     with httpx.Client(timeout=5.0) as http:
         url = f"http://127.0.0.1:{port}{path}"
         if body:
@@ -333,27 +413,26 @@ def test_a_body_at_the_limit_is_still_served() -> None:
     assert len(response.json()["tasks"]) == 1
 
 
-def test_concurrent_request_load_is_shed_not_queued() -> None:
-    """The bound is what makes an 8 MiB body cap safe to allow.
+def test_an_unauthenticated_flood_cannot_exhaust_capacity() -> None:
+    """No cap exists to exhaust, and unsigned requests never reach the body read.
 
-    Worst-case pre-authentication memory is the body cap times this limit, so
-    the two constants only make sense read together.
+    An earlier version bounded concurrent requests before authenticating, which
+    let anyone who could reach the endpoint occupy every slot and silence the
+    mesh without holding the key at all.
     """
-    from ci.mesh import MAX_CONCURRENT_REQUESTS, MAX_REQUEST_BODY_BYTES, _MeshHandler
+    import ci.mesh as mesh_module
+    from ci.mesh import MAX_REQUEST_BODY_BYTES
 
-    worst_case = MAX_CONCURRENT_REQUESTS * MAX_REQUEST_BODY_BYTES
-    assert worst_case <= 256 * 1024 * 1024, f"{worst_case} bytes of pre-auth memory"
+    assert not hasattr(mesh_module, "MAX_CONCURRENT_REQUESTS")
+    assert MAX_REQUEST_BODY_BYTES == 8 * 1024 * 1024
 
-    # Exhausting the semaphore makes the endpoint shed rather than block.
-    acquired = [
-        _MeshHandler.in_flight.acquire(blocking=False)
-        for _ in range(MAX_CONCURRENT_REQUESTS)
-    ]
-    try:
-        assert all(acquired)
-        queue = TaskQueue([task("a"), task("b")])
-        with serve_mesh(worker_id=0, secret=SECRET, queue=queue) as port:
-            assert _local(port, "/health").status_code == 503
-    finally:
-        for _ in acquired:
-            _MeshHandler.in_flight.release()
+    queue = TaskQueue([task(f"t{i}") for i in range(6)])
+    with serve_mesh(worker_id=0, secret=SECRET, queue=queue) as port:
+        # Many unsigned requests in a row: each is refused, none is served, and
+        # a legitimate caller still gets through afterwards.
+        with httpx.Client(timeout=5.0) as http:
+            for _ in range(40):
+                assert http.get(f"http://127.0.0.1:{port}/health").status_code == 401
+        assert _local(port, "/health").status_code == 200
+
+    assert len(queue) == 6

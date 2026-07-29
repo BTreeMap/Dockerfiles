@@ -33,6 +33,8 @@ from ci.domain import (
     Authenticated,
     AuthOutcome,
     Drained,
+    HeaderAuthOutcome,
+    HeadersAuthentic,
     HealthUnknown,
     Hostname,
     PeerEmpty,
@@ -53,18 +55,17 @@ logger = logging.getLogger("ci.mesh")
 MAX_CLOCK_SKEW_SECONDS = 120.0
 
 # Generous headroom for protocol growth -- a task descriptor is ~150 bytes, so
-# this accommodates tens of thousands of them. The cap exists because the body
-# must be read before its signature can be checked, making that read an
-# unauthenticated operation on a publicly discoverable endpoint. It is only safe
-# to set this high because MAX_CONCURRENT_REQUESTS bounds how many such reads can
-# be in flight at once; the two constants must be considered together, since the
-# worst case is their product.
+# this accommodates tens of thousands of them. It is safe to set this high
+# because a body is only ever read after its signature has been verified from
+# the headers, so the allocation is on behalf of a peer that already holds the
+# key. The declared length is itself covered by that signature.
+#
+# There is deliberately no cap on concurrent requests. One was tried and
+# removed: because authentication now happens first, such a cap could only ever
+# throttle legitimate peers, while an attacker holding the key could drain the
+# queue outright and one without it never reaches the slot at all. A limit only
+# the defender can hit is a self-inflicted denial of service.
 MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024
-
-# Worst-case pre-auth memory is this times MAX_REQUEST_BODY_BYTES (128 MiB),
-# which a runner absorbs comfortably alongside its builds. Without it,
-# ThreadingHTTPServer would spawn a thread per connection with no ceiling.
-MAX_CONCURRENT_REQUESTS = 16
 
 # Drops connections that stall mid-request. Without it a peer that opens a
 # socket and never finishes holds a server thread for the rest of the run.
@@ -73,34 +74,111 @@ REQUEST_TIMEOUT_SECONDS = 30.0
 
 # --- wire protocol ---------------------------------------------------------
 
+# BLAKE2b personalisation strings, giving domain separation natively: the same
+# key cannot produce a valid tag in the wrong context, because the scope is
+# mixed into the compression function rather than prepended to the message and
+# hoped for. Each must be at most blake2b.PERSON_SIZE (16) bytes.
+KEY_SCOPE = b"mesh-key-v1"
+REQUEST_SCOPE = b"mesh-req-v1"
 
-def sign(secret: str, timestamp: str, body: bytes) -> str:
-    """Authenticates the timestamp and body together.
+_MAX_BLAKE2B_KEY = hashlib.blake2b.MAX_KEY_SIZE
 
-    Signing both under one MAC is what stops a valid signature being lifted onto
-    a different body or replayed with a fresh timestamp.
+
+def _as_key(material: bytes) -> bytes:
+    """Fits arbitrary key material into BLAKE2b's 64-byte key limit.
+
+    HMAC pre-hashes an oversized key silently; BLAKE2b raises instead, so the
+    reduction is explicit here. An arbitrarily long MESH_SECRET is therefore
+    still valid -- it simply gets compressed, exactly as HMAC would have done.
     """
-    mac = hmac.new(secret.encode(), digestmod=hashlib.sha256)
-    mac.update(timestamp.encode())
-    mac.update(b"\n")
-    mac.update(body)
-    return mac.hexdigest()
+    if len(material) <= _MAX_BLAKE2B_KEY:
+        return material
+    return hashlib.blake2b(material, digest_size=_MAX_BLAKE2B_KEY).digest()
 
 
-def verify(
-    secret: str,
+def derive_run_key(repository_secret: str, run_id: str) -> bytes:
+    """Derives this run's mesh key from the long-lived repository secret.
+
+    Every worker computes it independently from values it already holds, so the
+    key never passes through a job output -- which is what broke an earlier
+    design, since GitHub scrubs masked values out of outputs entirely.
+
+    Scoped to KEY_SCOPE so a derivation tag can never be replayed as a request
+    signature, even though both use one key and one primitive.
+    """
+    return hashlib.blake2b(
+        run_id.encode(),
+        key=_as_key(repository_secret.encode()),
+        person=KEY_SCOPE,
+        digest_size=32,
+    ).digest()
+
+
+def body_digest(body: bytes) -> str:
+    """Digests a body so a signature can commit to it without it being read."""
+    return hashlib.blake2b(body, digest_size=32).hexdigest()
+
+
+def canonical_request(
+    method: str, path: str, timestamp: str, content_length: int, digest: str
+) -> bytes:
+    """The exact bytes a signature commits to.
+
+    Method and path are included deliberately. Without them, a captured
+    credential for the read-only /health endpoint verified unchanged against the
+    destructive /steal endpoint: both carry an empty body, and the signature
+    covered only the timestamp and body.
+
+    The length is covered too, so a receiver may trust it enough to allocate
+    against before it has seen a single byte of the body.
+    """
+    return "\n".join(
+        (method.upper(), path, timestamp, str(content_length), digest)
+    ).encode()
+
+
+def sign_request(
+    key: bytes, method: str, path: str, timestamp: str, content_length: int, digest: str
+) -> str:
+    """Tags a request. Keyed BLAKE2b is a MAC by construction; no HMAC wrapper."""
+    return hashlib.blake2b(
+        canonical_request(method, path, timestamp, content_length, digest),
+        key=key,
+        person=REQUEST_SCOPE,
+        digest_size=32,
+    ).hexdigest()
+
+
+def verify_headers(
+    key: bytes,
+    method: str,
+    path: str,
     timestamp: str,
+    declared_length: str,
+    digest: str,
     presented: str,
-    body: bytes,
     now: float,
     max_skew_seconds: float = MAX_CLOCK_SKEW_SECONDS,
-) -> AuthOutcome:
-    """Checks a request's signature. Pure, so every rejection path is testable.
+    max_body_bytes: int = MAX_REQUEST_BODY_BYTES,
+) -> HeaderAuthOutcome:
+    """Authenticates a request from its headers alone, before the body is read.
 
-    Returns a reason rather than a bare failure: on a security boundary, "clock
-    skew" and "bad signature" call for very different responses from whoever
-    reads the log.
+    The ordering is the whole point. Receiving a body is the expensive part of
+    serving a request, so an unauthenticated caller must be turned away before
+    reaching it -- otherwise this endpoint's capacity is exhaustible by anyone
+    who can reach it, and it is publicly discoverable by design: its hostname
+    lives in a world-readable git ref.
+
+    Pure, so every rejection path is testable without a socket.
     """
+    try:
+        length = int(declared_length)
+    except ValueError:
+        return Rejected(f"malformed Content-Length {declared_length!r}")
+
+    if length < 0 or length > max_body_bytes:
+        return Rejected(f"body of {length} bytes exceeds the {max_body_bytes} limit")
+
     try:
         skew = abs(now - float(timestamp))
     except ValueError:
@@ -109,9 +187,20 @@ def verify(
     if skew > max_skew_seconds:
         return Rejected(f"timestamp skew {skew:.0f}s exceeds {max_skew_seconds:.0f}s")
 
-    if not hmac.compare_digest(presented, sign(secret, timestamp, body)):
+    if not hmac.compare_digest(
+        presented, sign_request(key, method, path, timestamp, length, digest)
+    ):
         return Rejected("signature mismatch")
 
+    return HeadersAuthentic(content_length=length, body_digest=digest)
+
+
+def verify_body(body: bytes, expected: HeadersAuthentic) -> AuthOutcome:
+    """Checks a received body against the digest its signature committed to."""
+    if len(body) != expected.content_length:
+        return Rejected("request body ended early")
+    if not hmac.compare_digest(body_digest(body), expected.body_digest):
+        return Rejected("body digest mismatch")
     return Authenticated(body)
 
 
@@ -121,49 +210,29 @@ def verify(
 class _MeshHandler(BaseHTTPRequestHandler):
     """Serves /health and /steal. Concrete state is injected by serve_mesh."""
 
-    secret: str = ""
+    secret: bytes = b""
     worker_id: int = -1
     queue: TaskQueue
 
     protocol_version = "HTTP/1.1"
     timeout = REQUEST_TIMEOUT_SECONDS
 
-    # Shared by every connection this server accepts. Bounds concurrent
-    # unauthenticated body reads, which is what makes the generous body cap safe.
-    in_flight = threading.Semaphore(MAX_CONCURRENT_REQUESTS)
-
     def log_message(self, fmt: str, *args: Any) -> None:
         # Route through the module logger at debug level so peer chatter does
         # not drown out build output on stderr.
         logger.debug("mesh http: " + fmt, *args)
 
-    def _authenticate(self) -> AuthOutcome:
+    def _authenticate_headers(self, method: str) -> HeaderAuthOutcome:
         import time
 
-        # The body is read *before* the signature can be checked, because the
-        # signature covers it. That makes the read itself an unauthenticated
-        # operation, and this endpoint is publicly discoverable: its hostname
-        # sits in a world-readable git ref. So the length is bounded first.
-        # A steal body is a single small JSON object; anything larger is either
-        # a mistake or an attempt to make a worker allocate on demand.
-        declared = self.headers.get("Content-Length", "0") or "0"
-        try:
-            length = int(declared)
-        except ValueError:
-            return Rejected(f"malformed Content-Length {declared!r}")
-
-        if length < 0 or length > MAX_REQUEST_BODY_BYTES:
-            return Rejected(f"body of {length} bytes exceeds the {MAX_REQUEST_BODY_BYTES} limit")
-
-        body = self.rfile.read(length) if length else b""
-        if len(body) != length:
-            return Rejected("request body ended early")
-
-        return verify(
-            secret=self.secret,
+        return verify_headers(
+            key=self.secret,
+            method=method,
+            path=self.path,
             timestamp=self.headers.get("X-Mesh-Ts", ""),
+            declared_length=self.headers.get("Content-Length", "0") or "0",
+            digest=self.headers.get("X-Mesh-Body", ""),
             presented=self.headers.get("X-Mesh-Auth", ""),
-            body=body,
             now=time.time(),
         )
 
@@ -182,42 +251,48 @@ class _MeshHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
-    def _serve(self, route: str, handle: Any) -> None:
+    def _reject(self, reason: str) -> None:
+        logger.warning("Rejected a mesh request: %s", reason)
+        self._respond(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"}, close=True)
+
+    def _serve(self, method: str, route: str, handle: Any) -> None:
         if self.path != route:
             self._respond(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
 
-        # Shed load rather than queue it: a peer that is refused simply tries
-        # another victim, and a steal is an optimisation the caller can lose.
-        if not self.in_flight.acquire(blocking=False):
-            logger.warning("Shedding a mesh request: %d already in flight", MAX_CONCURRENT_REQUESTS)
-            self._respond(
-                HTTPStatus.SERVICE_UNAVAILABLE, {"error": "busy"}, close=True
-            )
-            return
-
-        try:
-            self._serve_authenticated(handle)
-        finally:
-            self.in_flight.release()
-
-    def _serve_authenticated(self, handle: Any) -> None:
-        match self._authenticate():
-            case Authenticated(body):
-                self._respond(HTTPStatus.OK, handle(body))
+        # Authenticate before anything expensive, and before taking a capacity
+        # slot. Taking the slot first would let an attacker who cannot forge a
+        # signature still exhaust every slot and silence the mesh -- trading a
+        # memory problem for an availability one.
+        match self._authenticate_headers(method):
             case Rejected(reason):
-                logger.warning("Rejected a mesh request: %s", reason)
-                self._respond(
-                    HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"}, close=True
-                )
+                self._reject(reason)
+                return
+            case HeadersAuthentic() as authentic:
+                pass
+            case other:
+                assert_never(other)
+
+        # Only signed callers reach here, so the read below is work done for a
+        # peer that already holds the key.
+        body = self.rfile.read(authentic.content_length) if authentic.content_length else b""
+        match verify_body(body, authentic):
+            case Authenticated(verified):
+                self._respond(HTTPStatus.OK, handle(verified))
+            case Rejected(reason):
+                self._reject(reason)
             case other:
                 assert_never(other)
 
     def do_GET(self) -> None:
-        self._serve("/health", lambda _: {"worker_id": self.worker_id, "pending": len(self.queue)})
+        self._serve(
+            "GET",
+            "/health",
+            lambda _: {"worker_id": self.worker_id, "pending": len(self.queue)},
+        )
 
     def do_POST(self) -> None:
-        self._serve("/steal", self._release)
+        self._serve("POST", "/steal", self._release)
 
     def _release(self, body: bytes) -> Mapping[str, Any]:
         try:
@@ -236,7 +311,7 @@ class _MeshHandler(BaseHTTPRequestHandler):
 
 
 @contextmanager
-def serve_mesh(worker_id: int, secret: str, queue: TaskQueue) -> Iterator[int]:
+def serve_mesh(worker_id: int, secret: bytes, queue: TaskQueue) -> Iterator[int]:
     """Serves the mesh endpoint on a free loopback port for the block's duration.
 
     Threaded so a slow peer cannot block another peer's steal, and scoped so the
@@ -283,14 +358,6 @@ class SoloMesh:
         return True
 
 
-def derive_run_key(repository_secret: str, run_id: str) -> str:
-    """Derives a per-run mesh key from the long-lived repository secret.
-
-    Every worker computes this independently from values it already has, so the
-    key never travels through a job output -- which is what broke the previous
-    design, since GitHub scrubs masked values out of outputs entirely.
-    """
-    return sign(repository_secret, run_id, b"mesh-key-v1")
 
 
 # --- client ----------------------------------------------------------------
@@ -333,7 +400,7 @@ class MeshClient:
 
     def __init__(
         self,
-        secret: str,
+        secret: bytes,
         worker_id: int,
         rendezvous: Rendezvous,
         github: httpx.Client,
@@ -448,7 +515,9 @@ class MeshClient:
         body = json.dumps({"count": count}).encode()
         try:
             response = self._peers.post(
-                f"{self._peer_origin(hostname)}/steal", content=body, headers=self._headers(body)
+                f"{self._peer_origin(hostname)}/steal",
+                content=body,
+                headers=self._headers("POST", "/steal", body),
             )
             response.raise_for_status()
             payload = response.json()
@@ -461,21 +530,27 @@ class MeshClient:
     def health_of(self, hostname: Hostname) -> PeerHealth:
         try:
             origin = self._peer_origin(hostname)
-            response = self._peers.get(f"{origin}/health", headers=self._headers(b""))
+            response = self._peers.get(
+                f"{origin}/health", headers=self._headers("GET", "/health", b"")
+            )
             response.raise_for_status()
             pending = int(response.json().get("pending", 0))
         except (httpx.HTTPError, ValueError, TypeError) as error:
             return HealthUnknown(str(error))
         return Drained() if pending == 0 else Working(pending)
 
-    def _headers(self, body: bytes) -> Mapping[str, str]:
+    def _headers(self, method: str, path: str, body: bytes) -> Mapping[str, str]:
         import time
 
         timestamp = f"{time.time():.3f}"
+        digest = body_digest(body)
         return {
             "Content-Type": "application/json",
             "X-Mesh-Ts": timestamp,
-            "X-Mesh-Auth": sign(self.secret, timestamp, body),
+            "X-Mesh-Body": digest,
+            "X-Mesh-Auth": sign_request(
+                self.secret, method, path, timestamp, len(body), digest
+            ),
         }
 
     # -- MeshView -----------------------------------------------------------
