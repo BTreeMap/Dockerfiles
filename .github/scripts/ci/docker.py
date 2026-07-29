@@ -208,7 +208,10 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
             try:
                 subprocess.run(command, check=True)
                 return BuildSucceeded(
-                    task=task, attempts=attempt, duration_seconds=time.monotonic() - started
+                    task=task,
+                    attempts=attempt,
+                    duration_seconds=time.monotonic() - started,
+                    started_at=started,
                 )
             except (subprocess.CalledProcessError, OSError) as error:
                 last_error = str(error)
@@ -225,4 +228,5 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
         duration_seconds=time.monotonic() - started,
         error=last_error,
         metrics=collect_metrics(),
+        started_at=started,
     )

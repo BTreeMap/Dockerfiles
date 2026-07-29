@@ -136,6 +136,11 @@ class BuildSucceeded:
     task: Task
     attempts: int
     duration_seconds: float
+    # Monotonic clock reading when the build began. Kept alongside the duration
+    # so overlaps between concurrent builds can be reconstructed afterwards --
+    # which is what turns "are the slots actually busy?" into a measurement
+    # rather than an assumption.
+    started_at: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +150,7 @@ class BuildFailed:
     duration_seconds: float
     error: str
     metrics: dict[str, str]
+    started_at: float = 0.0
 
 
 # Replaces a (success: bool, error: str | None, metrics: dict | None) record in

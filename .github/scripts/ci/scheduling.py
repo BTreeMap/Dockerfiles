@@ -191,6 +191,7 @@ def run_worker(
                     duration_seconds=clock() - started,
                     error=f"unhandled {type(error).__name__}: {error}",
                     metrics={},
+                    started_at=started,
                 )
             )
 

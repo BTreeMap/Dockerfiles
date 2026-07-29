@@ -23,6 +23,11 @@ env:
   # from its peers when it runs dry, so this only needs to be in the right
   # neighbourhood -- it is not a partition that has to be balanced.
   WORKER_COUNT: 4
+  # Concurrent builds per worker. Empirical, not architectural: these builds
+  # wait on the network far more than on a core, so the CPU count is only a
+  # starting point. Tune against the effective-parallelism figure each worker
+  # reports in the job summary, and watch disk -- that is what collides first.
+  BUILD_SLOTS: 4
   UV_PROJECT: .github/scripts
 
 jobs:
@@ -113,6 +118,7 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
           WORKER_ID: ${{ matrix.worker_id }}
           WORKER_COUNT: ${{ env.WORKER_COUNT }}
+          BUILD_SLOTS: ${{ env.BUILD_SLOTS }}
           WORKER_TASKS: ${{ toJSON(matrix.tasks) }}
           # Optional. A repository secret rather than a job output: GitHub
           # scrubs masked values out of outputs entirely, and echoes step env

@@ -33,23 +33,41 @@ from ci.logs import configure
 from ci.mesh import MeshClient, Rendezvous, SoloMesh, derive_run_key, serve_mesh
 from ci.scheduling import TaskQueue, run_worker
 from ci.tunnel import Installed, InstallFailed, quick_tunnel, resolve_binary
+from ci.utilisation import effective_parallelism, intervals_of, peak_concurrency
 
 logger = logging.getLogger("ci.worker")
 
 GITHUB_API = "https://api.github.com"
 
 
-def summarise(worker_id: int, outcomes: tuple[BuildOutcome, ...], dealt: frozenset[str]) -> None:
-    """Reports per-image timings and steal origin.
+def summarise(
+    worker_id: int, outcomes: tuple[BuildOutcome, ...], dealt: frozenset[str], slots: int
+) -> None:
+    """Reports per-image timings, steal origin, and how busy the slots were.
 
     Durations are recorded not to feed a scheduler -- stealing needs no cost
     estimates -- but so the slowest image stays visible, since that is the floor
     no amount of parallelism can go below.
+
+    Effective parallelism is the number to tune BUILD_SLOTS against. Materially
+    below the slot count means slots idled waiting for work, so raising it buys
+    nothing. At or near it means they were saturated and a higher count is worth
+    testing -- against disk, which is what actually collides.
     """
     rows = sorted(outcomes, key=lambda outcome: -outcome.duration_seconds)
+    spans = intervals_of((o.started_at, o.duration_seconds) for o in outcomes)
+    achieved = effective_parallelism(spans)
+    total = sum(o.duration_seconds for o in outcomes)
+
     write_summary(
         [
             f"### Worker {worker_id}",
+            "",
+            f"- slots configured: **{slots}**",
+            f"- effective parallelism: **{achieved:.2f}** "
+            f"({achieved / slots * 100:.0f}% of configured)",
+            f"- peak concurrent builds: **{peak_concurrency(spans)}**",
+            f"- build time total {total / 60:.1f} min across {len(outcomes)} image(s)",
             "",
             "| Image | Result | Attempts | Duration | Origin |",
             "| --- | --- | --- | --- | --- |",
@@ -107,7 +125,14 @@ def main() -> int:
         repository=require("GITHUB_REPOSITORY"), run_id=run_id, platform=platform
     )
 
-    slots = max(1, os.cpu_count() or 1)
+    # Overridable because the right value is empirical: these builds are
+    # dominated by network fetches and layer I/O, so the core count is only a
+    # starting point. Tune against the effective-parallelism figure in the job
+    # summary, and against disk -- several of these images write multi-gigabyte
+    # layers, and disk is what actually collides on a runner.
+    detected = max(1, os.cpu_count() or 1)
+    slots = require_int("BUILD_SLOTS", detected)
+    logger.info("Using %d build slot(s) (runner reports %d CPU(s))", slots, detected)
 
     def build(task: Task) -> BuildOutcome:
         return build_and_push(task, identity)
@@ -163,7 +188,7 @@ def main() -> int:
             # per core raises throughput well past a single build.
             outcomes = run_worker(queue=queue, mesh=client, execute=build, slots=slots)
 
-    summarise(worker_id, outcomes, dealt)
+    summarise(worker_id, outcomes, dealt, slots)
 
     failures = tuple(outcome for outcome in outcomes if isinstance(outcome, BuildFailed))
     successes = tuple(outcome for outcome in outcomes if isinstance(outcome, BuildSucceeded))
