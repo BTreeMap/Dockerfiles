@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 
+"""
+Mesh worker: builds the tasks it was dealt, and steals more when it runs dry.
 
-import glob
+The scheduling model is deliberately minimal. Each worker starts with a disjoint
+share of the run's tasks, so it makes progress immediately without talking to
+anyone. Coordination only happens on the idle path, and every part of it is
+allowed to fail: an unreachable peer costs a missed steal, never a missed build.
+The reconcile stage is what turns that into a guarantee.
+"""
+
+
+import json
 import logging
-import multiprocessing
 import os
 import random
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any
+
+from mesh import MeshClient, MeshServer, Task, TaskQueue, run_worker
 
 
 @dataclass
@@ -20,6 +30,8 @@ class BuildResult:
     image_name: str
     success: bool
     attempts: int
+    duration_seconds: float
+    stolen: bool = False
     error_msg: str | None = None
     system_metrics: dict | None = None
 
@@ -89,8 +101,9 @@ def free_disk_space() -> None:
     """
     Removes unnecessary packages and directories to free up disk space for Docker builds.
 
-    This function executes a series of cleanup operations targeting commonly unused
-    packages in CI environments, helping prevent "no space left on device" errors.
+    Still worth its runtime: a worker runs cpu_count() builds concurrently, and
+    several of these images write multi-gigabyte layers, so disk -- not CPU -- is
+    the resource that actually collides on a runner.
     """
     logger.info("Current disk space before cleanup:")
     subprocess.run(["df", "-h"], check=False)
@@ -136,7 +149,8 @@ def init_logger() -> logging.Logger:
 
     handler = logging.StreamHandler(sys.stdout)
     formatter = logging.Formatter(
-        "[%(asctime)s][%(levelname)s] %(message)s", datefmt="%Y-%m-%d.%H-%M-%S"
+        "[%(asctime)s][%(levelname)s][%(threadName)s] %(message)s",
+        datefmt="%Y-%m-%d.%H-%M-%S",
     )
     handler.setFormatter(formatter)
     logger_obj.addHandler(handler)
@@ -235,37 +249,33 @@ def log_system_metrics(metrics: dict[str, str] | None = None) -> None:
         )
 
 
-def build_and_push_image(build_args: tuple[Any, ...]) -> BuildResult:
-    """Builds and pushes a Docker image with retry logic and metrics collection."""
-    (
-        dockerfile_path,
-        base_image,
-        date_str,
-        date_time_str,
-        commit_hash,
-        max_retries,
-        logger_lock,
-        docker_platform,
-    ) = build_args
-
-    # Derive image name from parent directory of Dockerfile
-    directory_path = os.path.dirname(dockerfile_path)
-    image_name_dir = os.path.basename(directory_path).lower()
-
-    # Construct tags with multiple variants for deployment flexibility
-    tags = [
-        f"{base_image}:{image_name_dir}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.latest.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{date_str}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{date_time_str}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{commit_hash}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{commit_hash}.{date_str}.{docker_platform}",
-        f"{base_image}:{image_name_dir}.{commit_hash}.{date_time_str}.{docker_platform}",
+def build_tags(task: Task, base_image: str, date_str: str, date_time_str: str, commit_hash: str) -> list[str]:
+    """Constructs the tag variants published for a single platform build."""
+    return [
+        f"{base_image}:{task.image}.{task.platform}",
+        f"{base_image}:{task.image}.latest.{task.platform}",
+        f"{base_image}:{task.image}.{date_str}.{task.platform}",
+        f"{base_image}:{task.image}.{date_time_str}.{task.platform}",
+        f"{base_image}:{task.image}.{commit_hash}.{task.platform}",
+        f"{base_image}:{task.image}.{commit_hash}.{date_str}.{task.platform}",
+        f"{base_image}:{task.image}.{commit_hash}.{date_time_str}.{task.platform}",
     ]
 
-    builder_name = f"builder_{image_name_dir}"
 
-    # Build command with multi-platform support
+def build_and_push_image(
+    task: Task,
+    base_image: str,
+    date_str: str,
+    date_time_str: str,
+    commit_hash: str,
+) -> BuildResult:
+    """Builds and pushes a Docker image with retry logic and metrics collection."""
+    tags = build_tags(task, base_image, date_str, date_time_str, commit_hash)
+
+    # Namespaced by platform as well as image: a stolen task may land on a worker
+    # that is already building the same image for the other platform.
+    builder_name = f"builder_{task.image}_{task.platform}"
+
     buildx_command = [
         "docker",
         "buildx",
@@ -276,70 +286,66 @@ def build_and_push_image(build_args: tuple[Any, ...]) -> BuildResult:
         "--builder",
         builder_name,
         "--platform",
-        f"linux/{docker_platform}",
+        f"linux/{task.platform}",
     ]
     for tag in tags:
         buildx_command.extend(["--tag", tag])
-    buildx_command.extend(["--file", dockerfile_path, directory_path])
+    buildx_command.extend(["--file", task.dockerfile, task.context])
 
-    # Builder management commands
     create_builder_command = ["docker", "buildx", "create", "--name", builder_name]
     remove_builder_command = ["docker", "buildx", "rm", builder_name]
+
+    started_at = time.monotonic()
 
     try:
         error_msg = "Unknown error"
         subprocess.run(create_builder_command, check=True)
 
+        max_retries = task.max_retries
         unlimited_retries = max_retries <= 0
         attempt = 0
 
         while unlimited_retries or attempt < max_retries:
             attempt += 1
             try:
-                # Match the sample script’s attempt formatting for unlimited retries.
                 if unlimited_retries:
                     attempt_suffix = f"{attempt}/∞"
                 else:
                     attempt_suffix = f"{attempt}/{max_retries}"
 
-                with logger_lock:
-                    logger.info(
-                        f"Attempting build for image '{tags[0]}' (attempt {attempt_suffix}) with tags:"
-                    )
-                    for tag in tags:
-                        logger.info(f"  - {tag}")
+                logger.info(
+                    f"Attempting build for image '{tags[0]}' (attempt {attempt_suffix}) with tags:"
+                )
+                for tag in tags:
+                    logger.info(f"  - {tag}")
 
                 subprocess.run(buildx_command, check=True)
                 return BuildResult(
                     image_name=tags[0],
                     success=True,
                     attempts=attempt,
+                    duration_seconds=time.monotonic() - started_at,
                 )
 
             except BaseException as e:
                 error_msg = str(e)
-                with logger_lock:
-                    logger.warning(
-                        f"Build attempt {attempt} of {max_retries} failed for image '{tags[0]}': {e}",
-                        exc_info=True,
-                    )
+                logger.warning(
+                    f"Build attempt {attempt} of {max_retries} failed for image '{tags[0]}': {e}",
+                    exc_info=True,
+                )
 
-                # If retries are bounded and we've exhausted them, fall through to failure handling.
                 if (not unlimited_retries) and attempt >= max_retries:
                     break
 
-                # Backoff before next retry (silent to minimize behavior/log changes).
                 time.sleep(_compute_backoff_seconds(attempt=attempt))
 
-        with logger_lock:
-            logger.error(
-                f"All {max_retries} build attempts failed for image '{tags[0]}'."
-            )
+        logger.error(f"All {max_retries} build attempts failed for image '{tags[0]}'.")
 
         return BuildResult(
             image_name=tags[0],
             success=False,
-            attempts=max_retries,
+            attempts=attempt,
+            duration_seconds=time.monotonic() - started_at,
             error_msg=error_msg,
             system_metrics=collect_system_metrics(),
         )
@@ -348,81 +354,135 @@ def build_and_push_image(build_args: tuple[Any, ...]) -> BuildResult:
         subprocess.run(remove_builder_command, check=False)
 
 
+def write_summary(results: list[BuildResult], worker_id: int) -> None:
+    """Emits per-image timings and steal outcomes to the job summary.
+
+    Durations are recorded not to feed a scheduler -- the mesh needs no cost
+    estimates -- but so the tail image is visible, since that is the floor no
+    amount of parallelism can go below.
+    """
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+
+    lines = [
+        f"### Worker {worker_id}",
+        "",
+        "| Image | Result | Attempts | Duration | Origin |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for result in sorted(results, key=lambda r: -r.duration_seconds):
+        status = "ok" if result.success else "**failed**"
+        origin = "stolen" if result.stolen else "dealt"
+        lines.append(
+            f"| `{result.image_name.split(':')[-1]}` | {status} | {result.attempts} "
+            f"| {result.duration_seconds / 60:.1f} min | {origin} |"
+        )
+    lines.append("")
+
+    with open(summary_path, "a") as handle:
+        handle.write("\n".join(lines))
+
+
 def main() -> None:
     global logger
 
     logger = init_logger()
+    logging.getLogger("mesh").addHandler(logger.handlers[0])
+    logging.getLogger("mesh").setLevel(logging.INFO)
+    logging.getLogger("mesh").propagate = False
 
-    # Free up disk space before starting builds
     free_disk_space()
 
-    # Configuration from environment variables
     docker_registry = get_env_var("DOCKER_REGISTRY").lower()
     docker_image_name = get_env_var("DOCKER_IMAGE_NAME").lower()
-    docker_platform = get_env_var("DOCKER_PLATFORM", "amd64").lower()
-    max_retries = int(get_env_var("MAX_RETRIES", "3"))
     github_sha = get_env_var("GITHUB_SHA")
-
-    # Timestamping for image tags
     date_str = get_env_var("DATE_STR")
     date_time_str = get_env_var("DATE_TIME_STR")
     base_image = f"{docker_registry}/{docker_image_name}"
 
-    logger.info(f"Initializing build process with base image path: {base_image}")
+    worker_id = int(get_env_var("WORKER_ID"))
+    platform = get_env_var("DOCKER_PLATFORM")
+    mesh_secret = get_env_var("MESH_SECRET")
+    repository = get_env_var("GITHUB_REPOSITORY")
+    run_id = get_env_var("GITHUB_RUN_ID")
+    token = get_env_var("GITHUB_TOKEN")
 
-    # Locate Dockerfiles in current directory tree
-    dockerfiles = glob.glob("**/Dockerfile", recursive=True)
-    if not dockerfiles:
-        logger.error("No Dockerfiles found in the current directory or subdirectories.")
-        sys.exit(1)
+    tasks = [Task.from_dict(entry) for entry in json.loads(get_env_var("WORKER_TASKS"))]
+    initial_images = {task.image for task in tasks}
 
-    # Sort for consistent processing order
-    dockerfiles.sort(reverse=True)
-    logger.info(f"Found {len(dockerfiles)} Dockerfiles:")
-    for dockerfile in dockerfiles:
-        logger.info(f"  - {dockerfile}")
-
-    # Prepare parallel build arguments
-    args_list: list[tuple[Any, ...]] = []
-    manager = multiprocessing.Manager()
-    logger_lock = manager.Lock()
-
-    for dockerfile in dockerfiles:
-        args = (
-            dockerfile,
-            base_image,
-            date_str,
-            date_time_str,
-            github_sha,
-            max_retries,
-            logger_lock,
-            docker_platform,
-        )
-        args_list.append(args)
-
-    # Execute parallel builds using process pool
-    num_processes = multiprocessing.cpu_count()
     logger.info(
-        f"Parallel builds initiated with {num_processes} worker processes (based on available CPUs)."
+        f"Worker {worker_id} ({platform}) dealt {len(tasks)} task(s): "
+        f"{', '.join(sorted(initial_images)) or 'none'}"
     )
 
-    with multiprocessing.Pool(processes=num_processes) as pool:
-        results = pool.map(build_and_push_image, args_list)
+    queue = TaskQueue(tasks)
 
-    # Process build results
-    failed_builds = [result for result in results if not result.success]
+    server = MeshServer(worker_id=worker_id, secret=mesh_secret, queue=queue)
+    hostname = server.start()
+
+    client = MeshClient(
+        secret=mesh_secret,
+        worker_id=worker_id,
+        repository=repository,
+        run_id=run_id,
+        platform=platform,
+        token=token,
+    )
+    if hostname:
+        client.publish(hostname, github_sha)
+
+    collected: list[BuildResult] = []
+
+    def execute(task: Task) -> bool:
+        result = build_and_push_image(
+            task=task,
+            base_image=base_image,
+            date_str=date_str,
+            date_time_str=date_time_str,
+            commit_hash=github_sha,
+        )
+        result.stolen = task.image not in initial_images
+        collected.append(result)
+        return result.success
+
+    # cpu_count() concurrent builds: Docker builds here are dominated by network
+    # fetches and layer I/O rather than compute, so oversubscribing the cores is
+    # what actually raises throughput.
+    slots = max(1, os.cpu_count() or 1)
+
+    try:
+        run_worker(
+            queue=queue,
+            client=client,
+            execute=execute,
+            slots=slots,
+            expected_peers=int(get_env_var("WORKER_COUNT", "4")) - 1,
+        )
+    finally:
+        server.stop()
+
+    write_summary(collected, worker_id)
+
+    failed_builds = [result for result in collected if not result.success]
+
+    logger.info(
+        f"Worker {worker_id} completed {len(collected)} build(s), "
+        f"{len(failed_builds)} failed."
+    )
 
     if failed_builds:
         logger.error("Build failures detected:")
         for failure in failed_builds:
             logger.error(
-                f"Image '{failure.image_name}' failed after {failure.attempts} attempts. Last error: {failure.error_msg}"
+                f"Image '{failure.image_name}' failed after {failure.attempts} attempts. "
+                f"Last error: {failure.error_msg}"
             )
             logger.error("System status during failure:")
             log_system_metrics(failure.system_metrics)
         sys.exit(1)
     else:
-        logger.info("All Docker builds completed successfully.")
+        logger.info("All Docker builds on this worker completed successfully.")
 
 
 if __name__ == "__main__":

@@ -12,9 +12,13 @@ env:
   DOCKER_REGISTRY: ghcr.io
   GITHUB_SHA: ${{ github.sha }}
   MAX_RETRIES: 50
+  # Workers per platform. Each runs cpu_count() concurrent builds and steals
+  # from its peers when it runs dry, so this only needs to be in the right
+  # neighbourhood -- it is not a partition that has to be balanced.
+  WORKER_COUNT: 4
 
 jobs:
-  setup-timestamp:
+  plan:
     # Run the job if triggered by a scheduled event or a push with a specific commit message
     if: github.event_name == 'schedule' || (github.event_name == 'push' && contains(github.event.head_commit.message, 'run-ci'))
     runs-on: ubuntu-24.04
@@ -22,46 +26,57 @@ jobs:
       date: ${{ steps.timestamp.outputs.date }}
       date_time: ${{ steps.timestamp.outputs.date_time }}
       source_date_epoch: ${{ steps.timestamp.outputs.source_date_epoch }}
+      matrix: ${{ steps.discover.outputs.matrix }}
+      mesh_secret: ${{ steps.discover.outputs.mesh_secret }}
+      images: ${{ steps.discover.outputs.images }}
+      platforms: ${{ steps.discover.outputs.platforms }}
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
       - name: Generate build timestamp
         id: timestamp
         run: |
           # Capture the current time as a Unix timestamp
           now=$(date '+%s')
-          
+
           # Format the date variables using the captured timestamp
           date=$(date -u -d "@$now" '+%Y-%m-%d')
           date_time=$(date -u -d "@$now" '+%Y-%m-%d.%H-%M-%S')
-          
+
           # Get the first day of the current month at 00:00 UTC
           year_month=$(date -u -d "@$now" '+%Y-%m')
           source_date_epoch=$(date -u -d "${year_month}-01 00:00:00" '+%s')
-          
+
           echo "date=$date" >> $GITHUB_OUTPUT
           echo "date_time=$date_time" >> $GITHUB_OUTPUT
           echo "source_date_epoch=$source_date_epoch" >> $GITHUB_OUTPUT
 
-  build-matrix:
-    needs: setup-timestamp
+      # Single source of truth for the work list: deals disjoint task shares to
+      # the workers and mints the run-scoped mesh secret.
+      - name: Discover and deal build tasks
+        id: discover
+        run: python3 .github/scripts/discover_tasks.py
+        env:
+          PLATFORMS: amd64,arm64
+          WORKER_COUNT: ${{ env.WORKER_COUNT }}
+          MAX_RETRIES: ${{ env.MAX_RETRIES }}
+
+  build:
+    needs: plan
     runs-on: ${{ matrix.runner }}
     strategy:
-      matrix:
-        include:
-          - platform: amd64
-            runner: ubuntu-24.04
-          - platform: arm64
-            runner: ubuntu-24.04-arm
+      # One worker's failure must not cancel its peers: they may already be
+      # holding tasks stolen from it, and reconcile handles whatever is left.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     permissions:
-      contents: read
+      contents: write   # publish and read the mesh rendezvous refs
       packages: write
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
-
-      # Set up Docker Buildx (Builder for multi-platform images)
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
 
       # Login to Docker Registry
       - name: Log into Docker Registry ${{ env.DOCKER_REGISTRY }}
@@ -71,23 +86,63 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Set up Python Environment
-      - name: Set up Python Environment
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
+      # Quick tunnels need no Cloudflare account and no inbound connectivity,
+      # which is what makes an ad-hoc mesh between ephemeral runners possible.
+      - name: Install cloudflared
+        run: |
+          arch=$([ "${{ matrix.platform }}" = "arm64" ] && echo arm64 || echo amd64)
+          curl -fsSL -o /tmp/cloudflared \
+            "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}"
+          sudo install -m 0755 /tmp/cloudflared /usr/local/bin/cloudflared
+          cloudflared --version
 
-      # Run Python script to discover and build Docker images in parallel
-      - name: Discover, Build, and Push Docker Images in Parallel
-        run: python .github/scripts/build_docker_images.py
+      - name: Build and push assigned images, stealing when idle
+        run: python3 .github/scripts/build_docker_images.py
         env:
-          DATE_STR: ${{ needs.setup-timestamp.outputs.date }}
-          DATE_TIME_STR: ${{ needs.setup-timestamp.outputs.date_time }}
+          PYTHONPATH: .github/scripts
+          DATE_STR: ${{ needs.plan.outputs.date }}
+          DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
           DOCKER_PLATFORM: ${{ matrix.platform }}
-          SOURCE_DATE_EPOCH: ${{ needs.setup-timestamp.outputs.source_date_epoch }}
+          SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
+          WORKER_ID: ${{ matrix.worker_id }}
+          WORKER_COUNT: ${{ env.WORKER_COUNT }}
+          WORKER_TASKS: ${{ toJSON(matrix.tasks) }}
+          MESH_SECRET: ${{ needs.plan.outputs.mesh_secret }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Runs regardless of how the build stage ended. The registry decides what
+  # actually got built; anything missing is rebuilt here.
+  reconcile:
+    needs: [plan, build]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # delete the run's mesh refs
+      packages: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
+      - name: Log into Docker Registry ${{ env.DOCKER_REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify every expected image landed, rebuild what did not
+        run: python3 .github/scripts/reconcile_builds.py
+        env:
+          PYTHONPATH: .github/scripts
+          DATE_STR: ${{ needs.plan.outputs.date }}
+          DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
+          SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
+          IMAGES: ${{ needs.plan.outputs.images }}
+          PLATFORMS: ${{ needs.plan.outputs.platforms }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create-manifest:
-    needs: [setup-timestamp, build-matrix]
+    needs: [plan, reconcile]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -108,16 +163,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Set up Python Environment
-      - name: Set up Python Environment
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
       # Run Python script to create and push Docker manifests
       - name: Create and Push Docker Manifests
-        run: python .github/scripts/create_docker_manifests.py
+        run: python3 .github/scripts/create_docker_manifests.py
         env:
-          DATE_STR: ${{ needs.setup-timestamp.outputs.date }}
-          DATE_TIME_STR: ${{ needs.setup-timestamp.outputs.date_time }}
+          DATE_STR: ${{ needs.plan.outputs.date }}
+          DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
+          IMAGES: ${{ needs.plan.outputs.images }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}

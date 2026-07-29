@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 
-import glob
+import json
 import logging
 import multiprocessing
 import os
@@ -170,20 +170,18 @@ def main() -> None:
     base_image = f"{docker_registry}/{docker_image_name}"
     logger.info(f"Base image: {base_image}")
 
-    # Locate Dockerfiles
-    dockerfiles = glob.glob("**/Dockerfile", recursive=True)
-    if not dockerfiles:
-        logger.error("No Dockerfiles found.")
+    # The image list comes from the discovery stage rather than a second glob,
+    # so the build and manifest stages cannot disagree about which images exist.
+    images = json.loads(get_env_var("IMAGES"))
+    if not images:
+        logger.error("No images supplied by the discovery stage.")
         sys.exit(1)
 
-    dockerfiles.sort(reverse=True)
-    logger.info(f"Found {len(dockerfiles)} Dockerfiles:")
+    logger.info(f"Creating manifests for {len(images)} image(s):")
 
     tasks: list[tuple[Any, ...]] = []
 
-    for dockerfile in dockerfiles:
-        dir_path = os.path.dirname(dockerfile)
-        image_name_dir = os.path.basename(dir_path).lower()
+    for image_name_dir in images:
         logger.info(f"Processing image: {image_name_dir}")
 
         base_tags = [
