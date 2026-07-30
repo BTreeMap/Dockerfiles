@@ -9,12 +9,25 @@ dependencies = [
     "httpx[http2]>=0.28.1",
     # P-256 keys for MASQUE enrolment.
     "cryptography>=44.0.0",
+    # The parse boundary. Every untrusted value in this project -- environment
+    # JSON, a peer's stolen-task payload, a hostname read back from a mutable
+    # git ref -- crosses into the domain through a pydantic decoder, so the
+    # schema is declared once and enforced identically on both the encoding and
+    # decoding side. Types the code constructs itself stay stdlib dataclasses:
+    # validating a value we just built is ceremony, not safety.
+    "pydantic>=2.9",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3.4",
     "ruff>=0.9.4",
+    # The domain model is built out of closed sums eliminated with
+    # `assert_never`. That construction only means anything if something
+    # actually checks exhaustiveness -- without a type checker, `assert_never`
+    # is a comment that costs a function call. It is a dev dependency because
+    # it gates merges, not builds.
+    "mypy>=1.14",
 ]
 
 [tool.uv]
@@ -34,3 +47,15 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RET"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.mypy]
+python_version = "3.12"
+files = ["ci", "tests", "build_docker_images.py", "create_docker_manifests.py",
+         "discover_tasks.py", "reconcile_builds.py", "setup_egress.py"]
+strict = true
+# The point of the strict setting above is exhaustiveness. These two make a
+# forgotten variant an error rather than a shrug: without them a non-exhaustive
+# `match` over a union silently infers `None` and `assert_never` never fires.
+warn_unreachable = true
+disallow_any_explicit = false
+

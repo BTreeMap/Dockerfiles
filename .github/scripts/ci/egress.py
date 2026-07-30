@@ -44,30 +44,30 @@ from __future__ import annotations
 
 import base64
 import datetime
-import gzip
-import hashlib
 import logging
 import os
 import re
-import shutil
 import socket
-import stat
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from platform import machine
+from typing import Annotated
 
 import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, x25519
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
-from ci.domain import EgressStatus, Platform, ProxyReady, ProxyUnavailable
-
-# The install contract is identical to cloudflared's -- fetch a pinned asset,
-# prove its digest, then make it executable -- so the outcome type is shared
-# rather than duplicated under a second set of names.
-from ci.tunnel import Installed, InstallFailed, InstallOutcome
+from ci.assets import Encoding, resolve
+from ci.domain import (
+    EgressStatus,
+    InstallOutcome,
+    Platform,
+    ProxyReady,
+    ProxyUnavailable,
+)
 
 logger = logging.getLogger("ci.egress")
 
@@ -85,8 +85,6 @@ _DIGESTS: dict[Platform, str] = {
 _RELEASE_URL = (
     "https://github.com/MetaCubeX/mihomo/releases/download/{version}/mihomo-linux-{arch}-{version}.gz"
 )
-
-_DOWNLOAD_CHUNK_BYTES = 1 << 20
 
 # Consumer WARP registration. The Zero Trust variant needs an Access JWT and
 # enrols against a different endpoint; this repository has no such tenant, so
@@ -165,6 +163,63 @@ class RegistrationFailed:
 RegistrationOutcome = MasqueNode | RegistrationFailed
 
 
+# --- what Cloudflare's registration API is allowed to say -------------------
+#
+# These describe someone else's JSON, which is why they are declared rather than
+# navigated. The `.get("a", {}).get("b", {}).get("c")` chains they replace were
+# not merely verbose: each link silently substituted an empty dict for a shape
+# that did not arrive, so a response whose `config` was a string rather than an
+# object raised `AttributeError` from the middle of the chain -- an exception
+# `register` does not catch, since it guards only `HTTPError` and `ValueError`.
+# Every field below is optional with a stated default except the two that are
+# genuinely required, so a shape change downgrades the tunnel instead of
+# crashing the step.
+
+
+class _Policy(BaseModel):
+    tunnel_protocol: str | None = None
+
+
+class _Enrolment(BaseModel):
+    """The device identity minted by the first round trip."""
+
+    # The only two fields without a fallback: there is nothing to PATCH without
+    # them, so their absence is the one registration failure worth naming.
+    id: Annotated[str, Field(min_length=1)]
+    token: Annotated[str, Field(min_length=1)]
+    policy: _Policy = _Policy()
+
+
+class _Addresses(BaseModel):
+    # `None` rather than the fallback as a default, so that a present-but-empty
+    # value falls back too -- preserving the `or` the chain used to apply.
+    v4: str | None = None
+    v6: str | None = None
+
+
+class _Interface(BaseModel):
+    addresses: _Addresses = _Addresses()
+
+
+class _Assignment(BaseModel):
+    interface: _Interface = _Interface()
+
+
+class _Provisioned(BaseModel):
+    """The PATCH response carrying the addresses the tunnel will use."""
+
+    config: _Assignment = _Assignment()
+
+
+_ENROLMENT: TypeAdapter[_Enrolment] = TypeAdapter(_Enrolment)
+_PROVISIONED: TypeAdapter[_Provisioned] = TypeAdapter(_Provisioned)
+
+# Used when Cloudflare returns no address of its own. WARP hands out the same
+# pair in practice, so these keep a tunnel usable rather than inventing one.
+_FALLBACK_V4 = "172.16.0.2"
+_FALLBACK_V6 = "fd00::2"
+
+
 # --- binary ----------------------------------------------------------------
 
 
@@ -188,78 +243,20 @@ def host_platform() -> Platform | None:
     return _HOST_ARCHITECTURES.get(machine().lower())
 
 
-def _digest_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(_DOWNLOAD_CHUNK_BYTES):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def install(
-    platform: Platform,
-    destination: Path,
-    version: str = VERSION,
-    timeout_seconds: float = 180.0,
-) -> InstallOutcome:
-    """Fetches, verifies, and decompresses mihomo, reusing an existing binary.
-
-    The digest is checked on the compressed download before a single byte is
-    decompressed, and the executable bit is set only on a proven file that is
-    then moved into place -- so a torn or substituted asset can never be run,
-    and a failed attempt leaves nothing half-installed to be picked up next time.
-    """
-    expected = _DIGESTS.get(platform)
-    if expected is None:
-        return InstallFailed(f"no pinned digest for platform {platform}")
-
-    if destination.exists():
-        logger.info("mihomo %s already present", version)
-        return Installed(path=destination, version=version)
-
-    url = _RELEASE_URL.format(version=version, arch=platform)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    compressed = destination.with_suffix(".gz.partial")
-    staging = destination.with_suffix(".partial")
-
-    try:
-        with httpx.stream("GET", url, follow_redirects=True, timeout=timeout_seconds) as response:
-            response.raise_for_status()
-            with compressed.open("wb") as handle:
-                for chunk in response.iter_bytes(_DOWNLOAD_CHUNK_BYTES):
-                    handle.write(chunk)
-    except (httpx.HTTPError, OSError) as error:
-        compressed.unlink(missing_ok=True)
-        return InstallFailed(f"download failed: {error}")
-
-    actual = _digest_of(compressed)
-    if actual != expected:
-        compressed.unlink(missing_ok=True)
-        return InstallFailed(f"digest mismatch: expected {expected}, got {actual}")
-
-    try:
-        with gzip.open(compressed, "rb") as source, staging.open("wb") as handle:
-            shutil.copyfileobj(source, handle, _DOWNLOAD_CHUNK_BYTES)
-    except (OSError, gzip.BadGzipFile) as error:
-        compressed.unlink(missing_ok=True)
-        staging.unlink(missing_ok=True)
-        return InstallFailed(f"decompression failed: {error}")
-
-    compressed.unlink(missing_ok=True)
-    staging.chmod(staging.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    staging.replace(destination)
-    logger.info("Installed mihomo %s (digest verified)", version)
-    return Installed(path=destination, version=version)
-
-
 def resolve_binary(platform: Platform, cache_dir: Path | None = None) -> InstallOutcome:
     """Returns a usable mihomo, preferring one already on PATH."""
-    on_path = shutil.which("mihomo")
-    if on_path is not None:
-        return Installed(path=Path(on_path), version="preinstalled")
-
     root = cache_dir or Path(os.environ.get("RUNNER_TOOL_CACHE", "/tmp")) / "mihomo"
-    return install(platform, root / f"mihomo-{VERSION}")
+    return resolve(
+        name="mihomo",
+        url=_RELEASE_URL.format(version=VERSION, arch=platform),
+        expected_digest=_DIGESTS.get(platform),
+        destination=root / f"mihomo-{VERSION}",
+        # The published asset is gzipped, which is the only way this differs
+        # from the cloudflared fetch -- and the reason the digest below is of
+        # the compressed bytes.
+        encoding=Encoding.GZIP,
+        version=VERSION,
+    )
 
 
 # --- registration ----------------------------------------------------------
@@ -325,36 +322,43 @@ def register(timeout_seconds: float = 15.0) -> RegistrationOutcome:
         with httpx.Client(http2=True, timeout=timeout_seconds) as client:
             response = client.post(_REGISTRATION_URL, headers=_CLIENT_HEADERS, json=payload)
             response.raise_for_status()
-            registration = response.json()
+            try:
+                enrolment = _ENROLMENT.validate_json(response.content)
+            except ValidationError as error:
+                # Named separately from the generic failure below because this
+                # is the one shape problem with a specific remedy: without an id
+                # and a token there is nothing to PATCH.
+                return RegistrationFailed(
+                    f"registration returned no usable device id or token: "
+                    f"{error.errors()[0]['msg']}"
+                )
 
-            device_id = registration.get("id")
-            device_token = registration.get("token")
-            if not device_id or not device_token:
-                return RegistrationFailed("registration returned no device id or token")
-
-            patch_headers = {**_CLIENT_HEADERS, "Authorization": f"Bearer {device_token}"}
+            patch_headers = {**_CLIENT_HEADERS, "Authorization": f"Bearer {enrolment.token}"}
             patch_payload: dict[str, str] = {"key": _ecdsa_public(private_key)}
 
             # A device whose assigned policy is already MASQUE has its protocol
             # allocated server-side; asserting it again would fight the backend.
-            if registration.get("policy", {}).get("tunnel_protocol") != "masque":
+            if enrolment.policy.tunnel_protocol != "masque":
                 patch_payload |= {"key_type": "masque", "tunnel_type": "masque"}
 
             patched = client.patch(
-                f"{_REGISTRATION_URL}/{device_id}",
+                f"{_REGISTRATION_URL}/{enrolment.id}",
                 headers=patch_headers,
                 json=patch_payload,
             )
             patched.raise_for_status()
-            config = patched.json().get("config", {})
+            provisioned = _PROVISIONED.validate_json(patched.content)
     except (httpx.HTTPError, ValueError) as error:
+        # ValidationError is a ValueError, so a PATCH response of an
+        # unrecognisable shape degrades here rather than escaping as the
+        # AttributeError the old `.get()` chain would have raised.
         return RegistrationFailed(f"{type(error).__name__}: {error}")
 
-    addresses = config.get("interface", {}).get("addresses", {})
+    addresses = provisioned.config.interface.addresses
     return MasqueNode(
         private_key=private_key,
-        address_v4=addresses.get("v4") or "172.16.0.2",
-        address_v6=addresses.get("v6") or "fd00::2",
+        address_v4=addresses.v4 or _FALLBACK_V4,
+        address_v6=addresses.v6 or _FALLBACK_V6,
     )
 
 

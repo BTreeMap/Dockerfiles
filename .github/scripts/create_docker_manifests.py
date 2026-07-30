@@ -7,14 +7,15 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
-import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from typing import assert_never
 
-from ci.docker import backoff_seconds, run_tag
+from ci.docker import run_tag
 from ci.domain import Platform
-from ci.env import BuildIdentity, require_int, require_json
+from ci.env import NAME_LIST, RETRIES, BuildIdentity, read, read_json
 from ci.logs import configure
+from ci.retry import Exhausted, Succeeded, with_retries
 
 logger = logging.getLogger("ci.manifests")
 
@@ -70,37 +71,32 @@ def push_manifest(
         *(run_tag(image, str(platform), identity) for platform in platforms),
     )
 
-    unlimited = max_retries <= 0
-    budget = "∞" if unlimited else str(max_retries)
-    attempt = 0
-    last_error = "no attempt was made"
+    def fuse() -> None:
+        subprocess.run(command, check=True)
 
-    while unlimited or attempt < max_retries:
-        attempt += 1
-        logger.info("Creating manifest for '%s' (attempt %d/%s)", image, attempt, budget)
-        try:
-            subprocess.run(command, check=True)
+    match with_retries(
+        operation=fuse,
+        max_retries=max_retries,
+        label=f"Creating manifest for '{image}'",
+        log=logger,
+    ):
+        case Succeeded(attempts):
             logger.info("Pushed manifest for '%s'", image)
-            return ManifestPushed(image=image, attempts=attempt)
-        except (subprocess.CalledProcessError, OSError) as error:
-            last_error = str(error)
-            logger.warning("Attempt %d/%s failed for '%s': %s", attempt, budget, image, error)
-
-        if not unlimited and attempt >= max_retries:
-            break
-        time.sleep(backoff_seconds(attempt))
-
-    logger.error("Failed to push manifest for '%s' after %d attempt(s)", image, attempt)
-    return ManifestFailed(image=image, attempts=attempt, error=last_error)
+            return ManifestPushed(image=image, attempts=attempts)
+        case Exhausted(attempts, error):
+            return ManifestFailed(image=image, attempts=attempts, error=error)
+        case other:
+            assert_never(other)
 
 
 def main() -> int:
     configure()
 
     identity = BuildIdentity.from_environment()
-    max_retries = require_int("MAX_RETRIES", 50)
-    images: list[str] = require_json("IMAGES")
-    platforms = tuple(filter(None, map(Platform.parse, require_json("PLATFORMS"))))
+    max_retries = read("MAX_RETRIES", RETRIES, default=50)
+    images = read_json("IMAGES", NAME_LIST)
+    architectures = read_json("PLATFORMS", NAME_LIST)
+    platforms = tuple(filter(None, map(Platform.parse, architectures)))
 
     if not images or not platforms:
         logger.error("Discovery supplied no images or no platforms.")

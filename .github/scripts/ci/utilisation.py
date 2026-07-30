@@ -60,11 +60,13 @@ def peak_concurrency(intervals: Sequence[Interval]) -> int:
     if not intervals:
         return 0
 
-    # +1 at every start, -1 at every end; ends sort before starts at equal times
-    # so a build that finishes exactly as another begins is not double-counted.
+    # +1 at every start, -1 at every end. Tuple ordering does the rest: at equal
+    # times -1 sorts before +1, so a build that finishes exactly as another
+    # begins is not double-counted. The explicit key this replaced rebuilt the
+    # tuple it was already sorting, which read as though it encoded that rule
+    # rather than restating the default.
     events = sorted(
-        [(start, 1) for start, _ in intervals] + [(end, -1) for _, end in intervals],
-        key=lambda event: (event[0], event[1]),
+        [(start, 1) for start, _ in intervals] + [(end, -1) for _, end in intervals]
     )
     running = peak = 0
     for _, delta in events:

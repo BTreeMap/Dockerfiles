@@ -9,9 +9,9 @@ import logging
 import sys
 from pathlib import Path
 
-from ci.discovery import ConflictingDockerfiles, deal, discover, seed_for
+from ci.discovery import ConflictingDockerfiles, MatrixEntry, deal, discover, seed_for
 from ci.domain import Platform
-from ci.env import optional, require_int, write_output
+from ci.env import COUNT, RETRIES, TEXT, read, write_output
 from ci.logs import configure
 
 logger = logging.getLogger("ci.discover")
@@ -21,16 +21,19 @@ def main() -> int:
     configure()
 
     platforms = tuple(
-        filter(None, map(Platform.parse, optional("PLATFORMS", "amd64,arm64").split(",")))
+        filter(None, map(Platform.parse, read("PLATFORMS", TEXT, default="amd64,arm64").split(",")))
     )
     if not platforms:
         logger.error("No valid platforms configured.")
         return 1
 
-    worker_count = require_int("WORKER_COUNT", 4)
+    # Bounded here so a misconfigured matrix is an explained environment error
+    # rather than the bare ValueError `deal` would otherwise raise from inside
+    # a comprehension.
+    worker_count = read("WORKER_COUNT", COUNT, default=4)
 
     try:
-        tasks = discover(Path.cwd(), platforms, require_int("MAX_RETRIES", 50))
+        tasks = discover(Path.cwd(), platforms, read("MAX_RETRIES", RETRIES, default=50))
     except ConflictingDockerfiles as conflict:
         logger.error("%s", conflict)
         return 1
@@ -41,13 +44,8 @@ def main() -> int:
 
     logger.info("Discovered %d tasks across %d platform(s).", len(tasks), len(platforms))
 
-    entries = [
-        {
-            "platform": str(platform),
-            "worker_id": worker_id,
-            "runner": platform.runner_label,
-            "tasks": [task.as_json() for task in share],
-        }
+    entries = tuple(
+        MatrixEntry(platform=platform, worker_id=worker_id, tasks=share)
         for platform in platforms
         for worker_id, share in enumerate(
             deal(
@@ -56,17 +54,12 @@ def main() -> int:
                 seed_for(platform),
             )
         )
-    ]
+    )
 
     for entry in entries:
-        logger.info(
-            "  %s worker %s: %s",
-            entry["platform"],
-            entry["worker_id"],
-            ", ".join(task["image"] for task in entry["tasks"]) or "(none)",
-        )
+        logger.info("  %s worker %d: %s", entry.platform, entry.worker_id, entry.summary)
 
-    write_output("matrix", json.dumps({"include": entries}))
+    write_output("matrix", json.dumps({"include": [entry.as_json() for entry in entries]}))
 
     # Reconcile fans out the same way the build stage does -- one job per
     # architecture, on a runner of that architecture -- so a rebuild never falls

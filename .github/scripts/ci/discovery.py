@@ -12,6 +12,10 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from itertools import groupby
 from operator import itemgetter
 from pathlib import Path
+from typing import Any
+
+from pydantic import TypeAdapter
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from ci.domain import Platform, Task
 
@@ -119,6 +123,45 @@ def deal(tasks: Sequence[Task], worker_count: int, seed: int) -> tuple[tuple[Tas
 
     shuffled = random.Random(seed).sample(tuple(tasks), len(tasks))
     return tuple(tuple(shuffled[offset::worker_count]) for offset in range(worker_count))
+
+
+@pydantic_dataclass(frozen=True)
+class MatrixEntry:
+    """One row of the build matrix: a worker, its platform, and its share.
+
+    A typed record rather than the `dict[str, object]` this used to be. That bag
+    mixed a string, an int, and a list of dicts under one key type, so every
+    field came back out as `object` and had to be re-narrowed by hand at each
+    use -- `", ".join(task["image"] for task in entry["tasks"])` was iterating a
+    value the checker could only prove was *something*.
+
+    Serialisation lives in `as_json`, matching `Task.as_json`, so the workflow's
+    wire format has one definition and the runner label cannot drift from the
+    platform it belongs to.
+    """
+
+    platform: Platform
+    worker_id: int
+    tasks: tuple[Task, ...]
+
+    @property
+    def summary(self) -> str:
+        """The images in this share, for one log line."""
+        return ", ".join(task.image for task in self.tasks) or "(none)"
+
+    def as_json(self) -> dict[str, Any]:
+        """The matrix row, serialised by the same schema that declares it.
+
+        `runner` is grafted on rather than stored, because it is a function of
+        the platform: keeping it as a field would make a row that names one
+        architecture and a runner for another representable, and that pairing is
+        the one mistake here nothing downstream could detect.
+        """
+        encoded: dict[str, Any] = _MATRIX_ENTRY.dump_python(self, mode="json")
+        return encoded | {"runner": self.platform.runner_label}
+
+
+_MATRIX_ENTRY: TypeAdapter[MatrixEntry] = TypeAdapter(MatrixEntry)
 
 
 # BLAKE2b personalisation, matching ci/mesh.py: the scope is mixed into the

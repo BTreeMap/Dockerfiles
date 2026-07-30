@@ -8,6 +8,10 @@ changes. None of these tests touch the network, Docker, or Cloudflare.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 import setup_egress
 from ci import egress
 from ci.docker import proxy_build_args
@@ -158,7 +162,7 @@ def test_host_platform_accepts_both_spellings_of_each_arch() -> None:
     assert egress._HOST_ARCHITECTURES["arm64"] is Platform.ARM64
 
 
-def test_unknown_architecture_degrades_rather_than_raising(monkeypatch) -> None:
+def test_unknown_architecture_degrades_rather_than_raising(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(egress, "machine", lambda: "s390x")
     assert egress.host_platform() is None
 
@@ -166,7 +170,9 @@ def test_unknown_architecture_degrades_rather_than_raising(monkeypatch) -> None:
 # --- reachability before publication ---------------------------------------
 
 
-def test_unreachable_proxy_is_never_published(monkeypatch, tmp_path) -> None:
+def test_unreachable_proxy_is_never_published(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Publishing an address builds cannot reach is worse than publishing none.
 
     apt fails hard against an unreachable proxy instead of falling back, so an
@@ -176,18 +182,20 @@ def test_unreachable_proxy_is_never_published(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(egress, "_accepting", lambda port, deadline: True)
     monkeypatch.setattr(egress, "warp_egress", lambda url, timeout_seconds=15.0: False)
     monkeypatch.setattr(egress, "bridge_address", lambda default="172.17.0.1": "172.17.0.1")
-    monkeypatch.setattr(egress.subprocess, "Popen", lambda *a, **k: _StubProcess())
+    monkeypatch.setattr("ci.egress.subprocess.Popen", lambda *a, **k: _StubProcess())
 
     outcome = egress.start_proxy(tmp_path / "mihomo", NODE, tmp_path / "work")
     assert isinstance(outcome, ProxyUnavailable)
     assert "no confirmed WARP egress" in outcome.reason
 
 
-def test_reachable_proxy_is_published_with_both_addresses(monkeypatch, tmp_path) -> None:
+def test_reachable_proxy_is_published_with_both_addresses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(egress, "_accepting", lambda port, deadline: True)
     monkeypatch.setattr(egress, "warp_egress", lambda url, timeout_seconds=15.0: True)
     monkeypatch.setattr(egress, "bridge_address", lambda default="172.17.0.1": "172.17.0.1")
-    monkeypatch.setattr(egress.subprocess, "Popen", lambda *a, **k: _StubProcess())
+    monkeypatch.setattr("ci.egress.subprocess.Popen", lambda *a, **k: _StubProcess())
 
     outcome = egress.start_proxy(tmp_path / "mihomo", NODE, tmp_path / "work", port=29277)
     assert isinstance(outcome, ProxyReady)
@@ -211,7 +219,7 @@ def test_probe_host_is_in_the_allowlist_or_it_asserts_nothing() -> None:
 # --- the never-fails guarantee ---------------------------------------------
 
 
-def test_setup_exits_zero_even_when_provisioning_explodes(monkeypatch) -> None:
+def test_setup_exits_zero_even_when_provisioning_explodes(monkeypatch: pytest.MonkeyPatch) -> None:
     """The mitigation for a bad network day must not cost a good one.
 
     Cloudflare's API and MASQUE edge both have downtime; when they do, the run
@@ -225,6 +233,6 @@ def test_setup_exits_zero_even_when_provisioning_explodes(monkeypatch) -> None:
     assert setup_egress.main() == 0
 
 
-def test_setup_exits_zero_on_the_happy_path(monkeypatch) -> None:
+def test_setup_exits_zero_on_the_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(setup_egress, "provision", lambda: None)
     assert setup_egress.main() == 0

@@ -25,7 +25,7 @@ import logging
 import sys
 from pathlib import Path
 
-from ci.domain import ProxyReady, ProxyUnavailable
+from ci.domain import Installed, InstallFailed, ProxyReady, ProxyUnavailable
 from ci.egress import (
     DEFAULT_PROXY_PORT,
     MasqueNode,
@@ -35,9 +35,8 @@ from ci.egress import (
     resolve_binary,
     start_proxy,
 )
-from ci.env import mask, optional, require_int, write_env
+from ci.env import PORT, TEXT, mask, read, write_env
 from ci.logs import configure
-from ci.tunnel import Installed, InstallFailed
 
 logger = logging.getLogger("ci.egress.setup")
 
@@ -53,8 +52,8 @@ def provision() -> None:
         logger.warning(_DEGRADED, "unsupported runner architecture", "no mihomo build")
         return
 
-    port = require_int("EGRESS_PROXY_PORT", DEFAULT_PROXY_PORT)
-    working_dir = Path(optional("RUNNER_TEMP", "/tmp")) / "egress"
+    port = read("EGRESS_PROXY_PORT", PORT, default=DEFAULT_PROXY_PORT)
+    working_dir = Path(read("RUNNER_TEMP", TEXT, default="/tmp")) / "egress"
 
     match resolve_binary(platform):
         case InstallFailed(reason):

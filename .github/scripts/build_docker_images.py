@@ -14,6 +14,7 @@ import logging
 import os
 import sys
 from contextlib import ExitStack
+from functools import partial
 
 import httpx
 
@@ -22,17 +23,29 @@ from ci.domain import (
     BuildFailed,
     BuildOutcome,
     BuildSucceeded,
+    Installed,
+    InstallFailed,
     Platform,
     Task,
     TunnelReady,
     TunnelUnavailable,
     succeeded,
 )
-from ci.env import BuildIdentity, optional, require, require_int, require_json, write_summary
+from ci.env import (
+    COUNT,
+    INDEX,
+    JSON_ARRAY,
+    OPTIONAL_TEXT,
+    TEXT,
+    BuildIdentity,
+    read,
+    read_json,
+    write_summary,
+)
 from ci.logs import configure
 from ci.mesh import MeshClient, Rendezvous, SoloMesh, derive_run_key, serve_mesh
 from ci.scheduling import TaskQueue, run_worker
-from ci.tunnel import Installed, InstallFailed, quick_tunnel, resolve_binary
+from ci.tunnel import quick_tunnel, resolve_binary
 from ci.utilisation import effective_parallelism, intervals_of, peak_concurrency
 
 logger = logging.getLogger("ci.worker")
@@ -89,23 +102,23 @@ def main() -> int:
     free_disk_space()
 
     identity = BuildIdentity.from_environment()
-    worker_id = require_int("WORKER_ID")
-    worker_count = require_int("WORKER_COUNT", 4)
-    token = require("GITHUB_TOKEN")
-    run_id = require("GITHUB_RUN_ID")
-    run_attempt = optional("GITHUB_RUN_ATTEMPT", "1")
+    worker_id = read("WORKER_ID", INDEX)
+    worker_count = read("WORKER_COUNT", COUNT, default=4)
+    token = read("GITHUB_TOKEN", TEXT)
+    run_id = read("GITHUB_RUN_ID", TEXT)
+    run_attempt = read("GITHUB_RUN_ATTEMPT", TEXT, default="1")
 
     # The mesh credential is optional by design. Without it a worker builds
     # the share it was dealt and reconcile covers the rest, so a missing
     # secret costs stealing -- never an image.
-    repository_secret = optional("MESH_SECRET", "")
+    repository_secret = read("MESH_SECRET", OPTIONAL_TEXT, default="")
 
-    platform = Platform.parse(require("DOCKER_PLATFORM"))
+    platform = Platform.parse(read("DOCKER_PLATFORM", TEXT))
     if platform is None:
         logger.error("DOCKER_PLATFORM is not a supported architecture.")
         return 1
 
-    raw_tasks = require_json("WORKER_TASKS")
+    raw_tasks = read_json("WORKER_TASKS", JSON_ARRAY)
     tasks = tuple(filter(None, map(Task.parse, raw_tasks)))
     if len(tasks) != len(raw_tasks):
         logger.error("Rejected %d malformed task(s) in WORKER_TASKS.", len(raw_tasks) - len(tasks))
@@ -122,7 +135,7 @@ def main() -> int:
 
     queue = TaskQueue(tasks)
     rendezvous = Rendezvous(
-        repository=require("GITHUB_REPOSITORY"), run_id=run_id, platform=platform
+        repository=read("GITHUB_REPOSITORY", TEXT), run_id=run_id, platform=platform
     )
 
     # Overridable because the right value is empirical: these builds are
@@ -130,12 +143,18 @@ def main() -> int:
     # starting point. Tune against the effective-parallelism figure in the job
     # summary, and against disk -- several of these images write multi-gigabyte
     # layers, and disk is what actually collides on a runner.
+    #
+    # COUNT rather than a plain integer because zero slots starts zero threads,
+    # records zero outcomes, and exits 0 -- a green run that built nothing.
     detected = max(1, os.cpu_count() or 1)
-    slots = require_int("BUILD_SLOTS", detected)
+    slots = read("BUILD_SLOTS", COUNT, default=detected)
     logger.info("Using %d build slot(s) (runner reports %d CPU(s))", slots, detected)
 
-    def build(task: Task) -> BuildOutcome:
-        return build_and_push(task, identity)
+    # The run's identity is fixed before any task is dealt, so it is bound once
+    # here rather than threaded through the scheduler: `run_worker` needs a
+    # `Task -> BuildOutcome`, and partial application is what turns the
+    # two-argument builder into exactly that without inventing a wrapper.
+    build = partial(build_and_push, identity=identity)
 
     if not repository_secret:
         logger.warning(

@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 
 import httpx
@@ -26,7 +27,16 @@ import httpx
 from ci.discovery import ConflictingDockerfiles, discover
 from ci.docker import build_and_push, free_disk_space, run_tag, tag_exists
 from ci.domain import BuildFailed, Platform, Task, succeeded
-from ci.env import BuildIdentity, require, require_int, require_json, write_summary
+from ci.env import (
+    COUNT,
+    NAME_LIST,
+    RETRIES,
+    TEXT,
+    BuildIdentity,
+    read,
+    read_json,
+    write_summary,
+)
 from ci.logs import configure
 from ci.mesh import MeshClient, Rendezvous
 
@@ -43,10 +53,10 @@ def main() -> int:
     configure()
 
     identity = BuildIdentity.from_environment()
-    max_retries = require_int("MAX_RETRIES", 50)
-    images: list[str] = require_json("IMAGES")
+    max_retries = read("MAX_RETRIES", RETRIES, default=50)
+    images = read_json("IMAGES", NAME_LIST)
 
-    platform = Platform.parse(require("DOCKER_PLATFORM"))
+    platform = Platform.parse(read("DOCKER_PLATFORM", TEXT))
     if platform is None:
         logger.error("DOCKER_PLATFORM is not a supported architecture.")
         return 1
@@ -55,8 +65,8 @@ def main() -> int:
     # nothing else, so the per-platform cleanups below are disjoint rather than
     # racing to delete the same refs.
     rendezvous = Rendezvous(
-        repository=require("GITHUB_REPOSITORY"),
-        run_id=require("GITHUB_RUN_ID"),
+        repository=read("GITHUB_REPOSITORY", TEXT),
+        run_id=read("GITHUB_RUN_ID", TEXT),
         platform=platform,
     )
 
@@ -64,7 +74,7 @@ def main() -> int:
         base_url=GITHUB_API,
         timeout=15.0,
         headers={
-            "Authorization": f"Bearer {require('GITHUB_TOKEN')}",
+            "Authorization": f"Bearer {read('GITHUB_TOKEN', TEXT)}",
             "Accept": "application/vnd.github+json",
         },
     ) as github:
@@ -128,11 +138,11 @@ def main() -> int:
     # thread each would put 30+ concurrent multi-gigabyte layer writes on one
     # disk. Sharing BUILD_SLOTS keeps reconcile the same shape as the workers it
     # is standing in for, so tuning that number tunes both.
-    concurrency = min(len(missing), max(1, require_int("BUILD_SLOTS", 4)))
+    concurrency = min(len(missing), read("BUILD_SLOTS", COUNT, default=4))
     logger.info("Rebuilding %d image(s), %d at a time.", len(missing), concurrency)
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        outcomes = tuple(pool.map(lambda task: build_and_push(task, identity), missing))
+        outcomes = tuple(pool.map(partial(build_and_push, identity=identity), missing))
 
     write_summary(
         [

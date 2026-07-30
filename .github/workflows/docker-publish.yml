@@ -272,5 +272,17 @@ jobs:
       - name: Lint
         run: uv run ruff check .github/scripts
 
+      # The scheduler, mesh, and egress paths model their outcomes as closed
+      # sums eliminated with `assert_never`. Exhaustiveness is a compile-time
+      # property or it is nothing, so this step is what gives those types force:
+      # adding a variant without handling it fails here rather than at 3am on a
+      # runner.
+      # The config path is explicit because mypy resolves `[tool.mypy]` against
+      # the working directory, not against the project it was told to run in --
+      # so a bare `uv run mypy` from the repository root finds no settings and
+      # exits complaining it was given nothing to check.
+      - name: Typecheck
+        run: uv run mypy --config-file .github/scripts/pyproject.toml .github/scripts
+
       - name: Test
         run: uv run pytest .github/scripts/tests

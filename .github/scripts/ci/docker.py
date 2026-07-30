@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import logging
 import os
-import random
 import subprocess
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from typing import assert_never
 
 from ci.domain import BuildFailed, BuildOutcome, BuildSucceeded, Task
 from ci.env import BuildIdentity
+from ci.retry import Exhausted, Succeeded, with_retries
 
 logger = logging.getLogger("ci.docker")
 
@@ -39,22 +40,6 @@ _CLEANUP_PACKAGE_PATTERNS = (
 )
 
 _CLEANUP_DIRECTORIES = ("/opt/ghc", "/usr/local/lib/android", "/usr/share/dotnet")
-
-
-def backoff_seconds(
-    attempt: int,
-    base_delay_seconds: float = 1.0,
-    max_delay_seconds: float = 60.0,
-    uniform: object = None,
-) -> float:
-    """Capped exponential backoff with full jitter.
-
-    Full jitter -- uniform over [0, cap] rather than cap itself -- is what stops
-    a whole worker's slots retrying in lockstep after a shared registry blip.
-    """
-    draw = uniform if callable(uniform) else random.uniform
-    cap = min(max_delay_seconds, base_delay_seconds * (2 ** (attempt - 1)))
-    return float(draw(0.0, cap))
 
 
 _PROXY_BYPASS = "localhost,127.0.0.1,::1"
@@ -235,40 +220,48 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
     )
 
     started = time.monotonic()
-    unlimited = task.max_retries <= 0
-    budget = "∞" if unlimited else str(task.max_retries)
-    attempt = 0
-    last_error = "no attempt was made"
+
+    # Logged once rather than per attempt: the tag set is a pure function of the
+    # task and the identity, so re-listing seven tags on each of up to fifty
+    # attempts adds nothing but noise to the failure a reader is trying to find.
+    logger.info("Building %s with tags:", tags[0])
+    for tag in tags:
+        logger.info("  - %s", tag)
+
+    def run_build() -> None:
+        subprocess.run(command, check=True)
 
     with _builder(builder_name):
-        while unlimited or attempt < task.max_retries:
-            attempt += 1
-            logger.info("Building %s (attempt %d/%s) with tags:", tags[0], attempt, budget)
-            for tag in tags:
-                logger.info("  - %s", tag)
+        outcome = with_retries(
+            operation=run_build,
+            max_retries=task.max_retries,
+            label=f"Building {tags[0]}",
+            log=logger,
+        )
+        # Measured before the builder is torn down, so the reported duration is
+        # the build's and does not absorb `buildx rm`.
+        elapsed = time.monotonic() - started
 
-            try:
-                subprocess.run(command, check=True)
-                return BuildSucceeded(
-                    task=task,
-                    attempts=attempt,
-                    duration_seconds=time.monotonic() - started,
-                    started_at=started,
-                )
-            except (subprocess.CalledProcessError, OSError) as error:
-                last_error = str(error)
-                logger.warning("Attempt %d/%s failed for %s: %s", attempt, budget, tags[0], error)
-
-            if not unlimited and attempt >= task.max_retries:
-                break
-            time.sleep(backoff_seconds(attempt))
-
-    logger.error("All %d attempt(s) failed for %s", attempt, tags[0])
-    return BuildFailed(
-        task=task,
-        attempts=attempt,
-        duration_seconds=time.monotonic() - started,
-        error=last_error,
-        metrics=collect_metrics(),
-        started_at=started,
-    )
+    match outcome:
+        case Succeeded(attempts):
+            return BuildSucceeded(
+                task=task,
+                attempts=attempts,
+                duration_seconds=elapsed,
+                started_at=started,
+            )
+        case Exhausted(attempts, error):
+            return BuildFailed(
+                task=task,
+                attempts=attempts,
+                duration_seconds=elapsed,
+                error=error,
+                # Sampled here, not inside the retry: the machine state that
+                # explains a failure is the state at the end of the *budget*,
+                # and taking it per attempt would both cost more and describe a
+                # moment the run had already recovered from.
+                metrics=collect_metrics(),
+                started_at=started,
+            )
+        case _:
+            assert_never(outcome)

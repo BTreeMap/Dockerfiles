@@ -10,6 +10,7 @@ import pytest
 
 from ci.domain import (
     Authenticated,
+    HeaderAuthOutcome,
     HeadersAuthentic,
     Hostname,
     PeerEmpty,
@@ -49,7 +50,9 @@ def task(name: str) -> Task:
 # --- signing ---------------------------------------------------------------
 
 
-def signed(method: str, path: str, body: bytes, key: bytes = SECRET, ts: str = "1000.0"):
+def signed(
+    method: str, path: str, body: bytes, key: bytes = SECRET, ts: str = "1000.0"
+) -> HeaderAuthOutcome:
     digest = body_digest(body)
     return verify_headers(
         key=key, method=method, path=path, timestamp=ts,
@@ -333,7 +336,9 @@ def test_run_key_is_derived_identically_by_every_worker() -> None:
     assert derive_run_key("repo-secret", "12345") != derive_run_key("other", "12345")
 
 
-def test_discovery_logs_peers_by_id_and_never_by_hostname(caplog) -> None:
+def test_discovery_logs_peers_by_id_and_never_by_hostname(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Discovery must be observable without leaking the hostname.
 
     The workflow log is world-readable on a public repository, so the hostname

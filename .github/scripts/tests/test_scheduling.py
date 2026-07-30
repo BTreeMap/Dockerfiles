@@ -12,10 +12,12 @@ import threading
 
 from ci.domain import (
     BuildFailed,
+    BuildOutcome,
     BuildSucceeded,
     PeerEmpty,
     PeerUnreachable,
     Platform,
+    StealOutcome,
     Stolen,
     Task,
 )
@@ -124,7 +126,7 @@ class FakeMesh:
         self._drained_after = drained_after
         self.lock = threading.Lock()
 
-    def attempt_steal(self):
+    def attempt_steal(self) -> StealOutcome:
         with self.lock:
             self._calls += 1
         if self._victim is None:
@@ -170,7 +172,7 @@ def test_a_raising_build_does_not_kill_its_slot() -> None:
     queue = TaskQueue([task("poison"), task("fine")])
     seen: list[str] = []
 
-    def execute(t: Task):
+    def execute(t: Task) -> BuildOutcome:
         if t.image == "poison":
             raise RuntimeError("builder exploded")
         seen.append(t.image)
@@ -202,7 +204,7 @@ def test_a_failure_affecting_every_task_cannot_exit_green() -> None:
     """
     tasks = [task(f"t{index}") for index in range(3)]
 
-    def always_raises(_t: Task):
+    def always_raises(_t: Task) -> BuildOutcome:
         raise FileNotFoundError("docker: command not found")
 
     outcomes = run_worker(

@@ -20,14 +20,16 @@ import json
 import logging
 import socket
 import threading
+import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, assert_never
+from typing import Annotated, Any, assert_never
 
 import httpx
+from pydantic import BaseModel, Field, ValidationError
 
 from ci.domain import (
     Authenticated,
@@ -73,6 +75,43 @@ REQUEST_TIMEOUT_SECONDS = 30.0
 
 
 # --- wire protocol ---------------------------------------------------------
+
+# How many tasks a peer asks for when it does not say, and the floor on what it
+# may ask for. Zero or negative used to be clamped with `max(1, ...)`; declaring
+# `ge=1` reaches the same value by rejecting the request and defaulting, and
+# says so in the schema rather than in an expression.
+_DEFAULT_STEAL_COUNT = 1
+
+
+class StealRequest(BaseModel):
+    """A peer's ask. Authenticated does not mean well-formed.
+
+    A signature proves who sent this, not that they are running the same version
+    of this file. Modelling the body is what lets a shape this build has never
+    seen degrade to the default instead of raising from inside a handler thread.
+    """
+
+    count: Annotated[int, Field(ge=1)] = _DEFAULT_STEAL_COUNT
+
+
+class StealResponse(BaseModel):
+    """What a victim hands back.
+
+    `tasks` stays `Any` per element on purpose: `Task.parse` rejects them one at
+    a time, so a single malformed entry costs that task rather than the whole
+    handover. Fail-soft is the right choice here precisely because the fallback
+    -- keeping nothing -- discards work a peer has already given up.
+    """
+
+    tasks: tuple[Any, ...] = ()
+
+
+class HealthReport(BaseModel):
+    """A peer's queue depth. The evidence `peers_drained` rests on."""
+
+    worker_id: int = -1
+    pending: Annotated[int, Field(ge=0)] = 0
+
 
 # BLAKE2b personalisation strings, giving domain separation natively: the same
 # key cannot produce a valid tag in the wrong context, because the scope is
@@ -229,8 +268,6 @@ class _MeshHandler(BaseHTTPRequestHandler):
         logger.debug("mesh http: " + fmt, *args)
 
     def _authenticate_headers(self, method: str) -> HeaderAuthOutcome:
-        import time
-
         return verify_headers(
             key=self.secret,
             method=method,
@@ -261,7 +298,9 @@ class _MeshHandler(BaseHTTPRequestHandler):
         logger.warning("Rejected a mesh request: %s", reason)
         self._respond(HTTPStatus.UNAUTHORIZED, {"error": "unauthorized"}, close=True)
 
-    def _serve(self, method: str, route: str, handle: Any) -> None:
+    def _serve(
+        self, method: str, route: str, handle: Callable[[bytes], Mapping[str, Any]]
+    ) -> None:
         if self.path != route:
             self._respond(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
@@ -294,26 +333,32 @@ class _MeshHandler(BaseHTTPRequestHandler):
         self._serve(
             "GET",
             "/health",
-            lambda _: {"worker_id": self.worker_id, "pending": len(self.queue)},
+            lambda _: HealthReport(
+                worker_id=self.worker_id, pending=len(self.queue)
+            ).model_dump(),
         )
 
     def do_POST(self) -> None:
         self._serve("POST", "/steal", self._release)
 
     def _release(self, body: bytes) -> Mapping[str, Any]:
+        # The body is authenticated but not therefore sensible: a peer running a
+        # different version of this file may send a shape this one has never
+        # seen. Catching AttributeError, as the hand-written version did, is the
+        # tell -- it means the code could not say what type it was holding.
         try:
-            requested = int(json.loads(body or b"{}").get("count", 1))
-        except (ValueError, TypeError, AttributeError):
-            requested = 1
+            requested = StealRequest.model_validate_json(body or b"{}").count
+        except ValidationError:
+            requested = _DEFAULT_STEAL_COUNT
 
-        released = self.queue.release(max(1, requested))
+        released = self.queue.release(requested)
         if released:
             logger.info(
                 "Released %d task(s) to a peer: %s",
                 len(released),
                 ", ".join(task.image for task in released),
             )
-        return {"tasks": [task.as_json() for task in released]}
+        return StealResponse(tasks=tuple(task.as_json() for task in released)).model_dump()
 
 
 @contextmanager
@@ -362,8 +407,6 @@ class SoloMesh:
 
     def peers_drained(self) -> bool:
         return True
-
-
 
 
 # --- client ----------------------------------------------------------------
@@ -511,8 +554,18 @@ class MeshClient:
             logger.warning("Could not list mesh refs for cleanup: %s", error)
             return 0
 
+        # Scoped to this run *and* platform, matching the docstring above. The
+        # previous filter accepted any `refs/` prefix and so relied entirely on
+        # the server having honoured the query -- a client-side check costs
+        # nothing and keeps a surprising response from turning a cleanup into a
+        # deletion of refs this instance does not own.
+        #
+        # Deliberately a prefix test rather than `parse_ref`: a ref inside our
+        # namespace with a malformed hostname still needs collecting, and
+        # requiring it to parse would leak exactly the entries worth removing.
+        scope = f"refs/{self._rendezvous.prefix}/"
         removed = 0
-        for ref in filter(lambda candidate: candidate.startswith("refs/"), refs):
+        for ref in filter(lambda candidate: candidate.startswith(scope), refs):
             try:
                 self._github.delete(
                     f"/repos/{self._rendezvous.repository}/git/{ref}"
@@ -533,11 +586,11 @@ class MeshClient:
                 headers=self._headers("POST", "/steal", body),
             )
             response.raise_for_status()
-            payload = response.json()
+            payload = StealResponse.model_validate_json(response.content)
         except (httpx.HTTPError, ValueError) as error:
             return PeerUnreachable(str(error))
 
-        parsed = tuple(filter(None, map(Task.parse, payload.get("tasks", []))))
+        parsed = tuple(filter(None, map(Task.parse, payload.tasks)))
         return Stolen(parsed) if parsed else PeerEmpty()
 
     def health_of(self, hostname: Hostname) -> PeerHealth:
@@ -547,14 +600,12 @@ class MeshClient:
                 f"{origin}/health", headers=self._headers("GET", "/health", b"")
             )
             response.raise_for_status()
-            pending = int(response.json().get("pending", 0))
+            pending = HealthReport.model_validate_json(response.content).pending
         except (httpx.HTTPError, ValueError, TypeError) as error:
             return HealthUnknown(str(error))
         return Drained() if pending == 0 else Working(pending)
 
     def _headers(self, method: str, path: str, body: bytes) -> Mapping[str, str]:
-        import time
-
         timestamp = f"{time.time():.3f}"
         digest = body_digest(body)
         return {
@@ -597,6 +648,8 @@ class MeshClient:
                     reachable = True
                 case PeerUnreachable():
                     continue
+                case other:
+                    assert_never(other)
 
         return PeerEmpty() if reachable else PeerUnreachable("no peer answered")
 

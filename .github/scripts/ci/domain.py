@@ -11,9 +11,14 @@ them makes a broken mesh indistinguishable from a busy one in the logs.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Self
+from pathlib import Path
+from typing import Annotated, Any, Self
+
+from pydantic import BeforeValidator, Field, TypeAdapter, ValidationError
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 # --- refined primitives ----------------------------------------------------
 
@@ -44,22 +49,57 @@ class Platform(StrEnum):
 _HOSTNAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9-]+)*\.trycloudflare\.com$")
 
 
-@dataclass(frozen=True, slots=True)
+def _parse_hostname(value: Any) -> str:
+    """Normalises, then admits. A `BeforeValidator`, so the order is guaranteed.
+
+    The order is the whole point, and it is why this is a function rather than
+    `StringConstraints(strip_whitespace=True, to_lower=True, pattern=...)`:
+    pydantic applies `pattern` to the *original* string and only then transforms
+    it, so the declarative spelling rejects ` ABC.trycloudflare.com ` -- a value
+    the normalising form accepts. Verified, not assumed.
+
+    It also keeps the domain's own error text. `String should match pattern
+    '^[a-z0-9]+(?:-...'` is a true statement about a regex; this one tells a
+    reader what kind of thing was expected, which is the only debugging channel
+    a job log offers.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"not a valid quick-tunnel hostname: {value!r}")
+    candidate = value.strip().lower()
+    if not _HOSTNAME_PATTERN.match(candidate):
+        raise ValueError(f"not a valid quick-tunnel hostname: {value!r}")
+    return candidate
+
+
+# Wherever this alias appears -- a field, a decoded payload, a bare annotation --
+# the refinement above runs. That is what makes it a type rather than a habit.
+QuickTunnelHost = Annotated[str, BeforeValidator(_parse_hostname)]
+
+
+@pydantic_dataclass(frozen=True)
 class Hostname:
-    """A validated quick-tunnel hostname."""
+    """A validated quick-tunnel hostname.
 
-    value: str
+    Nominal on purpose. `Annotated[str, ...]` would have been fewer lines, but it
+    is still `str` to the type checker, so a raw string would substitute for a
+    validated one anywhere a `Hostname` is expected -- which is exactly the
+    confusion the refinement exists to prevent.
 
-    def __post_init__(self) -> None:
-        # Python cannot hide a dataclass constructor, so the invariant is
-        # re-checked here to protect direct construction as well as parse().
-        if not _HOSTNAME_PATTERN.match(self.value):
-            raise ValueError(f"not a valid quick-tunnel hostname: {self.value!r}")
+    Validation now runs inside `__init__`, so `Hostname(x)` and `Hostname.parse(x)`
+    cannot disagree. They previously did: `parse` normalised before matching
+    while the constructor matched the raw string, so `Hostname(" A.trycloudflare.com ")`
+    raised on a value `parse` accepted and returned.
+    """
+
+    value: QuickTunnelHost
 
     @classmethod
     def parse(cls, raw: str) -> Self | None:
-        candidate = raw.strip().lower()
-        return cls(candidate) if _HOSTNAME_PATTERN.match(candidate) else None
+        """The total form: absence rather than an exception for expected input."""
+        try:
+            return cls(raw)
+        except ValidationError:
+            return None
 
     def __str__(self) -> str:
         return self.value
@@ -68,64 +108,63 @@ class Hostname:
 # --- tasks -----------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
+# `strict` is doing real work, not tightening for its own sake. Under pydantic's
+# default lax mode `"3"` decodes to `3` and `True` decodes to `1`, so a peer
+# could hand over a task whose retry budget was a boolean and be believed. The
+# hand-written ladder this replaces tested `isinstance(x, bool)` explicitly for
+# exactly that reason; `strict` is that check, declared once per field instead of
+# remembered once per field.
+_Text = Annotated[str, Field(strict=True)]
+_NonEmptyText = Annotated[str, Field(strict=True, min_length=1)]
+_Integer = Annotated[int, Field(strict=True)]
+
+
+@pydantic_dataclass(frozen=True)
 class Task:
     """A self-describing unit of build work.
 
     Carries its own retry budget so it can be handed between machines without
     reference to any external state. That closure property is what makes a steal
     safe: the receiving worker needs nothing from the sender but the task.
+
+    The field types *are* the wire schema. A task crosses the network between
+    workers, so encoder and decoder are derived from this one declaration and
+    cannot drift into disagreeing about what a task is.
     """
 
-    image: str
-    dockerfile: str
-    context: str
+    image: _NonEmptyText
+    dockerfile: _NonEmptyText
+    # Empty is legal here and nowhere else: a Dockerfile at the repository root
+    # has "." for a context, and `relative_to` renders that as an empty string.
+    context: _Text
     platform: Platform
-    max_retries: int
+    max_retries: _Integer
 
     @classmethod
-    def parse(cls, payload: Any) -> Self | None:
+    def parse(cls, payload: Any) -> Task | None:
         """Admits an untrusted JSON object into the domain, or rejects it.
 
-        Task lists arrive as environment JSON, which type hints cannot vouch
-        for; this is the single boundary where that becomes a trusted value.
+        Total by construction: a malformed task from a peer becomes `None` and
+        is filtered out, never an exception that would take down the steal that
+        was carrying it. A non-object payload is rejected too -- the decoder
+        checks the shape, so this no longer depends on remembering to.
         """
-        if not isinstance(payload, dict):
+        try:
+            return _TASK.validate_python(payload)
+        except ValidationError:
             return None
-
-        image = payload.get("image")
-        dockerfile = payload.get("dockerfile")
-        context = payload.get("context")
-        platform = Platform.parse(str(payload.get("platform", "")))
-        raw_retries = payload.get("max_retries")
-
-        if not (isinstance(image, str) and image):
-            return None
-        if not (isinstance(dockerfile, str) and dockerfile):
-            return None
-        if not isinstance(context, str):
-            return None
-        if platform is None:
-            return None
-        if not isinstance(raw_retries, int) or isinstance(raw_retries, bool):
-            return None
-
-        return cls(
-            image=image,
-            dockerfile=dockerfile,
-            context=context,
-            platform=platform,
-            max_retries=raw_retries,
-        )
 
     def as_json(self) -> dict[str, Any]:
-        return {
-            "image": self.image,
-            "dockerfile": self.dockerfile,
-            "context": self.context,
-            "platform": str(self.platform),
-            "max_retries": self.max_retries,
-        }
+        """The wire form, produced by the same schema that reads it back."""
+        # `dump_python` is typed `Any`; the annotation is what pins the shape
+        # this function promises rather than passing that `Any` on to callers.
+        encoded: dict[str, Any] = _TASK.dump_python(self, mode="json")
+        return encoded
+
+
+# Built once. A TypeAdapter compiles a validator, so constructing one per call
+# would put that cost on every task in every steal.
+_TASK: TypeAdapter[Task] = TypeAdapter(Task)
 
 
 # --- build outcomes --------------------------------------------------------
@@ -149,7 +188,13 @@ class BuildFailed:
     attempts: int
     duration_seconds: float
     error: str
-    metrics: dict[str, str]
+    # Mapping, not dict: `frozen=True` protects the reference, never the object
+    # it points at, so a `dict` field on a frozen record is a mutable value
+    # wearing an immutable label. Declaring the read-only interface is what
+    # makes the promise checkable -- a caller that mutates these diagnostics
+    # now fails to type-check instead of quietly editing another thread's
+    # failure report.
+    metrics: Mapping[str, str]
     started_at: float = 0.0
 
 
@@ -248,6 +293,28 @@ class HeadersAuthentic:
 
 
 HeaderAuthOutcome = HeadersAuthentic | Rejected
+
+
+# --- pinned assets ---------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Installed:
+    path: Path
+    version: str
+
+
+@dataclass(frozen=True, slots=True)
+class InstallFailed:
+    reason: str
+
+
+# Shared by cloudflared and mihomo. Both are pinned third-party executables
+# fetched, digest-checked, and made runnable by the same contract, so they share
+# one outcome type rather than two structurally identical ones under different
+# names. It lives here, with every other closed sum, so neither provisioning
+# module has to import the other to name its own result.
+InstallOutcome = Installed | InstallFailed
 
 
 # --- tunnel ----------------------------------------------------------------

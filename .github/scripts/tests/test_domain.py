@@ -52,10 +52,24 @@ def test_hostname_rejects_anything_unsafe_for_a_url_or_a_ref(raw: str) -> None:
 
 
 def test_hostname_constructor_also_enforces_the_invariant() -> None:
-    # Python cannot hide a dataclass constructor, so the check is duplicated in
-    # __post_init__ to protect direct construction.
+    # Python cannot hide a constructor, so the refinement runs inside __init__
+    # and protects direct construction as well as parse().
     with pytest.raises(ValueError, match="not a valid quick-tunnel hostname"):
         Hostname("evil.example.com")
+
+
+def test_hostname_constructor_and_parse_normalise_identically() -> None:
+    """The two entry points must not disagree about what they accept.
+
+    They used to: parse() normalised before matching while the constructor
+    matched the raw string, so this value raised through one door and returned a
+    Hostname through the other. Both now share one validator.
+    """
+    raw = "  BUSY-Blue-Cat.TryCloudflare.com  "
+    parsed = Hostname.parse(raw)
+    assert parsed is not None
+    assert Hostname(raw) == parsed
+    assert parsed.value == "busy-blue-cat.trycloudflare.com"
 
 
 def _payload(**overrides: object) -> dict[str, object]:

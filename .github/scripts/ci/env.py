@@ -6,47 +6,121 @@ one of these parsers rather than being coerced at the point of use.
 
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import BeforeValidator, Field, TypeAdapter, ValidationError
 
 
 class MissingEnvironment(RuntimeError):
     """A required variable is absent. A defect in the workflow, not a runtime case."""
 
 
-def require(name: str) -> str:
-    value = os.environ.get(name)
-    if value is None or not value.strip():
-        raise MissingEnvironment(f"Environment variable {name!r} is not set")
-    return value
+# --- the shapes a variable is allowed to have ------------------------------
+#
+# Named once, here, so a constraint is declared rather than re-checked at each
+# call site. `require_int(name, default, minimum, maximum)` used to carry the
+# bounds as arguments and enforce them with hand-written comparisons; that is
+# `Field(ge=..., le=...)`, and writing it out by hand meant every caller had to
+# remember which bound applied to it.
+
+# Required and non-blank. A YAML expression that resolves to nothing renders as
+# an empty string rather than an unset variable, so emptiness is absence here.
+TEXT: TypeAdapter[str] = TypeAdapter(Annotated[str, Field(min_length=1)])
+
+# May legitimately be empty: MESH_SECRET's absence disables stealing rather than
+# failing the run, so "" is a value this one is allowed to carry.
+OPTIONAL_TEXT: TypeAdapter[str] = TypeAdapter(str)
+
+# A zero-based position in the build matrix.
+INDEX: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=0)])
+
+# A quantity of things that must exist: workers, build slots. `ge=1` is the
+# whole reason BUILD_SLOTS=0 can no longer start zero threads, record zero
+# outcomes, and exit green having built nothing.
+COUNT: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=1)])
+
+PORT: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=1, le=65535)])
+
+# Unbounded on purpose: the workflow's convention is that a non-positive retry
+# budget means unlimited, so `ge` would reject the very value that expresses it.
+RETRIES: TypeAdapter[int] = TypeAdapter(int)
+
+# Elements stay `Any` deliberately: the caller owns a smart constructor for them
+# (`Task.parse`) and is the right place to reject one individually, so that a
+# single malformed task does not discard the whole payload. What this
+# establishes is the part that constructor cannot -- that iterating and counting
+# the payload is meaningful at all. Handed a JSON object, the old code silently
+# iterated its *keys*.
+JSON_ARRAY: TypeAdapter[tuple[Any, ...]] = TypeAdapter(tuple[Any, ...])
+
+# Stripped before the length is checked, so "   " is rejected rather than
+# counted as three characters. `strict` keeps a JSON number out of a list of
+# names: without it, `[1, 2]` would decode to `["1", "2"]` and an image called
+# "1" would be looked for in the registry.
+_Name = Annotated[
+    str,
+    BeforeValidator(lambda v: v.strip() if isinstance(v, str) else v),
+    Field(strict=True, min_length=1),
+]
+NAME_LIST: TypeAdapter[tuple[str, ...]] = TypeAdapter(tuple[_Name, ...])
 
 
-def optional(name: str, default: str) -> str:
-    value = os.environ.get(name)
-    return default if value is None or not value.strip() else value
+def _explain(name: str, source: object, error: ValidationError) -> str:
+    """One line naming the variable, its value, and what was wrong with it.
+
+    pydantic says what failed but not where it came from, and a bare "Input
+    should be greater than or equal to 1" in a job log costs a bisect to place.
+    Only the first problem is reported: these are scalars and short lists, so
+    the first is almost always the whole story.
+    """
+    first = error.errors()[0]
+    where = "".join(f"[{part!r}]" for part in first["loc"])
+    return f"{name}{where}={source!r}: {first['msg']}"
 
 
-def require_int(name: str, default: int | None = None) -> int:
+def read[T](name: str, schema: TypeAdapter[T], default: T | None = None) -> T:
+    """Reads one scalar variable, coerced and constrained by `schema`.
+
+    The single reader that `require`, `optional`, and `require_int` used to be
+    between them. Those three differed only in the type they produced and
+    whether absence was fatal, which is exactly what a schema and a default
+    already express.
+
+    The default is validated by the same schema as the environment value rather
+    than trusted and returned. A default outside its own range is a defect in
+    this file, and the one place it must not be able to hide is the path taken
+    when nobody has configured anything.
+    """
     raw = os.environ.get(name)
-    if raw is None or not raw.strip():
-        if default is None:
-            raise MissingEnvironment(f"Environment variable {name!r} is not set")
-        return default
+    source: Any = raw if raw is not None and raw.strip() else default
+    if source is None:
+        raise MissingEnvironment(f"Environment variable {name!r} is not set")
     try:
-        return int(raw)
-    except ValueError as error:
-        raise MissingEnvironment(f"{name}={raw!r} is not an integer") from error
+        # Lax coercion, deliberately: everything arriving from the environment
+        # is a string, so `BUILD_SLOTS=4` has to become the integer 4. Strictness
+        # belongs on payload fields, where a JSON number really is a number.
+        return schema.validate_python(source)
+    except ValidationError as error:
+        raise MissingEnvironment(_explain(name, source, error)) from error
 
 
-def require_json(name: str) -> Any:
+def read_json[T](name: str, schema: TypeAdapter[T]) -> T:
+    """Reads one variable whose contents are a JSON document.
+
+    Separate from `read` because the encoding differs, not the intent: here the
+    string is a document to be decoded, here it is the value itself. Collapsing
+    the two would mean guessing which, and guessing wrong on `IMAGES=["a"]`
+    yields the five-character string rather than a list.
+    """
+    raw = read(name, TEXT)
     try:
-        return json.loads(require(name))
-    except json.JSONDecodeError as error:
-        raise MissingEnvironment(f"{name} is not valid JSON: {error}") from error
+        return schema.validate_json(raw)
+    except ValidationError as error:
+        raise MissingEnvironment(_explain(name, raw, error)) from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,12 +138,18 @@ class BuildIdentity:
 
     @classmethod
     def from_environment(cls) -> BuildIdentity:
-        registry = require("DOCKER_REGISTRY").lower()
-        repository = require("DOCKER_IMAGE_NAME").lower()
+        # Deliberately not a pydantic-settings model. That would aggregate these
+        # five failures into one report, which is worth something -- but none of
+        # these names matches its field, the reads elsewhere are conditional
+        # (MESH_SECRET) and dynamically defaulted (BUILD_SLOTS from cpu_count),
+        # so the alias and factory boilerplate would exceed what it saves. The
+        # constraint work is already pydantic's; only the lookup is not.
+        registry = read("DOCKER_REGISTRY", TEXT).lower()
+        repository = read("DOCKER_IMAGE_NAME", TEXT).lower()
         return cls(
-            date=require("DATE_STR"),
-            date_time=require("DATE_TIME_STR"),
-            commit_sha=require("GITHUB_SHA"),
+            date=read("DATE_STR", TEXT),
+            date_time=read("DATE_TIME_STR", TEXT),
+            commit_sha=read("GITHUB_SHA", TEXT),
             base_image=f"{registry}/{repository}",
         )
 
@@ -81,12 +161,23 @@ def _append(channel: str, text: str) -> None:
             handle.write(text)
 
 
+def _assignment(name: str, value: str) -> str:
+    """Renders one `name=value` record in the format the runner parses.
+
+    Heredoc form only when the value needs it. A multi-line value written as a
+    bare assignment does not fail -- it is silently truncated at the first
+    newline, and the step that reads it gets a prefix it has no way to recognise
+    as incomplete. One definition, because both channels share the format and a
+    fix applied to one copy would leave the other quietly wrong.
+    """
+    if "\n" in value:
+        return f"{name}<<__EOF__\n{value}\n__EOF__\n"
+    return f"{name}={value}\n"
+
+
 def write_output(name: str, value: str) -> None:
-    """Writes a step output, using heredoc form only when the value needs it."""
-    body = (
-        f"{name}<<__EOF__\n{value}\n__EOF__\n" if "\n" in value else f"{name}={value}\n"
-    )
-    _append("GITHUB_OUTPUT", body)
+    """Writes a step output, readable by later steps through `needs`/`steps`."""
+    _append("GITHUB_OUTPUT", _assignment(name, value))
 
 
 def write_summary(lines: Iterable[str]) -> None:
@@ -100,8 +191,7 @@ def write_env(name: str, value: str) -> None:
     written here is how one step tells the next what it provisioned -- the
     machine-level equivalent of a return value.
     """
-    body = f"{name}<<__EOF__\n{value}\n__EOF__\n" if "\n" in value else f"{name}={value}\n"
-    _append("GITHUB_ENV", body)
+    _append("GITHUB_ENV", _assignment(name, value))
 
 
 def mask(secret: str) -> None:

@@ -10,9 +10,10 @@ from pathlib import Path
 import pytest
 
 from ci.discovery import ConflictingDockerfiles, deal, definitions, discover, seed_for
-from ci.docker import backoff_seconds, tags_for
+from ci.docker import tags_for
 from ci.domain import Platform, Task
 from ci.env import BuildIdentity
+from ci.retry import backoff_seconds
 
 IDENTITY = BuildIdentity(
     date="2026-07-28",
@@ -286,3 +287,35 @@ def test_manifest_sources_are_run_unique_never_floating() -> None:
     }
     assert floating, "expected some floating tags to exist"
     assert not (set(sources) & floating)
+
+
+# --- the build matrix -------------------------------------------------------
+
+
+def test_matrix_entry_serialises_the_row_the_workflow_consumes() -> None:
+    """The runner label is derived, never carried alongside the platform.
+
+    This used to be a `dict[str, object]` assembled inline, so every field came
+    back out as `object` and the runner could in principle disagree with the
+    architecture it was meant to build. Deriving it from the platform makes that
+    pair unable to drift.
+    """
+    from ci.discovery import MatrixEntry
+
+    task = Task("redis", "redis/Dockerfile", "redis", Platform.ARM64, 50)
+    entry = MatrixEntry(platform=Platform.ARM64, worker_id=2, tasks=(task,))
+    encoded = entry.as_json()
+
+    assert encoded["platform"] == "arm64"
+    assert encoded["worker_id"] == 2
+    assert encoded["runner"] == Platform.ARM64.runner_label
+    # Tasks are serialised through Task's own schema, so a worker parses back
+    # exactly what discovery dealt.
+    assert Task.parse(encoded["tasks"][0]) == task
+
+
+def test_matrix_entry_summarises_an_empty_share_readably() -> None:
+    """A worker dealt nothing must be visible as such in the log, not blank."""
+    from ci.discovery import MatrixEntry
+
+    assert MatrixEntry(platform=Platform.AMD64, worker_id=0, tasks=()).summary == "(none)"

@@ -20,7 +20,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import assert_never
+from typing import Protocol, assert_never, runtime_checkable
 
 from ci.domain import (
     BuildFailed,
@@ -132,10 +132,17 @@ class TaskQueue:
 # --- effect interpreter ----------------------------------------------------
 
 
-class MeshView:
+@runtime_checkable
+class MeshView(Protocol):
     """The capability a slot needs from the mesh, narrowed to two questions.
 
-    Stated as a structural dependency rather than a concrete client so the
+    A Protocol rather than a base class, so the dependency is genuinely
+    structural: `MeshClient` and `SoloMesh` satisfy it by shape and neither has
+    to import the scheduler to say so. As a plain class this was nominal, and
+    every real call site was in fact a type error -- the scheduler accepted them
+    only because nothing was checking.
+
+    Narrow on purpose. These two questions are all a slot may ask, so the
     scheduler can be exercised without tunnels, sockets, or the GitHub API.
     """
 
