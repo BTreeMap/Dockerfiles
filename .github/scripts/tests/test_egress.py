@@ -60,30 +60,66 @@ def test_proxy_arguments_are_build_args_not_env() -> None:
 # --- configuration ---------------------------------------------------------
 
 
-def test_rules_end_in_direct() -> None:
-    """The allowlist property: anything unnamed takes the runner's own path.
+def test_everything_egresses_through_warp() -> None:
+    """The catch-all is the design: no upstream keeps the dirty source address.
 
-    If this ever inverts, every build silently starts fetching through WARP and
-    reproducibility goes with it -- apt would resolve against different CDN
-    edges than an unproxied run.
+    If this ever reverts to MATCH,DIRECT, the tunnel silently stops carrying
+    anything nobody remembered to name -- which is the whack-a-mole this
+    replaced, failing closed-looking rather than loudly.
     """
     rules = render_config(NODE).split("rules:", 1)[1].strip().splitlines()
-    assert rules[-1].strip() == "- MATCH,DIRECT"
-    # Everything above the catch-all names a host explicitly and sends it to
-    # WARP. No rule may route by anything broader than a name.
-    assert all(rule.strip().startswith(("- DOMAIN,", "- DOMAIN-SUFFIX,")) for rule in rules[:-1])
-    assert all(rule.strip().endswith(",warp") for rule in rules[:-1])
+    assert rules[-1].strip() == "- MATCH,warp"
 
 
-def test_launchpad_is_routed_through_warp() -> None:
+def test_launchpad_needs_no_rule_of_its_own() -> None:
+    """The host that started this is covered by the catch-all, not by a name."""
     config = render_config(NODE)
-    assert "  - DOMAIN-SUFFIX,launchpad.net,warp" in config
+    assert "launchpad" not in config
+    assert "- MATCH,warp" in config
 
 
-def test_configured_domains_are_the_only_proxied_ones() -> None:
-    config = render_config(NODE, proxied_domains=("example.test",))
-    assert "DOMAIN-SUFFIX,example.test,warp" in config
-    assert "launchpad.net" not in config
+def test_private_space_stays_direct() -> None:
+    """Not egress. Routed into the tunnel it would fail, confusingly."""
+    rules = render_config(NODE).split("rules:", 1)[1].strip().splitlines()
+    direct = [rule for rule in rules if rule.strip().endswith(",DIRECT,no-resolve")]
+    assert any("127.0.0.0/8" in rule for rule in direct)
+    assert any("10.0.0.0/8" in rule for rule in direct)
+    assert any("172.16.0.0/12" in rule for rule in direct)
+    # v6 literals need the IP-CIDR6 form or mihomo rejects the config.
+    assert all("IP-CIDR6," in rule for rule in direct if "::" in rule)
+    assert all("IP-CIDR," in rule for rule in direct if "::" not in rule)
+
+
+def test_private_ranges_are_configurable() -> None:
+    config = render_config(NODE, direct_cidrs=("192.0.2.0/24",))
+    assert "IP-CIDR,192.0.2.0/24,DIRECT,no-resolve" in config
+    assert "10.0.0.0/8" not in config
+
+
+def test_docker_hub_never_leaves_the_whitelisted_address() -> None:
+    """Docker waives pull limits for GitHub runners by source IP.
+
+    Tunnelling those pulls forfeits the waiver and drops them into the
+    anonymous bucket -- 100 per six hours, shared with every other consumer on
+    that WARP exit. This repository pulls ~30 base images per platform per run.
+    """
+    config = render_config(NODE)
+    assert "  - DOMAIN-SUFFIX,docker.io,DIRECT" in config
+    assert "  - DOMAIN-SUFFIX,docker.com,DIRECT" in config
+
+
+def test_source_bound_entitlements_precede_the_catch_all() -> None:
+    """A DIRECT rule below MATCH,warp would never be consulted."""
+    rules = [r.strip() for r in render_config(NODE).split("rules:", 1)[1].strip().splitlines()]
+    catch_all = rules.index("- MATCH,warp")
+    for domain in ("docker.io", "ghcr.io", "github.com", "githubusercontent.com"):
+        assert rules.index(f"- DOMAIN-SUFFIX,{domain},DIRECT") < catch_all
+
+
+def test_direct_domains_are_configurable() -> None:
+    config = render_config(NODE, direct_domains=("example.test",))
+    assert "  - DOMAIN-SUFFIX,example.test,DIRECT" in config
+    assert "docker.io" not in config
 
 
 def test_default_port_avoids_the_conventional_ones() -> None:
@@ -193,17 +229,11 @@ def test_warp_egress_reports_false_rather_than_raising() -> None:
     assert egress.warp_egress("http://127.0.0.1:1", timeout_seconds=2.0) is False
 
 
-def test_probe_host_is_pinned_to_warp_or_it_asserts_nothing() -> None:
-    """Routed DIRECT the probe would answer warp=off however healthy the tunnel."""
-    config = render_config(NODE)
-    assert f"  - DOMAIN,{egress._WARP_PROBE_HOST},warp" in config
-    assert egress._WARP_PROBE_URL.endswith("/cdn-cgi/trace")
-
-
-def test_probe_pin_is_exact_and_does_not_widen_the_allowlist() -> None:
-    config = render_config(NODE)
-    assert "DOMAIN-SUFFIX,cloudflare.com" not in config
-    assert "DOMAIN-SUFFIX,www.cloudflare.com" not in config
+def test_probe_needs_no_rule_now_that_everything_is_warped() -> None:
+    """The catch-all already carries it, so no host pin is required."""
+    assert egress._WARP_PROBE_HOST == "cloudflare.com"
+    assert egress._WARP_PROBE_URL == "https://cloudflare.com/cdn-cgi/trace"
+    assert "DOMAIN," not in render_config(NODE)
 
 
 # --- the never-fails guarantee ---------------------------------------------

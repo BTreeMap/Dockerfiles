@@ -13,17 +13,33 @@ proxy is handed to builds through BuildKit's predefined proxy arguments, which
 are `ARG`s rather than `ENV`s and so do not survive into the runtime
 environment.
 
-The policy is deliberately an allowlist. Everything matches `DIRECT` except the
-handful of hosts known to blackhole these ranges, which keeps the bytes a build
-fetches identical to what it would have fetched unproxied -- the property
-`SOURCE_DATE_EPOCH` and `rewrite-timestamp` exist to protect. When some new
-upstream starts dropping traffic, it is one more line in `_PROXIED_DOMAINS`.
+Everything a build fetches goes through the tunnel by default. Naming the hosts
+known to blackhole these ranges would only ever be whack-a-mole -- the next
+upstream to start dropping traffic is not knowable in advance, and discovering
+it costs a six-hour job. Routing the lot means the dirty source address stops
+being a variable at all.
+
+The exception inverts that reasoning. A few upstreams grant access *because* of
+the source address rather than despite it -- Docker Hub waives its pull limits
+for GitHub-hosted runners under an IP whitelisting agreement -- so tunnelling
+them trades a rare blackhole for a certain 429. Those stay direct; see
+`_DIRECT_DOMAINS`.
+
+Two consequences worth having stated. Throughput: every fetch now crosses a
+userspace QUIC stack at MTU 1280, which is slower than the native path for
+large downloads. And reproducibility cuts both ways -- a proxied run may
+resolve different CDN edges than an unproxied one, but every runner egressing
+from Cloudflare is markedly more uniform than the spread of hosted-runner
+ranges they come from otherwise.
+
+Only build traffic is affected. No host-level proxy variable is exported, so
+registry pushes and the Actions control plane keep the native path and are
+never exposed to the tunnel's health. That containment is what makes routing
+everything else safe.
 
 One limitation worth stating plainly: an HTTP proxy is honoured per-program.
 apt, curl, git, and Python's urllib all respect it; a tool that opens raw
-sockets does not, and would need a TUN device to capture transparently. That
-trade buys back the entire critical path -- registry pushes and the Actions
-control plane never traverse this -- which is why it is the right one here.
+sockets does not, and would need a TUN device to capture transparently.
 """
 
 from __future__ import annotations
@@ -117,11 +133,41 @@ _CLOUDFLARE_MASQUE_PUBKEY = (
 
 _PROXY_NAME = "warp"
 
-# The allowlist. Suffix matches, so `ppa.launchpad.net` and `api.launchpad.net`
-# are both covered by the apex entry.
-_PROXIED_DOMAINS: tuple[str, ...] = (
-    "launchpad.net",
-    "launchpadcontent.net",
+# Hosts whose access is *granted by the source address*, and would therefore be
+# revoked by tunnelling them.
+#
+# Docker Hub is the load-bearing one. GitHub-hosted runners pull public images
+# without hitting Docker's rate limit because of an IP whitelisting agreement
+# between the two; leaving those ranges drops the pull into the anonymous
+# bucket -- 100 per six hours, shared with every other consumer sharing that
+# WARP exit. This repository pulls ~30 base images per platform per run, so
+# that is an immediate 429.
+#
+# Today `FROM` resolution happens in buildkitd, which never sees the RUN-step
+# proxy arguments, so these pulls would take the direct path regardless. That
+# is an implicit invariant one buildkitd configuration change away from being
+# false, and its failure mode is a repository-wide outage. Stating it in the
+# rules makes it hold on purpose rather than by luck.
+_DIRECT_DOMAINS: tuple[str, ...] = (
+    "docker.io",
+    "docker.com",
+    "ghcr.io",
+    "github.com",
+    "githubusercontent.com",
+)
+
+# Private space is not egress. Left DIRECT so a build reaching the runner, a
+# sibling container, or link-local metadata is not pointlessly routed into the
+# tunnel -- where it would simply fail, confusingly.
+_DIRECT_CIDRS: tuple[str, ...] = (
+    "127.0.0.0/8",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "169.254.0.0/16",
+    "::1/128",
+    "fc00::/7",
+    "fe80::/10",
 )
 
 _DEFAULT_BRIDGE_ADDRESS = "172.17.0.1"
@@ -344,20 +390,26 @@ def register(timeout_seconds: float = 15.0) -> RegistrationOutcome:
 def render_config(
     node: MasqueNode,
     port: int = DEFAULT_PROXY_PORT,
-    proxied_domains: tuple[str, ...] = _PROXIED_DOMAINS,
+    direct_cidrs: tuple[str, ...] = _DIRECT_CIDRS,
+    direct_domains: tuple[str, ...] = _DIRECT_DOMAINS,
 ) -> str:
     """Renders the mihomo configuration. Pure, so the policy is testable.
 
-    `MATCH,DIRECT` last is the whole design: only the named domains traverse
-    WARP, and every other fetch takes the path it would have taken with this
-    module absent.
+    `MATCH,warp` last is the whole design: anything a build fetches leaves via
+    the tunnel by default, so the runner's dirty address stops being reachable
+    ground for an upstream to blackhole.
+
+    Two things are exempted, for opposite reasons. Private space is not egress
+    at all. The named domains are the inverse case -- entitlements granted by
+    the source address, which tunnelling would silently revoke.
     """
     rules = "\n".join(
         (
-            # Exact match, so it pins only the probe host and never widens to
-            # the rest of the domain.
-            f"  - DOMAIN,{_WARP_PROBE_HOST},{_PROXY_NAME}",
-            *(f"  - DOMAIN-SUFFIX,{domain},{_PROXY_NAME}" for domain in proxied_domains),
+            *(
+                f"  - IP-CIDR{'6' if ':' in cidr else ''},{cidr},DIRECT,no-resolve"
+                for cidr in direct_cidrs
+            ),
+            *(f"  - DOMAIN-SUFFIX,{domain},DIRECT" for domain in direct_domains),
         )
     )
     return f"""mixed-port: {port}
@@ -386,7 +438,7 @@ proxies:
     congestion-controller: bbr
 rules:
 {rules}
-  - MATCH,DIRECT
+  - MATCH,{_PROXY_NAME}
 """
 
 
@@ -427,14 +479,10 @@ def _accepting(port: int, deadline: float) -> bool:
 
 
 # The health probe. Cloudflare's trace endpoint reports whether the request
-# actually arrived over WARP, which makes this a direct observation of the
-# tunnel rather than an inference from "the proxy answered".
-#
-# The host is pinned to the WARP rule for exactly this reason: routed through
-# MATCH,DIRECT it would answer warp=off however healthy the tunnel was, and the
-# probe would assert nothing. Nothing a build fetches lives here, so pinning it
-# costs nothing.
-_WARP_PROBE_HOST = "www.cloudflare.com"
+# actually arrived over WARP, making this a direct observation of the tunnel
+# rather than an inference from "the proxy answered". It needs no rule of its
+# own now that everything routes through WARP.
+_WARP_PROBE_HOST = "cloudflare.com"
 _WARP_PROBE_URL = f"https://{_WARP_PROBE_HOST}/cdn-cgi/trace"
 
 
