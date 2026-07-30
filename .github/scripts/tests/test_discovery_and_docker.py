@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -79,12 +82,34 @@ def test_seed_is_stable_across_processes() -> None:
 
     Using it here made the "deterministic" deal differ between the discovery
     process and any attempt to reproduce it.
+
+    Checked by computing the seed in fresh interpreters under deliberately
+    hostile hash seeds, rather than by restating the formula. A test that
+    duplicates the implementation asserts only that the code is the code -- it
+    would have passed with hash() in place, which is the defect this exists to
+    catch.
     """
-    assert seed_for(Platform.AMD64) == seed_for(Platform.AMD64)
-    assert seed_for(Platform.AMD64) != seed_for(Platform.ARM64)
-    assert seed_for(Platform.AMD64) == sum(
-        ordinal * (index + 1) for index, ordinal in enumerate(b"amd64")
+    scripts = str(Path(__file__).resolve().parents[1])
+    program = (
+        f"import sys; sys.path.insert(0, {scripts!r});"
+        "from ci.discovery import seed_for;"
+        "from ci.domain import Platform;"
+        "print(seed_for(Platform.AMD64))"
     )
+
+    observed = {
+        subprocess.run(
+            [sys.executable, "-c", program],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "PYTHONHASHSEED": setting},
+        ).stdout.strip()
+        for setting in ("0", "1", "4294967295", "random")
+    }
+
+    assert observed == {str(seed_for(Platform.AMD64))}
+    assert seed_for(Platform.AMD64) != seed_for(Platform.ARM64)
 
 
 # --- discovery -------------------------------------------------------------

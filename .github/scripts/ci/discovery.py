@@ -6,6 +6,7 @@ independently, so the two can no longer disagree about which images exist.
 
 from __future__ import annotations
 
+import hashlib
 import random
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from itertools import groupby
@@ -120,6 +121,12 @@ def deal(tasks: Sequence[Task], worker_count: int, seed: int) -> tuple[tuple[Tas
     return tuple(tuple(shuffled[offset::worker_count]) for offset in range(worker_count))
 
 
+# BLAKE2b personalisation, matching ci/mesh.py: the scope is mixed into the
+# compression function, so a digest minted here can never be mistaken for one
+# minted for the mesh even though both use the same primitive.
+_SEED_SCOPE = b"deal-seed-v1"
+
+
 def seed_for(platform: Platform) -> int:
     """A stable per-platform seed.
 
@@ -127,5 +134,14 @@ def seed_for(platform: Platform) -> int:
     and would make a run impossible to reproduce from its inputs. Independent
     seeds per platform mean a slow image lands beside differently-loaded
     neighbours on each side.
+
+    BLAKE2b rather than a hand-rolled weighted sum: the previous construction
+    was correct but had to be read carefully to be believed, and its diffusion
+    was an accident of the arithmetic rather than a property anyone had
+    established. This one is the same primitive the mesh already signs with, so
+    the repository has one hash function and one reason for it.
     """
-    return sum(ordinal * (index + 1) for index, ordinal in enumerate(platform.encode()))
+    return int.from_bytes(
+        hashlib.blake2b(str(platform).encode(), person=_SEED_SCOPE, digest_size=8).digest(),
+        "big",
+    )
