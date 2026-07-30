@@ -6,10 +6,15 @@
 #
 ARG TOMCAT_VERSION=8.5
 ARG TOMCAT_JRE=jdk8
-ARG DEBIAN_FRONTEND=noninteractive
 
 # Use official maven image for the build
 FROM --platform=$BUILDPLATFORM maven:3-eclipse-temurin-11-focal AS builder
+
+# Declared here with an explicit value, once per stage. An ARG before the first
+# FROM is outside every build stage: it can be interpolated into a FROM line and
+# nothing else, so it reaches no RUN instruction. This one used to live up there
+# and left every apt-get below running the interactive dialog frontend.
+ARG DEBIAN_FRONTEND=noninteractive
 
 ENV GUACAMOLE_SOURCE_DIR="/tmp/guacamole-source"
 ENV GUACAMOLE_VERSION=1.5.5
@@ -64,6 +69,10 @@ RUN /opt/guacamole/bin/build-guacamole.sh "$BUILD_DIR" /opt/guacamole
 
 # For the runtime image, we start with the official Tomcat distribution
 FROM tomcat:${TOMCAT_VERSION}-${TOMCAT_JRE}
+
+# Set explicitly again: ARG scope does not cross a FROM, so the builder stage's
+# declaration above does not reach this one.
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install XMLStarlet for server.xml alterations and unzip for LOGBACK_LEVEL case
 RUN apt-get update -qq \
