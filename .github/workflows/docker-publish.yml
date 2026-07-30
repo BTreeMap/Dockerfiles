@@ -23,10 +23,11 @@ env:
   # from its peers when it runs dry, so this only needs to be in the right
   # neighbourhood -- it is not a partition that has to be balanced.
   WORKER_COUNT: 4
-  # Concurrent builds per worker. Empirical, not architectural: these builds
-  # wait on the network far more than on a core, so the CPU count is only a
-  # starting point. Tune against the effective-parallelism figure each worker
-  # reports in the job summary, and watch disk -- that is what collides first.
+  # Concurrent builds per runner -- build workers and reconcile alike, so both
+  # stages present the same load to a runner. Empirical, not architectural:
+  # these builds wait on the network far more than on a core, so the CPU count
+  # is only a starting point. Tune against the effective-parallelism figure each
+  # worker reports in the job summary, and watch disk -- that collides first.
   BUILD_SLOTS: 4
   UV_PROJECT: .github/scripts
 
@@ -38,6 +39,7 @@ jobs:
       date_time: ${{ steps.timestamp.outputs.date_time }}
       source_date_epoch: ${{ steps.timestamp.outputs.source_date_epoch }}
       matrix: ${{ steps.discover.outputs.matrix }}
+      reconcile_matrix: ${{ steps.discover.outputs.reconcile_matrix }}
       images: ${{ steps.discover.outputs.images }}
       platforms: ${{ steps.discover.outputs.platforms }}
     steps:
@@ -129,12 +131,23 @@ jobs:
 
   # Runs however the build stage ended. The registry decides what actually got
   # built; anything missing is rebuilt here.
+  #
+  # One job per architecture, each on a runner of that architecture and with the
+  # same BUILD_SLOTS parallelism as a build worker. A rebuild is a real build, so
+  # cross-building here would put every missing arm64 image through binfmt/QEMU
+  # on an amd64 host -- an emulated rebuild of the slowest images in the
+  # repository, at the point in the run where there is least time to spare.
   reconcile:
     needs: [plan, build]
     if: always() && needs.plan.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One architecture's reconcile must not cancel the other's: they repair
+      # disjoint image sets, and each is the only job that can repair its own.
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.reconcile_matrix) }}
     permissions:
-      contents: write   # delete the run's mesh refs
+      contents: write   # delete this platform's mesh refs
       packages: write
     steps:
       - name: Checkout Repository
@@ -160,8 +173,9 @@ jobs:
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
           SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}
+          BUILD_SLOTS: ${{ env.BUILD_SLOTS }}
+          DOCKER_PLATFORM: ${{ matrix.platform }}
           IMAGES: ${{ needs.plan.outputs.images }}
-          PLATFORMS: ${{ needs.plan.outputs.platforms }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create-manifest:

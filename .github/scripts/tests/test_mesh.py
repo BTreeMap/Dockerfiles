@@ -443,3 +443,55 @@ def test_an_unauthenticated_flood_cannot_exhaust_capacity() -> None:
         assert _local(port, "/health").status_code == 200
 
     assert len(queue) == 6
+
+
+# --- cleanup ---------------------------------------------------------------
+
+
+def test_cleanup_deletes_only_this_platform_s_refs() -> None:
+    """Reconcile runs once per architecture, so its sweeps must be disjoint.
+
+    A run-wide sweep from each instance would have both racing to delete the same
+    refs, and every loser would log a deletion failure that means nothing. Scoped
+    to the rendezvous prefix the sweeps partition the namespace instead, and their
+    union over the platforms still covers the run.
+    """
+    listed: list[str] = []
+    deleted: list[str] = []
+
+    refs = {
+        "refs/mesh/42/amd64/0/busy-blue-cat.trycloudflare.com",
+        "refs/mesh/42/amd64/1/calm-red-fox.trycloudflare.com",
+        "refs/mesh/42/arm64/0/lone-grey-owl.trycloudflare.com",
+    }
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            prefix = request.url.path.split("/git/matching-refs/", 1)[1]
+            listed.append(prefix)
+            matching = sorted(ref for ref in refs if ref.startswith(f"refs/{prefix}/"))
+            return httpx.Response(200, json=[{"ref": ref} for ref in matching])
+        deleted.append(request.url.path.split("/git/", 1)[1])
+        return httpx.Response(204)
+
+    def sweep(platform: Platform) -> int:
+        github = httpx.Client(
+            base_url="https://api.github.invalid",
+            transport=httpx.MockTransport(handle),
+        )
+        return MeshClient(
+            secret=b"",
+            worker_id=-1,
+            rendezvous=Rendezvous(repository="owner/repo", run_id="42", platform=platform),
+            github=github,
+            peers_client=github,
+            expected_peers=0,
+        ).cleanup()
+
+    assert sweep(Platform.AMD64) == 2
+    assert listed == ["mesh/42/amd64"]
+    assert deleted == sorted(ref for ref in refs if "/amd64/" in ref)
+
+    # The other architecture's sweep is disjoint, and the two together are total.
+    assert sweep(Platform.ARM64) == 1
+    assert set(deleted) == refs

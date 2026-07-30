@@ -67,6 +67,24 @@ def main() -> int:
         )
 
     write_output("matrix", json.dumps({"include": entries}))
+
+    # Reconcile fans out the same way the build stage does -- one job per
+    # architecture, on a runner of that architecture -- so a rebuild never falls
+    # back to binfmt/QEMU emulation. Emitted from the same `platforms` tuple and
+    # the same `runner_label` as the build matrix above, so the two stages
+    # cannot drift onto different runner shapes.
+    write_output(
+        "reconcile_matrix",
+        json.dumps(
+            {
+                "include": [
+                    {"platform": str(platform), "runner": platform.runner_label}
+                    for platform in platforms
+                ]
+            }
+        ),
+    )
+
     write_output("images", json.dumps(sorted({task.image for task in tasks})))
     write_output("platforms", json.dumps([str(platform) for platform in platforms]))
     return 0

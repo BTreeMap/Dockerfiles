@@ -492,11 +492,18 @@ class MeshClient:
         return dict(self._known)
 
     def cleanup(self) -> int:
-        """Deletes this run's mesh refs. Returns how many were removed."""
+        """Deletes this rendezvous's mesh refs. Returns how many were removed.
+
+        Scoped to the rendezvous prefix -- this run *and* this platform -- rather
+        than the whole run, because reconcile runs once per architecture. A
+        run-wide sweep from each would have both instances racing to delete the
+        same refs, and every loser would report a deletion failure that means
+        nothing. Scoping makes the sweeps disjoint and their union total.
+        """
         try:
             response = self._github.get(
                 f"/repos/{self._rendezvous.repository}"
-                f"/git/matching-refs/mesh/{self._rendezvous.run_id}"
+                f"/git/matching-refs/{self._rendezvous.prefix}"
             )
             response.raise_for_status()
             refs = [entry.get("ref", "") for entry in response.json()]

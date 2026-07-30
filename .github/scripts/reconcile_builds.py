@@ -7,19 +7,23 @@ the mesh bookkeeping, decides what completed: a dead runner, a dropped steal
 handoff, a protocol bug, and a worker that exited early all present identically
 here and are repaired identically. Only a build that its own retry budget could
 not save survives to fail the run.
+
+Scoped to exactly one architecture, because a rebuild is a real build: the
+workflow runs one instance per platform on a runner of that platform, so nothing
+here is ever produced under binfmt/QEMU emulation. The instances partition the
+work -- disjoint images, disjoint mesh refs -- so they need no coordination.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
 
-from ci.discovery import discover
+from ci.discovery import ConflictingDockerfiles, discover
 from ci.docker import build_and_push, free_disk_space, run_tag, tag_exists
 from ci.domain import BuildFailed, Platform, Task, succeeded
 from ci.env import BuildIdentity, require, require_int, require_json, write_summary
@@ -41,13 +45,19 @@ def main() -> int:
     identity = BuildIdentity.from_environment()
     max_retries = require_int("MAX_RETRIES", 50)
     images: list[str] = require_json("IMAGES")
-    platforms = tuple(filter(None, map(Platform.parse, require_json("PLATFORMS"))))
 
-    # Any platform works here: cleanup matches on the run, not the architecture.
+    platform = Platform.parse(require("DOCKER_PLATFORM"))
+    if platform is None:
+        logger.error("DOCKER_PLATFORM is not a supported architecture.")
+        return 1
+
+    # This instance owns its architecture's slice of the rendezvous namespace and
+    # nothing else, so the per-platform cleanups below are disjoint rather than
+    # racing to delete the same refs.
     rendezvous = Rendezvous(
         repository=require("GITHUB_REPOSITORY"),
         run_id=require("GITHUB_RUN_ID"),
-        platform=platforms[0],
+        platform=platform,
     )
 
     with httpx.Client(
@@ -66,15 +76,22 @@ def main() -> int:
             peers_client=github,
             expected_peers=0,
         ).cleanup()
-        logger.info("Cleaned up %d mesh ref(s).", removed)
+        logger.info("Cleaned up %d %s mesh ref(s).", removed, platform)
 
     # Re-derive the task set from the tree rather than reconstructing paths from
     # image names. It is the same checkout at the same commit, so discovery is
     # the single definition of where an image's Dockerfile and context live --
     # reconstructing them here would quietly assume every Dockerfile sits one
-    # directory down, which discovery itself does not require.
-    expected = discover(Path.cwd(), platforms, max_retries)
+    # directory down under a directory named after the image, which discovery
+    # itself does not require.
+    try:
+        expected = discover(Path.cwd(), (platform,), max_retries)
+    except ConflictingDockerfiles as conflict:
+        logger.error("%s", conflict)
+        return 1
 
+    # The image *set* is architecture-independent, so this still cross-checks the
+    # whole plan even though the tasks are one platform's.
     if {task.image for task in expected} != set(images):
         logger.error(
             "Discovery disagrees with the planned image list; refusing to guess. "
@@ -84,7 +101,7 @@ def main() -> int:
         )
         return 1
 
-    logger.info("Verifying %d expected platform image(s)...", len(expected))
+    logger.info("Verifying %d expected %s image(s)...", len(expected), platform)
 
     def landed(task: Task) -> bool:
         return tag_exists(run_tag(task.image, str(task.platform), identity))
@@ -106,11 +123,12 @@ def main() -> int:
 
     free_disk_space()
 
-    # Bounded to the core count, not to len(missing). Reconcile runs on a single
-    # runner, and if a whole build stage failed this list is every image in the
-    # repository -- one thread each would put 60+ concurrent multi-gigabyte
-    # layer writes on one disk.
-    concurrency = min(len(missing), max(1, os.cpu_count() or 1))
+    # The same slot count a build worker uses, for the same reason: if a whole
+    # build stage failed this list is every image in the repository, and one
+    # thread each would put 30+ concurrent multi-gigabyte layer writes on one
+    # disk. Sharing BUILD_SLOTS keeps reconcile the same shape as the workers it
+    # is standing in for, so tuning that number tunes both.
+    concurrency = min(len(missing), max(1, require_int("BUILD_SLOTS", 4)))
     logger.info("Rebuilding %d image(s), %d at a time.", len(missing), concurrency)
 
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
@@ -119,7 +137,7 @@ def main() -> int:
     write_summary(
         [
             "",
-            "### Reconcile",
+            f"### Reconcile ({platform})",
             "",
             f"Rebuilt {len(missing)} missing image(s).",
             "",
