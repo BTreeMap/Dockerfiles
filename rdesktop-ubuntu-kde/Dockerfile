@@ -143,14 +143,20 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main" \
       > /etc/apt/sources.list.d/claude-desktop.list && \
     \
+    # Add GitHub CLI apt repository
+    curl -fsSLo /etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg && \
+    chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list && \
+    \
     # Update package lists again after adding repositories
     apt-get update && \
     \
     # Ensure the man1 directory exists for storing manual pages
     mkdir -p /usr/share/man/man1 && \
     \
-    # Install Microsoft OpenJDK 25, OpenJDK 8, Google Antigravity, and Claude Desktop
-    apt-get install -y msopenjdk-25 openjdk-8-jre antigravity claude-desktop && \
+    # Install Microsoft OpenJDK 25, OpenJDK 8, Google Antigravity, Claude Desktop, and the GitHub CLI
+    apt-get install -y msopenjdk-25 openjdk-8-jre antigravity claude-desktop gh && \
     \
     # Patch the Antigravity desktop entry to launch with a clean D-Bus session
     # and stable software-rendering defaults inside the container.
