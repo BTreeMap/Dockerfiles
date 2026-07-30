@@ -9,7 +9,7 @@ import logging
 import sys
 from pathlib import Path
 
-from ci.discovery import deal, discover, seed_for
+from ci.discovery import ConflictingDockerfiles, deal, discover, seed_for
 from ci.domain import Platform
 from ci.env import optional, require_int, write_output
 from ci.logs import configure
@@ -28,7 +28,13 @@ def main() -> int:
         return 1
 
     worker_count = require_int("WORKER_COUNT", 4)
-    tasks = discover(Path.cwd(), platforms, require_int("MAX_RETRIES", 50))
+
+    try:
+        tasks = discover(Path.cwd(), platforms, require_int("MAX_RETRIES", 50))
+    except ConflictingDockerfiles as conflict:
+        logger.error("%s", conflict)
+        return 1
+
     if not tasks:
         logger.error("No Dockerfiles found in the current directory or subdirectories.")
         return 1

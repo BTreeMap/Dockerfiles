@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ci.discovery import deal, discover, seed_for
+from ci.discovery import ConflictingDockerfiles, deal, definitions, discover, seed_for
 from ci.docker import backoff_seconds, tags_for
 from ci.domain import Platform, Task
 from ci.env import BuildIdentity
@@ -106,6 +106,92 @@ def test_discover_finds_one_task_per_image_and_platform(tmp_path: Path) -> None:
 
 def test_discover_returns_nothing_for_an_empty_tree(tmp_path: Path) -> None:
     assert discover(tmp_path, (Platform.AMD64,), max_retries=1) == ()
+
+
+def test_a_prefixed_dockerfile_names_the_image_its_sibling_directory_would(
+    tmp_path: Path,
+) -> None:
+    """`<dir>/<stem>.Dockerfile` and `<dir>-<stem>/Dockerfile` are one image.
+
+    The whole point of the second layout: a variant can move next to the thing it
+    varies without the published tag moving with it.
+    """
+    (tmp_path / "code-server").mkdir()
+    (tmp_path / "code-server" / "Dockerfile").write_text("FROM scratch\n")
+    (tmp_path / "code-server" / "base.Dockerfile").write_text("FROM scratch\n")
+
+    nested = definitions(tmp_path)
+
+    (tmp_path / "code-server" / "base.Dockerfile").unlink()
+    (tmp_path / "code-server-base").mkdir()
+    (tmp_path / "code-server-base" / "Dockerfile").write_text("FROM scratch\n")
+
+    assert set(nested) == set(definitions(tmp_path)) == {"code-server", "code-server-base"}
+
+
+def test_a_prefixed_dockerfile_builds_from_its_own_directory(tmp_path: Path) -> None:
+    """The context is the file's directory, not a directory named after the image.
+
+    `code-server-base` built from `code-server/base.Dockerfile` therefore sees
+    `code-server/`, which is what makes the two layouts interchangeable only up
+    to the image name -- never up to the context.
+    """
+    (tmp_path / "code-server").mkdir()
+    (tmp_path / "code-server" / "base.Dockerfile").write_text("FROM scratch\n")
+
+    (task,) = discover(tmp_path, (Platform.AMD64,), max_retries=1)
+
+    assert task.image == "code-server-base"
+    assert task.dockerfile == str(Path("code-server") / "base.Dockerfile")
+    assert task.context == "code-server"
+
+
+def test_two_spellings_of_one_image_are_refused_rather_than_resolved(tmp_path: Path) -> None:
+    """Both layouts naming one image is a layout defect, not a tie to break.
+
+    Either candidate is an equally good guess, and picking one would publish the
+    wrong image silently -- so discovery refuses and names both claimants.
+    """
+    (tmp_path / "code-server").mkdir()
+    (tmp_path / "code-server" / "base.Dockerfile").write_text("FROM scratch\n")
+    (tmp_path / "code-server-base").mkdir()
+    (tmp_path / "code-server-base" / "Dockerfile").write_text("FROM scratch\n")
+
+    with pytest.raises(ConflictingDockerfiles) as raised:
+        discover(tmp_path, (Platform.AMD64,), max_retries=1)
+
+    assert set(raised.value.conflicts) == {"code-server-base"}
+    assert set(raised.value.conflicts["code-server-base"]) == {
+        tmp_path / "code-server" / "base.Dockerfile",
+        tmp_path / "code-server-base" / "Dockerfile",
+    }
+    assert "code-server/base.Dockerfile" in str(raised.value)
+    assert "code-server-base/Dockerfile" in str(raised.value)
+
+
+def test_discovery_is_ordered_and_reproducible_across_both_layouts(tmp_path: Path) -> None:
+    """`deal` is only reproducible from its seed if what it shuffles is ordered.
+
+    Two globs mean two streams, so the union is sorted rather than each stream
+    -- otherwise every `*.Dockerfile` would sort after every plain one and the
+    order would depend on which pattern found what.
+    """
+    (tmp_path / "alpha").mkdir()
+    (tmp_path / "alpha" / "Dockerfile").write_text("FROM scratch\n")
+    (tmp_path / "alpha" / "zulu.Dockerfile").write_text("FROM scratch\n")
+    (tmp_path / "bravo").mkdir()
+    (tmp_path / "bravo" / "Dockerfile").write_text("FROM scratch\n")
+    (tmp_path / "alpha" / "mike.Dockerfile").write_text("FROM scratch\n")
+
+    found = discover(tmp_path, (Platform.AMD64,), max_retries=1)
+
+    assert [task.image for task in found] == [
+        "alpha",
+        "alpha-mike",
+        "alpha-zulu",
+        "bravo",
+    ]
+    assert found == discover(tmp_path, (Platform.AMD64,), max_retries=1)
 
 
 # --- tagging ---------------------------------------------------------------
