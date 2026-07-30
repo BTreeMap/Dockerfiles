@@ -69,7 +69,10 @@ def test_rules_end_in_direct() -> None:
     """
     rules = render_config(NODE).split("rules:", 1)[1].strip().splitlines()
     assert rules[-1].strip() == "- MATCH,DIRECT"
-    assert all("DOMAIN-SUFFIX" in rule for rule in rules[:-1])
+    # Everything above the catch-all names a host explicitly and sends it to
+    # WARP. No rule may route by anything broader than a name.
+    assert all(rule.strip().startswith(("- DOMAIN,", "- DOMAIN-SUFFIX,")) for rule in rules[:-1])
+    assert all(rule.strip().endswith(",warp") for rule in rules[:-1])
 
 
 def test_launchpad_is_routed_through_warp() -> None:
@@ -164,18 +167,18 @@ def test_unreachable_proxy_is_never_published(monkeypatch, tmp_path) -> None:
     step in its own netns -- would take every image in the repository down.
     """
     monkeypatch.setattr(egress, "_accepting", lambda port, deadline: True)
-    monkeypatch.setattr(egress, "relays", lambda url, timeout_seconds=10.0: False)
+    monkeypatch.setattr(egress, "warp_egress", lambda url, timeout_seconds=15.0: False)
     monkeypatch.setattr(egress, "bridge_address", lambda default="172.17.0.1": "172.17.0.1")
     monkeypatch.setattr(egress.subprocess, "Popen", lambda *a, **k: _StubProcess())
 
     outcome = egress.start_proxy(tmp_path / "mihomo", NODE, tmp_path / "work")
     assert isinstance(outcome, ProxyUnavailable)
-    assert "does not relay" in outcome.reason
+    assert "no confirmed WARP egress" in outcome.reason
 
 
 def test_reachable_proxy_is_published_with_both_addresses(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(egress, "_accepting", lambda port, deadline: True)
-    monkeypatch.setattr(egress, "relays", lambda url, timeout_seconds=10.0: True)
+    monkeypatch.setattr(egress, "warp_egress", lambda url, timeout_seconds=15.0: True)
     monkeypatch.setattr(egress, "bridge_address", lambda default="172.17.0.1": "172.17.0.1")
     monkeypatch.setattr(egress.subprocess, "Popen", lambda *a, **k: _StubProcess())
 
@@ -185,9 +188,22 @@ def test_reachable_proxy_is_published_with_both_addresses(monkeypatch, tmp_path)
     assert outcome.container_url == "http://172.17.0.1:29277"
 
 
-def test_relays_reports_false_rather_than_raising() -> None:
+def test_warp_egress_reports_false_rather_than_raising() -> None:
     """Nothing is listening on this port; the answer is False, not an exception."""
-    assert egress.relays("http://127.0.0.1:1", timeout_seconds=2.0) is False
+    assert egress.warp_egress("http://127.0.0.1:1", timeout_seconds=2.0) is False
+
+
+def test_probe_host_is_pinned_to_warp_or_it_asserts_nothing() -> None:
+    """Routed DIRECT the probe would answer warp=off however healthy the tunnel."""
+    config = render_config(NODE)
+    assert f"  - DOMAIN,{egress._WARP_PROBE_HOST},warp" in config
+    assert egress._WARP_PROBE_URL.endswith("/cdn-cgi/trace")
+
+
+def test_probe_pin_is_exact_and_does_not_widen_the_allowlist() -> None:
+    config = render_config(NODE)
+    assert "DOMAIN-SUFFIX,cloudflare.com" not in config
+    assert "DOMAIN-SUFFIX,www.cloudflare.com" not in config
 
 
 # --- the never-fails guarantee ---------------------------------------------

@@ -353,7 +353,12 @@ def render_config(
     module absent.
     """
     rules = "\n".join(
-        f"  - DOMAIN-SUFFIX,{domain},{_PROXY_NAME}" for domain in proxied_domains
+        (
+            # Exact match, so it pins only the probe host and never widens to
+            # the rest of the domain.
+            f"  - DOMAIN,{_WARP_PROBE_HOST},{_PROXY_NAME}",
+            *(f"  - DOMAIN-SUFFIX,{domain},{_PROXY_NAME}" for domain in proxied_domains),
+        )
     )
     return f"""mixed-port: {port}
 allow-lan: true
@@ -421,30 +426,46 @@ def _accepting(port: int, deadline: float) -> bool:
     return False
 
 
-# Answers 204 with an empty body, so this costs one round trip and no payload.
-_REACHABILITY_URL = "http://cp.cloudflare.com/generate_204"
+# The health probe. Cloudflare's trace endpoint reports whether the request
+# actually arrived over WARP, which makes this a direct observation of the
+# tunnel rather than an inference from "the proxy answered".
+#
+# The host is pinned to the WARP rule for exactly this reason: routed through
+# MATCH,DIRECT it would answer warp=off however healthy the tunnel was, and the
+# probe would assert nothing. Nothing a build fetches lives here, so pinning it
+# costs nothing.
+_WARP_PROBE_HOST = "www.cloudflare.com"
+_WARP_PROBE_URL = f"https://{_WARP_PROBE_HOST}/cdn-cgi/trace"
 
 
-def relays(proxy_url: str, timeout_seconds: float = 10.0) -> bool:
-    """Proves the proxy actually relays *at the address its consumer will use*.
+def warp_egress(proxy_url: str, timeout_seconds: float = 15.0) -> bool:
+    """Proves the whole chain, at the address the builds will actually use.
 
-    This is the check that makes the whole thing safe to publish. A listener on
-    loopback satisfies `_accepting` while being invisible to a RUN step in its
-    own network namespace -- and exporting an address the builds cannot reach
-    would turn a best-effort improvement into a repository-wide outage, because
-    apt fails hard against an unreachable proxy rather than falling back to a
-    direct connection.
+    One request settles both questions that matter. That it completes at all
+    shows the proxy is reachable from the container-facing address -- a listener
+    bound only to loopback satisfies `_accepting` while staying invisible to a
+    RUN step in its own network namespace. That it comes back `warp=on` shows
+    the MASQUE tunnel is carrying, not merely configured.
 
-    So the container-facing URL is exercised end to end before anyone is told
-    about it. The target resolves through `MATCH,DIRECT`, which keeps this a
-    test of the local relay rather than of WARP: a healthy proxy whose tunnel is
-    down is still strictly better than no proxy at all.
+    Both have to hold before anything is published, and for opposite reasons.
+    An unreachable proxy takes every image down, because apt fails hard against
+    one instead of falling back. A dead tunnel is worse than useless precisely
+    where it is used: the domains routed through WARP are the ones already
+    failing, so pointing them at a broken tunnel guarantees the outcome that
+    going direct merely risks.
+
+    Either way the fallback is the runner's own address, which is what every
+    build used before any of this existed.
     """
     try:
         with httpx.Client(proxy=proxy_url, timeout=timeout_seconds) as client:
-            return client.get(_REACHABILITY_URL).status_code in {200, 204}
+            response = client.get(_WARP_PROBE_URL)
+            response.raise_for_status()
     except (httpx.HTTPError, OSError):
         return False
+
+    fields = dict(line.split("=", 1) for line in response.text.splitlines() if "=" in line)
+    return fields.get("warp", "off").strip() in {"on", "plus"}
 
 
 def start_proxy(
@@ -504,11 +525,11 @@ def start_proxy(
         return ProxyUnavailable("mihomo did not accept connections before the deadline")
 
     container_url = f"http://{bridge_address()}:{port}"
-    if not relays(container_url):
-        # Listening but not usable from where it matters. Refusing to publish it
-        # is the whole point: a build that cannot reach its configured proxy
-        # fails, where a build with no proxy configured simply carries on.
-        return ProxyUnavailable(f"proxy does not relay at {container_url}")
+    if not warp_egress(container_url):
+        # Listening, but not confirmed usable from where it matters. Refusing to
+        # publish is the whole point: a build with no proxy configured carries
+        # on, where a build pointed at a proxy that cannot serve it does not.
+        return ProxyUnavailable(f"no confirmed WARP egress via {container_url}")
 
-    logger.info("Local proxy listening on port %d and relaying", port)
+    logger.info("Local proxy listening on port %d, WARP egress confirmed", port)
     return ProxyReady(local_url=f"http://127.0.0.1:{port}", container_url=container_url)
