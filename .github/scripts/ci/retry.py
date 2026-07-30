@@ -89,6 +89,12 @@ def with_retries(
     here: it is the effect boundary, and burying instrumentation one level down
     from where the retry actually happens is what makes an exhausted budget look
     like a single failure in the log.
+
+    `label` is a verb phrase naming the work ("Building <tag>"), used as a
+    subject prefix rather than interpolated after "failed for". The latter read
+    "failed for Creating manifest for 'redis'" once both call sites shared these
+    strings -- correct, and clumsy enough to slow down whoever is reading a
+    failure.
     """
     unlimited = max_retries <= 0
     budget = "∞" if unlimited else str(max_retries)
@@ -97,17 +103,17 @@ def with_retries(
 
     while unlimited or attempt < max_retries:
         attempt += 1
-        log.info("%s (attempt %d/%s)", label, attempt, budget)
+        log.info("%s: attempt %d/%s", label, attempt, budget)
         try:
             operation()
             return Succeeded(attempts=attempt)
         except retry_on as error:
             last_error = str(error)
-            log.warning("Attempt %d/%s failed for %s: %s", attempt, budget, label, error)
+            log.warning("%s: attempt %d/%s failed: %s", label, attempt, budget, error)
 
         if not unlimited and attempt >= max_retries:
             break
         sleep(backoff(attempt))
 
-    log.error("All %d attempt(s) failed for %s", attempt, label)
+    log.error("%s: all %d attempt(s) failed", label, attempt)
     return Exhausted(attempts=attempt, error=last_error)
