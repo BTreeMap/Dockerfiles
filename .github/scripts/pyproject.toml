@@ -4,7 +4,11 @@ version = "0.1.0"
 description = "Build orchestration for the Dockerfiles image matrix: task discovery, an ad-hoc peer-to-peer build mesh, and post-build reconciliation."
 requires-python = ">=3.12"
 dependencies = [
-    "httpx>=0.28.1",
+    # The http2 extra is not decoration: Cloudflare's registration API is
+    # reached over HTTP/2, which httpx only speaks when `h2` is installed.
+    "httpx[http2]>=0.28.1",
+    # P-256 keys for MASQUE enrolment.
+    "cryptography>=44.0.0",
 ]
 
 [dependency-groups]

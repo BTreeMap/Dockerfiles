@@ -266,3 +266,38 @@ class TunnelUnavailable:
 
 
 TunnelStatus = TunnelReady | TunnelUnavailable
+
+
+# --- egress ----------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ProxyReady:
+    """A listening local proxy, addressed two ways because it has two callers.
+
+    `local_url` reaches it from the runner itself. `container_url` reaches it
+    from inside a buildkit RUN step, which sits in its own network namespace
+    behind the docker bridge and cannot resolve the runner's loopback. Carrying
+    both is what stops the wrong one being handed to the wrong consumer -- the
+    failure that shape prevents is silent, because a proxy nothing can reach
+    looks exactly like a proxy nothing needed.
+    """
+
+    local_url: str
+    container_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProxyUnavailable:
+    """No clean egress. Always survivable: builds run on the runner's own path.
+
+    Degrading rather than failing is deliberate. This exists to route around a
+    dirty shared network, so it must never become a new reason for a run to go
+    red -- on a healthy runner the direct path is what would have been used
+    anyway.
+    """
+
+    reason: str
+
+
+EgressStatus = ProxyReady | ProxyUnavailable

@@ -109,6 +109,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Repairs this runner's network before anything depends on it. Hosted
+      # runners egress from ranges shared by a very large number of tenants,
+      # and some upstreams blackhole them -- which surfaces as a multi-minute
+      # stall rather than a refusal. Exports BUILD_PROXY_URL when it succeeds
+      # and is silent when it does not; see ci/egress.py.
+      #
+      # continue-on-error because this is a best-effort improvement to the
+      # runner, never a prerequisite. Every dependency it has -- GitHub's
+      # release CDN, Cloudflare's registration API and MASQUE edge -- is
+      # occasionally down, and on those days the build simply egresses from the
+      # runner's own address exactly as it does today. The script also traps its
+      # own exceptions; this covers what the interpreter cannot, such as uv
+      # failing to resolve or the process being OOM-killed.
+      #
+      # It needs no platform input: mihomo runs on the runner, so the script
+      # reads this machine's architecture rather than the image build target.
+      #
+      # timeout-minutes because continue-on-error bounds the *verdict*, not the
+      # clock: a step that hangs still burns the job's six hours, which is the
+      # very failure this work exists to remove. Provisioning is two API calls
+      # and a process launch, so anything past three minutes is stuck.
+      - name: Set up clean egress
+        continue-on-error: true
+        timeout-minutes: 3
+        run: uv run python .github/scripts/setup_egress.py
+
       # cloudflared is fetched, digest-checked, and cached by ci/tunnel.py at a
       # pinned version -- see that module for why it is not installed here.
       - name: Build and push assigned images, stealing when idle
@@ -165,6 +191,14 @@ jobs:
           registry: ${{ env.DOCKER_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Reconcile performs real builds, so it needs the same repaired egress a
+      # build worker gets -- and needs it more, being the last chance an image
+      # has to land. Best-effort and time-bounded here too: see the build job.
+      - name: Set up clean egress
+        continue-on-error: true
+        timeout-minutes: 3
+        run: uv run python .github/scripts/setup_egress.py
 
       - name: Verify every expected image landed, rebuild what did not
         run: uv run python .github/scripts/reconcile_builds.py

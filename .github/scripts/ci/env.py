@@ -93,6 +93,17 @@ def write_summary(lines: Iterable[str]) -> None:
     _append("GITHUB_STEP_SUMMARY", "\n".join(lines) + "\n")
 
 
+def write_env(name: str, value: str) -> None:
+    """Exports a variable to every *later* step in the job.
+
+    Distinct from os.environ, which only reaches the current process. A value
+    written here is how one step tells the next what it provisioned -- the
+    machine-level equivalent of a return value.
+    """
+    body = f"{name}<<__EOF__\n{value}\n__EOF__\n" if "\n" in value else f"{name}={value}\n"
+    _append("GITHUB_ENV", body)
+
+
 def mask(secret: str) -> None:
     """Registers a value for redaction before it can reach any log line."""
     print(f"::add-mask::{secret}", flush=True)

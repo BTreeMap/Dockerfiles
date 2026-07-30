@@ -9,6 +9,7 @@ being installed at all.
 from __future__ import annotations
 
 import logging
+import os
 import random
 import subprocess
 import time
@@ -54,6 +55,41 @@ def backoff_seconds(
     draw = uniform if callable(uniform) else random.uniform
     cap = min(max_delay_seconds, base_delay_seconds * (2 ** (attempt - 1)))
     return float(draw(0.0, cap))
+
+
+_PROXY_BYPASS = "localhost,127.0.0.1,::1"
+
+
+def proxy_build_args(proxy_url: str | None) -> tuple[str, ...]:
+    """Build arguments that route a RUN step's fetches through a local proxy.
+
+    Pure, and the only place the proxy touches a build. `http_proxy` and its
+    siblings are BuildKit *predefined* arguments: they need no `ARG` line in any
+    Dockerfile, and being arguments rather than environment they do not survive
+    into the published image. That is what lets a runner-level network fix stay
+    invisible to all ~30 images.
+
+    Both cases are passed because which one a program reads is not consistent --
+    apt and curl take the lowercase form, parts of the Python and Go ecosystems
+    the uppercase.
+
+    An empty URL yields no arguments at all, so an unproxied run produces byte
+    for byte the command it produces today.
+    """
+    if not proxy_url:
+        return ()
+
+    settings = {
+        "http_proxy": proxy_url,
+        "https_proxy": proxy_url,
+        "no_proxy": _PROXY_BYPASS,
+    }
+    return tuple(
+        argument
+        for name, value in settings.items()
+        for spelling in (name, name.upper())
+        for argument in ("--build-arg", f"{spelling}={value}")
+    )
 
 
 def tags_for(task: Task, identity: BuildIdentity) -> tuple[str, ...]:
@@ -186,6 +222,12 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
         (builder_name := f"builder_{task.image}_{task.platform}"),
         "--platform",
         f"linux/{task.platform}",
+        # Empty unless a preceding step provisioned clean egress for this
+        # runner. Read here rather than threaded through Task: it is a property
+        # of the machine the build lands on, not of the work itself, so a task
+        # stolen by a peer correctly picks up that peer's egress and not the
+        # victim's.
+        *proxy_build_args(os.environ.get("BUILD_PROXY_URL")),
         *(argument for tag in tags for argument in ("--tag", tag)),
         "--file",
         task.dockerfile,
