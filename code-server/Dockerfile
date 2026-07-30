@@ -1,179 +1,4 @@
 # =============================================================================
-# Builder stage for proot - Used to compile the proot binary from source
-# proot allows for containerized chroot-like functionality without root privileges
-# =============================================================================
-FROM gcc:12.4.0-bookworm AS proot_builder
-
-# Specify the proot version to ensure reproducible builds
-ARG PROOT_VERSION=v5.4.0
-ARG PROOT_REPOSITORY=https://github.com/BTreeMap/proot-2025-02-26-archive.git
-
-# Install required build dependencies:
-# - git: For source code retrieval
-# - clang-tools: For static analysis during build
-# - libarchive-dev: For archive manipulation support
-# - libtalloc-dev: For memory allocation pooling
-# - Other tools for building, testing and documentation
-RUN set -eux && \
-    apt-get update -y && \
-    apt-get upgrade -y && \
-    apt-get install -y \
-        clang-tools-14 \
-        curl \
-        docutils-common \
-        gdb \
-        git \
-        lcov \
-        libarchive-dev \
-        libtalloc-dev \
-        strace \
-        swig \
-        uthash-dev \
-        xsltproc
-
-# Clone the specific version of proot from GitHub
-# Using --depth 1 to minimize download size (shallow clone)
-RUN git clone --depth 1 --branch $PROOT_VERSION $PROOT_REPOSITORY /proot
-
-# Set the working directory for build operations
-WORKDIR /proot
-
-# Compile a static version of proot for maximum portability
-# Static linking ensures the binary can run without external dependencies
-# The resulting binary will be copied to the final image
-RUN LDFLAGS="${LDFLAGS} -static" make -C src proot GIT=false && \
-    mkdir -p dist && \
-    cp src/proot dist/
-
-# =============================================================================
-# Builder stage for Racket - Used to compile Racket programming language from source
-# Racket is a general-purpose, multi-paradigm programming language in the Lisp/Scheme family
-# This stage builds Racket which will be copied into the final image
-# =============================================================================
-FROM ghcr.io/btreemap/dockerfiles:code-server-base AS racket_builder
-
-# Set environment variables for Racket installation
-ENV BUILD_DIR=/build
-
-# Specify the Racket version and download URL
-ARG RACKET_VERSION=8.16
-ARG RACKET_PACKAGE=racket-8.16-src-builtpkgs.tgz
-ARG RACKET_URL=https://download.racket-lang.org/releases/$RACKET_VERSION/installers/$RACKET_PACKAGE
-ARG RACKET_CHECKSUM=sha256:44d7c1ab34b52588f90dc22b15d96110e104d0c88ed1869f85b6f03c99843078
-
-# Download the Racket source package
-ADD --checksum=$RACKET_CHECKSUM $RACKET_URL $BUILD_DIR/$RACKET_PACKAGE
-
-# Set the working directory for build operations
-WORKDIR $BUILD_DIR
-
-# Extract, configure, build, and install Racket
-RUN tar xfz $RACKET_PACKAGE && \
-    cd racket-$RACKET_VERSION/src && \
-    ./configure --prefix=$RACKET_HOME && \
-    make -j$(nproc) && \
-    make install
-
-# =============================================================================
-# Builder stage for Haskell - Used to install the Haskell toolchain
-# Haskell is a statically typed, purely functional programming language
-# This stage sets up GHC (compiler), Cabal (package manager), and HLS (language server)
-# The Haskell environment will be copied into the final image
-# =============================================================================
-FROM ghcr.io/btreemap/dockerfiles:code-server-base AS haskell_builder
-
-# Set environment variables for Haskell installation
-ENV GHCUP_HOME=/opt/ghcup \
-    GHCUP_INSTALL_BASE_PREFIX=$HASKELL_HOME
-
-# Set the working directory for Haskell installation
-WORKDIR $GHCUP_HOME
-
-# Download the appropriate GHCup binary based on architecture
-RUN set -ex && \
-    # Determine target architecture
-    ARCH=$(uname -m) && \
-    case "$ARCH" in \
-        x86_64) ARCH=x86_64 ;; \
-        aarch64|arm64) ARCH=aarch64 ;; \
-        *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
-    esac && \
-    # Download GHCup installer
-    GHCUP_URL="https://downloads.haskell.org/~ghcup/${ARCH}-linux-ghcup" && \
-    curl -sSL "$GHCUP_URL" -o ghcup && \
-    chmod +x ghcup
-
-# Install GHC, Cabal, and HLS using GHCup
-RUN ./ghcup install ghc --set recommended && \
-    ./ghcup install cabal latest && \
-    ./ghcup install hls latest && \
-    ./ghcup gc --cache --hls-no-ghc --profiling-libs --tmpdirs && \
-    rm -rf \
-        $HASKELL_HOME/.ghcup/cache \
-        $HASKELL_HOME/.ghcup/logs \
-        $HASKELL_HOME/.ghcup/tmp \
-        $HASKELL_HOME/.ghcup/trash
-
-# =============================================================================
-# Builder stage for Go - Used to install the Go programming language
-# Go is a statically typed, compiled language designed for simplicity and efficiency.
-# This stage downloads and installs the latest stable Go release for the detected architecture.
-# The Go environment will be copied into the final image.
-# =============================================================================
-FROM ghcr.io/btreemap/dockerfiles:code-server-base AS go_builder
-
-RUN set -ex && \
-    # Determine target architecture
-    ARCH=$(uname -m) && \
-    case "$ARCH" in \
-        x86_64) ARCH=amd64 ;; \
-        aarch64|arm64) ARCH=arm64 ;; \
-        *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
-    esac && \
-    # Fetch Go releases JSON and extract latest stable version and checksum for our arch
-    GO_JSON="$(curl -sSfL 'https://go.dev/dl/?mode=json')" && \
-    GO_VERSION="$(echo "$GO_JSON" | jq -r '[.[] | select(.stable)][0].version')" && \
-    TARBALL="${GO_VERSION}.linux-${ARCH}.tar.gz" && \
-    GO_SHA256="$(echo "$GO_JSON" | jq -r --arg GO_VERSION "$GO_VERSION" --arg TARBALL "$TARBALL" '.[] | select(.version == $GO_VERSION) | .files[] | select(.filename == $TARBALL) | .sha256')" && \
-    echo "Installing ${GO_VERSION} for ${ARCH}" && \
-    curl -sSfL -o /tmp/go.tgz "https://go.dev/dl/${TARBALL}" && \
-    echo "${GO_SHA256}  /tmp/go.tgz" | sha256sum -c - && \
-    tar -C /opt -xzf /tmp/go.tgz && \
-    rm -rf /tmp/go.tgz && \
-    $GO_HOME/bin/go version
-
-# =============================================================================
-# Builder stage for eBPF tools - Used to install the latest standalone eBPF tools.
-# Currently includes bpftool, which is used for managing BPF programs and maps.
-# This stage fetches the latest bpftool release for the detected architecture.
-# The eBPF tools will be copied into the final image.
-# =============================================================================
-FROM ghcr.io/btreemap/dockerfiles:code-server-base AS ebpf_tools_builder
-
-RUN set -ex && \
-    # Determine target architecture
-    ARCH=$(uname -m) && \
-    case "$ARCH" in \
-        x86_64) ARCH=amd64 ;; \
-        aarch64|arm64) ARCH=arm64 ;; \
-        *) echo "Unsupported arch: $ARCH" >&2; exit 1 ;; \
-    esac && \
-    echo "Fetching latest bpftool version" && \
-    BPFTOOL_LATEST=$(curl -sSL https://api.github.com/repos/libbpf/bpftool/releases/latest | jq -r .tag_name) && \
-    echo "Latest bpftool version: $BPFTOOL_LATEST" && \
-    TARBALL="bpftool-${BPFTOOL_LATEST}-${ARCH}.tar.gz" && \
-    URL="https://github.com/libbpf/bpftool/releases/download/${BPFTOOL_LATEST}/${TARBALL}" && \
-    echo "Downloading $URL" && \
-    curl -sSL -o /tmp/${TARBALL} ${URL} && \
-    curl -sSL -o /tmp/${TARBALL}.sha256sum ${URL}.sha256sum && \
-    (cd /tmp && sha256sum -c ${TARBALL}.sha256sum) && \
-    mkdir -p $EBPF_TOOLS_HOME && \
-    tar -C $EBPF_TOOLS_HOME -xzf /tmp/${TARBALL} && \
-    # Make bpftool executable
-    chmod +x $EBPF_TOOLS_HOME/bpftool && \
-    rm -rf /tmp/*
-
-# =============================================================================
 # Main image - Using LinuxServer's code-server as the base image
 # code-server provides VS Code in the browser with a full development environment
 # =============================================================================
@@ -214,25 +39,43 @@ ENV UV_INSTALL_DIR=/opt/uv \
 ## Copy application files and s6-overlay config to container root
 COPY root/ /
 
-# Copy the proot binary from the proot_builder stage to /usr/local/bin/proot in the current stage
-# This allows us to use proot for creating a virtualized filesystem environment without full root privileges
-COPY --from=proot_builder /proot/dist/proot /usr/local/bin/proot
+# -----------------------------------------------------------------------------
+# Toolchains, copied from the images ./proot.Dockerfile, ./racket.Dockerfile,
+# ./haskell.Dockerfile, ./go.Dockerfile, and ./ebpf-tools.Dockerfile publish.
+#
+# These were builder stages in this file until every one of them had to finish
+# before this image could start. As separate tasks the mesh spreads them across
+# runners and they build concurrently, which is the whole point.
+#
+# Each source is a scratch image holding only the artifact, so these pulls are
+# the toolchain and nothing else. The tags float, so a build picks up whatever
+# the last completed run published -- at most 12 hours old on the current
+# schedule, and the deliberate cost of decoupling them.
+#
+# The --chown stays: the artifact images carry root-owned files, so ownership is
+# established here, exactly as it was when these were local stages.
+# -----------------------------------------------------------------------------
 
-# Copy the Racket installation from the racket_builder stage to $RACKET_HOME in the current stage
-# This allows us to use Racket for development and execution of Racket programs
-COPY --from=racket_builder --chown=${PUID}:${PGID} $RACKET_HOME $RACKET_HOME
+# proot lets us create a virtualized filesystem environment without full root
+# privileges. Renamed on the way in, as it was from the builder stage.
+COPY --from=ghcr.io/btreemap/dockerfiles:code-server-proot \
+    /proot/dist/proot /usr/local/bin/proot
 
-# Copy the Haskell installation from the haskell_builder stage to $HASKELL_HOME in the current stage
-# This allows us to use Haskell for development and execution of Haskell programs
-COPY --from=haskell_builder --chown=${PUID}:${PGID} $HASKELL_HOME $HASKELL_HOME
+# Racket, for development and execution of Racket programs
+COPY --from=ghcr.io/btreemap/dockerfiles:code-server-racket \
+    --chown=${PUID}:${PGID} $RACKET_HOME $RACKET_HOME
 
-# Copy the Go installation from the go_builder stage to $GO_HOME in the current stage
-# This allows us to use Go for development and execution of Go programs
-COPY --from=go_builder --chown=${PUID}:${PGID} $GO_HOME $GO_HOME
+# Haskell (GHC, Cabal, HLS), for development and execution of Haskell programs
+COPY --from=ghcr.io/btreemap/dockerfiles:code-server-haskell \
+    --chown=${PUID}:${PGID} $HASKELL_HOME $HASKELL_HOME
 
-# Copy the ebpf-tools directory from the ebpf_tools_builder stage to $EBPF_TOOLS_HOME in the current stage
-# This allows us to use bpftool for BPF-related operations
-COPY --from=ebpf_tools_builder --chown=${PUID}:${PGID} $EBPF_TOOLS_HOME $EBPF_TOOLS_HOME
+# Go, for development and execution of Go programs
+COPY --from=ghcr.io/btreemap/dockerfiles:code-server-go \
+    --chown=${PUID}:${PGID} $GO_HOME $GO_HOME
+
+# bpftool, for BPF-related operations
+COPY --from=ghcr.io/btreemap/dockerfiles:code-server-ebpf-tools \
+    --chown=${PUID}:${PGID} $EBPF_TOOLS_HOME $EBPF_TOOLS_HOME
 
 RUN set -ex && \
     \
