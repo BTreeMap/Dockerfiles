@@ -1,97 +1,4 @@
 # =============================================================================
-# Base stage - Using LinuxServer's code-server as the foundation
-# code-server provides VS Code functionality in the browser
-# This stage sets up the core environment for our development container
-# =============================================================================
-FROM lscr.io/linuxserver/code-server:latest AS base
-
-# Set environment variables for the base image
-ENV DEBIAN_FRONTEND=noninteractive \
-    PUID=1000 \
-    PGID=1000 \
-    TZ=America/Toronto \
-    DEFAULT_WORKSPACE=/config/workspace
-
-# Set environment variables for Racket, FNM, Rust, and Cargo
-ENV RACKET_HOME=/opt/racket \
-    CABAL_DIR=/config/.haskell \
-    HASKELL_HOME=/opt/haskell \
-    FNM_DIR=/opt/fnm \
-    RUSTUP_HOME=/opt/rustup \
-    CARGO_HOME=/opt/cargo \
-    GO_HOME=/opt/go \
-    EBPF_TOOLS_HOME=/opt/ebpf-tools \
-    LLVM_VERSION=19 \
-    LLVM_HOME=/opt/llvm
-
-# Combine RUN commands into logical groups to minimize layers and improve caching
-RUN set -ex && \
-    \
-    # Update and upgrade package lists
-    apt-get update && \
-    apt-get upgrade -y && \
-    \
-    # Install necessary packages
-    apt-get install -y --no-install-recommends \
-        7zip \
-        apt-transport-https \
-        bc \
-        bind9-dnsutils \
-        build-essential \
-        ca-certificates \
-        cmake \
-        curl \
-        fuse3 \
-        git \
-        gnupg \
-        gzip \
-        iproute2 \
-        iptables \
-        iputils-ping \
-        jq \
-        libbpf-dev \
-        libbpf1 \
-        libc6-dev \
-        libelf-dev \
-        libffi-dev \
-        libffi8 \
-        libfuse-dev \
-        libfuse2t64 \
-        libfuse3-dev \
-        libgmp-dev \
-        libgmp10 \
-        libncurses-dev \
-        libnsl-dev \
-        libnsl2 \
-        lsb-release \
-        mininet \
-        mtr \
-        ninja-build \
-        pkgconf \
-        python-is-python3 \
-        python3-full \
-        python3-pip \
-        python3-setuptools \
-        ripgrep \
-        screen \
-        software-properties-common \
-        strace \
-        tar \
-        unzip \
-        valgrind \
-        wget \
-        xvfb \
-        xxd \
-        xz-utils \
-        zip \
-        zlib1g-dev \
-        zstd \
-    && \
-    # Remove temporary and unnecessary files
-    apt-get clean && \
-    find /config /tmp /var/tmp /var/lib/apt/lists -mindepth 1 -delete
-
-# =============================================================================
 # Builder stage for proot - Used to compile the proot binary from source
 # proot allows for containerized chroot-like functionality without root privileges
 # =============================================================================
@@ -143,7 +50,7 @@ RUN LDFLAGS="${LDFLAGS} -static" make -C src proot GIT=false && \
 # Racket is a general-purpose, multi-paradigm programming language in the Lisp/Scheme family
 # This stage builds Racket which will be copied into the final image
 # =============================================================================
-FROM base AS racket_builder
+FROM ghcr.io/btreemap/dockerfiles:code-server-base AS racket_builder
 
 # Set environment variables for Racket installation
 ENV BUILD_DIR=/build
@@ -173,7 +80,7 @@ RUN tar xfz $RACKET_PACKAGE && \
 # This stage sets up GHC (compiler), Cabal (package manager), and HLS (language server)
 # The Haskell environment will be copied into the final image
 # =============================================================================
-FROM base AS haskell_builder
+FROM ghcr.io/btreemap/dockerfiles:code-server-base AS haskell_builder
 
 # Set environment variables for Haskell installation
 ENV GHCUP_HOME=/opt/ghcup \
@@ -213,7 +120,7 @@ RUN ./ghcup install ghc --set recommended && \
 # This stage downloads and installs the latest stable Go release for the detected architecture.
 # The Go environment will be copied into the final image.
 # =============================================================================
-FROM base AS go_builder
+FROM ghcr.io/btreemap/dockerfiles:code-server-base AS go_builder
 
 RUN set -ex && \
     # Determine target architecture
@@ -241,7 +148,7 @@ RUN set -ex && \
 # This stage fetches the latest bpftool release for the detected architecture.
 # The eBPF tools will be copied into the final image.
 # =============================================================================
-FROM base AS ebpf_tools_builder
+FROM ghcr.io/btreemap/dockerfiles:code-server-base AS ebpf_tools_builder
 
 RUN set -ex && \
     # Determine target architecture
@@ -270,7 +177,7 @@ RUN set -ex && \
 # Main image - Using LinuxServer's code-server as the base image
 # code-server provides VS Code in the browser with a full development environment
 # =============================================================================
-FROM base
+FROM ghcr.io/btreemap/dockerfiles:code-server-base
 
 # Set environment variables for the final image
 ENV CABAL_UPDATE_PACKAGES=true \
