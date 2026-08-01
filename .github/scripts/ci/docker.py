@@ -267,6 +267,7 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
                 task=task,
                 attempts=attempts,
                 duration_seconds=elapsed,
+                edges=resolved,
                 started_at=started,
             )
         case Exhausted(attempts, error):
@@ -280,6 +281,7 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
                 # and taking it per attempt would both cost more and describe a
                 # moment the run had already recovered from.
                 metrics=collect_metrics(),
+                edges=resolved,
                 started_at=started,
             )
         case _:

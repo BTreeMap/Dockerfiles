@@ -39,6 +39,7 @@ from ci.env import (
 )
 from ci.logs import configure
 from ci.mesh import MeshClient, Rendezvous
+from ci.report import provenance_section
 
 logger = logging.getLogger("ci.reconcile")
 
@@ -146,6 +147,7 @@ def main() -> int:
 
     write_summary(
         [
+            *provenance_section(f"Reconcile ({platform}) — what each rebuild consumed", outcomes),
             "",
             f"### Reconcile ({platform})",
             "",

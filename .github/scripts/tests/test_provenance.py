@@ -13,15 +13,21 @@ from typing import Any
 
 import pytest
 
-from ci.domain import BatchId, Dependency, Platform, Task, Usage
+from ci.domain import (
+    BatchId,
+    Dependency,
+    Minted,
+    Platform,
+    ResolvedEdge,
+    Task,
+    Unlabelled,
+    Unreadable,
+    Usage,
+)
 from ci.provenance import (
     BATCH_LABEL,
     CONSUMES_LABEL,
     IMAGE_LABEL,
-    Minted,
-    Provenance,
-    Unlabelled,
-    Unreadable,
     _batch_in,
     _configuration_for,
     label_arguments,
@@ -123,7 +129,7 @@ def test_an_image_outside_the_graph_carries_no_labels() -> None:
     SOURCE_DATE_EPOCH exists for: an image with no edges gains nothing that
     changes every run.
     """
-    assert label_arguments(task(), BATCH, {}) == ()
+    assert label_arguments(task(), BATCH, ()) == ()
 
 
 def test_a_referenced_image_is_labelled_even_with_no_dependencies_of_its_own() -> None:
@@ -134,7 +140,7 @@ def test_a_referenced_image_is_labelled_even_with_no_dependencies_of_its_own() -
     downstream of them.
     """
     rendered_labels = labels(
-        label_arguments(task(image="code-server-base", dependents=("code-server",)), BATCH, {})
+        label_arguments(task(image="code-server-base", dependents=("code-server",)), BATCH, ())
     )
 
     assert rendered_labels[BATCH_LABEL] == str(BATCH)
@@ -151,7 +157,7 @@ def test_dependents_decide_membership_but_are_never_published() -> None:
     """
     consumers = ("code-server", "code-server-full")
     rendered_labels = labels(
-        label_arguments(task(image="code-server-base", dependents=consumers), BATCH, {})
+        label_arguments(task(image="code-server-base", dependents=consumers), BATCH, ())
     )
 
     assert set(rendered_labels) == {IMAGE_LABEL, BATCH_LABEL}
@@ -173,10 +179,10 @@ def test_a_consuming_image_records_the_batch_behind_each_edge() -> None:
             Dependency(image="code-server-go", usage=Usage.ARTIFACT),
         )
     )
-    resolved = {
-        "code-server-base": Minted(BATCH, "sha256:aa"),
-        "code-server-go": Minted(OTHER, "sha256:bb"),
-    }
+    resolved = (
+        ResolvedEdge(consuming.dependencies[0], Minted(BATCH, "sha256:aa")),
+        ResolvedEdge(consuming.dependencies[1], Minted(OTHER, "sha256:bb")),
+    )
 
     consumes = json.loads(labels(label_arguments(consuming, BATCH, resolved))[CONSUMES_LABEL])
 
@@ -202,7 +208,15 @@ def test_an_unresolved_edge_is_recorded_rather_than_dropped() -> None:
     """Silence would read as "no dependency"; this reads as "could not tell"."""
     consuming = task(dependencies=(Dependency(image="code-server-base", usage=Usage.BASE),))
 
-    consumes = json.loads(labels(label_arguments(consuming, BATCH, {}))[CONSUMES_LABEL])
+    consumes = json.loads(
+        labels(
+            label_arguments(
+                consuming,
+                BATCH,
+                (ResolvedEdge(consuming.dependencies[0], Unreadable("not resolved")),),
+            )
+        )[CONSUMES_LABEL]
+    )
 
     assert consumes == [
         {
@@ -228,11 +242,11 @@ def test_labels_are_byte_stable_for_an_unchanged_graph() -> None:
         ),
         dependents=("x", "y"),
     )
-    resolved: dict[str, Provenance] = {
-        "a": Minted(BATCH, "sha256:aa"),
-        "b": Unlabelled("sha256:bb"),
-    }
+    resolved = (
+        ResolvedEdge(consuming.dependencies[0], Minted(BATCH, "sha256:aa")),
+        ResolvedEdge(consuming.dependencies[1], Unlabelled("sha256:bb")),
+    )
 
     first = label_arguments(consuming, BATCH, resolved)
-    assert first == label_arguments(consuming, BATCH, dict(reversed(list(resolved.items()))))
+    assert first == label_arguments(consuming, BATCH, resolved)
     assert " " not in labels(first)[CONSUMES_LABEL]

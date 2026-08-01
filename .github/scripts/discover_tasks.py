@@ -9,11 +9,19 @@ import logging
 import sys
 from pathlib import Path
 
-from ci.discovery import ConflictingDockerfiles, MatrixEntry, deal, discover, seed_for
+from ci.discovery import (
+    ConflictingDockerfiles,
+    MatrixEntry,
+    deal,
+    definitions,
+    discover,
+    seed_for,
+)
 from ci.domain import Platform
-from ci.env import COUNT, RETRIES, TEXT, read, write_output
+from ci.env import COUNT, RETRIES, TEXT, read, write_output, write_summary
 from ci.logs import configure
-from ci.references import DanglingReference
+from ci.references import DanglingReference, dependents_of, graph
+from ci.report import graph_section
 
 logger = logging.getLogger("ci.discover")
 
@@ -81,6 +89,12 @@ def main() -> int:
             }
         ),
     )
+
+    # Reported from the plan job because it is a fact about the tree, not about
+    # this run: identical between two runs unless a Dockerfile moved, which is
+    # what makes any difference in it worth a second look.
+    discovered = graph(definitions(Path.cwd()), Path.cwd())
+    write_summary(list(graph_section(discovered, dependents_of(discovered))))
 
     write_output("images", json.dumps(sorted({task.image for task in tasks})))
     write_output("platforms", json.dumps([str(platform) for platform in platforms]))

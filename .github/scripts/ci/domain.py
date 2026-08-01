@@ -330,6 +330,57 @@ class Task:
 _TASK: TypeAdapter[Task] = TypeAdapter(Task)
 
 
+# --- what one dependency edge resolved to -----------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Minted:
+    """The dependency carries a batch label: the group it came from is known."""
+
+    batch: BatchId
+    digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class Unlabelled:
+    """Resolved, but carrying no batch of ours.
+
+    Reachable and expected: an image published before this mechanism existed, or
+    one whose edges were added after it was last built. Distinct from `Unreadable`
+    because the registry answered -- the digest below is real evidence, and the
+    absence of a batch is a fact about that image rather than about the lookup.
+    """
+
+    digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class Unreadable:
+    """The registry could not be asked, or did not answer in a shape we know."""
+
+    reason: str
+
+
+Provenance = Minted | Unlabelled | Unreadable
+
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedEdge:
+    """One edge of the graph paired with what the registry said about it.
+
+    A product rather than a `Mapping[str, Provenance]` keyed by image name. The
+    mapping made every reader look a dependency up by string and decide what an
+    absent key meant, which is a lookup that cannot miss in a design where every
+    edge is resolved exactly once -- so the "not resolved" branch each caller
+    carried was unreachable prose. Pairing them makes the absence unrepresentable
+    and the report a straight render.
+    """
+
+    dependency: Dependency
+    provenance: Provenance
+
+
 # --- build outcomes --------------------------------------------------------
 
 
@@ -338,6 +389,10 @@ class BuildSucceeded:
     task: Task
     attempts: int
     duration_seconds: float
+    # What each of this task's dependency edges resolved to, carried out of the
+    # build so the job summary can report it. Empty for the images with no edges,
+    # which is most of them.
+    edges: tuple[ResolvedEdge, ...] = ()
     # Monotonic clock reading when the build began. Kept alongside the duration
     # so overlaps between concurrent builds can be reconstructed afterwards --
     # which is what turns "are the slots actually busy?" into a measurement
@@ -358,6 +413,9 @@ class BuildFailed:
     # now fails to type-check instead of quietly editing another thread's
     # failure report.
     metrics: Mapping[str, str]
+    # Carried on a failure too: what a build was assembled from is most worth
+    # reading when it did not work.
+    edges: tuple[ResolvedEdge, ...] = ()
     started_at: float = 0.0
 
 

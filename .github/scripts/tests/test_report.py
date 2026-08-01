@@ -1,0 +1,159 @@
+"""The job summary: a pure fold from records to markdown.
+
+The tests that matter are the ones about *attention*. A summary competes with
+the log below it, so what earns a row, what folds away, and what leads are the
+decisions worth pinning -- a report nobody reads is worse than none.
+"""
+
+from __future__ import annotations
+
+from ci.domain import (
+    BuildFailed,
+    BuildSucceeded,
+    Dependency,
+    Minted,
+    Platform,
+    Provenance,
+    ResolvedEdge,
+    Task,
+    Unlabelled,
+    Unreadable,
+    Usage,
+)
+from ci.report import graph_section, outcome_rows, provenance_section
+from tests.test_provenance import BATCH, OTHER
+
+
+def task(image: str, *dependencies: Dependency) -> Task:
+    return Task(
+        image=image,
+        dockerfile=f"{image}/Dockerfile",
+        context=image,
+        platform=Platform.AMD64,
+        max_retries=1,
+        dependencies=dependencies,
+    )
+
+
+def built(
+    image: str, *edges: tuple[Dependency, Provenance], seconds: float = 60.0
+) -> BuildSucceeded:
+    return BuildSucceeded(
+        task=task(image, *(dependency for dependency, _ in edges)),
+        attempts=1,
+        duration_seconds=seconds,
+        edges=tuple(ResolvedEdge(dependency, provenance) for dependency, provenance in edges),
+    )
+
+
+BASE = Dependency(image="code-server-base", usage=Usage.BASE)
+GO = Dependency(image="code-server-go", usage=Usage.ARTIFACT)
+
+
+# --- the fact the report exists to surface ----------------------------------
+
+
+def test_edges_from_two_batches_are_called_out_above_the_table() -> None:
+    """The skew is invisible in a list of per-edge states unless compared.
+
+    Every row can read "pinned" while the image is still assembled from two
+    generations, which is exactly the failure this whole mechanism is for. So the
+    comparison happens here rather than in the reader's head.
+    """
+    lines = provenance_section(
+        "W",
+        [built("code-server", (BASE, Minted(BATCH, "sha256:a")), (GO, Minted(OTHER, "sha256:b")))],
+    )
+
+    assert any("⚠️" in line and "1 image(s)" in line for line in lines)
+    assert any("`code-server`: 2 distinct batches" in line for line in lines)
+    assert any("artifact and base" in line for line in lines)
+
+
+def test_edges_from_one_batch_report_agreement() -> None:
+    lines = provenance_section(
+        "W",
+        [built("code-server", (BASE, Minted(BATCH, "sha256:a")), (GO, Minted(BATCH, "sha256:b")))],
+    )
+    assert any("✅" in line for line in lines)
+    assert not any("⚠️" in line for line in lines)
+
+
+def test_a_floating_edge_is_not_counted_as_disagreement() -> None:
+    """An edge with no batch has nothing to disagree with.
+
+    Counting it would raise a warning on every first run, when nothing is
+    labelled yet -- and a warning that fires when things are fine is one nobody
+    reads when they are not.
+    """
+    lines = provenance_section(
+        "W", [built("code-server", (BASE, Minted(BATCH, "sha256:a")), (GO, Unlabelled("sha256:b")))]
+    )
+    assert any("✅" in line for line in lines)
+    assert any("1 unpinned" in line for line in lines)
+
+
+def test_an_unreadable_edge_reports_its_reason_in_the_row() -> None:
+    """A marker without its reason sends the reader to the log."""
+    lines = provenance_section("W", [built("x", (BASE, Unreadable("inspect exited 1")))])
+    assert any("inspect exited 1" in line for line in lines)
+
+
+# --- what earns space -------------------------------------------------------
+
+
+def test_a_job_with_no_edges_reports_nothing_at_all() -> None:
+    """Most workers hold only isolated images; an empty section costs a glance."""
+    assert provenance_section("W", [built("redis")]) == ()
+
+
+def test_isolated_images_are_folded_away_but_not_lost() -> None:
+    """They are most of the repository and carry no provenance.
+
+    Inline they would push the eight that matter off the first screen; dropped
+    entirely, a reader could not confirm an image was discovered at all.
+    """
+    edges = {"base": (), "app": (Dependency(image="base", usage=Usage.BASE),), "alone": ()}
+    dependents = {"base": ("app",), "app": (), "alone": ()}
+
+    lines = graph_section(edges, dependents)
+    rendered = "\n".join(lines)
+
+    assert "<details><summary>Isolated images</summary>" in rendered
+    assert "`alone`" in rendered
+    assert "**2** image(s) reference each other" in rendered
+    assert "**1** isolated image(s)" in rendered
+    # The members are in the scannable table, not behind the fold.
+    assert rendered.index("| `app` ") < rendered.index("<details>")
+
+
+def test_an_empty_cell_reads_as_empty_rather_than_missing() -> None:
+    edges = {"base": (), "app": (Dependency(image="base", usage=Usage.BASE),)}
+    dependents = {"base": ("app",), "app": ()}
+    assert any(line.endswith("| — |") for line in graph_section(edges, dependents))
+
+
+# --- ordering ---------------------------------------------------------------
+
+
+def test_failures_lead_and_the_slowest_survivor_follows() -> None:
+    """Two keys, both load-bearing.
+
+    Failures first so nobody scans for them; duration next because the slowest
+    image is the floor parallelism cannot beat, which is why these timings are
+    recorded at all.
+    """
+    outcomes = (
+        built("quick", seconds=10.0),
+        built("slow", seconds=600.0),
+        BuildFailed(
+            task=task("broken"),
+            attempts=3,
+            duration_seconds=1.0,
+            error="boom",
+            metrics={},
+        ),
+    )
+
+    images = [row.split("`")[1] for row in outcome_rows(outcomes, frozenset())]
+    assert images == ["broken.amd64", "slow.amd64", "quick.amd64"]

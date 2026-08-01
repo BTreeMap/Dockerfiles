@@ -26,10 +26,21 @@ import json
 import logging
 import subprocess
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any, assert_never
 
-from ci.domain import BatchId, Dependency, Platform, Task, selector, selector_argument
+from ci.domain import (
+    BatchId,
+    Dependency,
+    Minted,
+    Platform,
+    Provenance,
+    ResolvedEdge,
+    Task,
+    Unlabelled,
+    Unreadable,
+    selector,
+    selector_argument,
+)
 
 logger = logging.getLogger("ci.provenance")
 
@@ -53,40 +64,6 @@ CONSUMES_LABEL = f"{_PREFIX}.consumes"
 # builder and a share of the run's tasks. A registry that has stopped answering
 # must cost one edge's worth of waiting, not the job's remaining hours.
 _INSPECT_TIMEOUT_SECONDS = 60
-
-
-# --- what an edge resolved to ----------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class Minted:
-    """The dependency carries a batch label: the group it came from is known."""
-
-    batch: BatchId
-    digest: str
-
-
-@dataclass(frozen=True, slots=True)
-class Unlabelled:
-    """Resolved, but carrying no batch of ours.
-
-    Reachable and expected: an image published before this mechanism existed, or
-    one whose edges were added after it was last built. Distinct from `Unreadable`
-    because the registry answered -- the digest below is real evidence, and the
-    absence of a batch is a fact about that image rather than about the lookup.
-    """
-
-    digest: str
-
-
-@dataclass(frozen=True, slots=True)
-class Unreadable:
-    """The registry could not be asked, or did not answer in a shape we know."""
-
-    reason: str
-
-
-Provenance = Minted | Unlabelled | Unreadable
 
 
 def rendered(provenance: Provenance) -> dict[str, str]:
@@ -189,7 +166,7 @@ def resolve(reference: str, platform: Platform) -> Provenance:
 
 def resolve_all(
     dependencies: tuple[Dependency, ...], registry_repository: str, platform: Platform
-) -> Mapping[str, Provenance]:
+) -> tuple[ResolvedEdge, ...]:
     """Resolves every edge of one task, keyed by image name.
 
     Sequential, and the boundedness argument is the graph's: an image has a
@@ -197,16 +174,19 @@ def resolve_all(
     tasks. Logged per edge because this is the observable boundary -- a build log
     that says which batch each input came from is the whole point of the exercise.
     """
-    resolved = {
-        dependency.image: resolve(f"{registry_repository}:{dependency.image}", platform)
+    resolved = tuple(
+        ResolvedEdge(
+            dependency=dependency,
+            provenance=resolve(f"{registry_repository}:{dependency.image}", platform),
+        )
         for dependency in dependencies
-    }
-    for dependency in dependencies:
+    )
+    for edge in resolved:
         logger.info(
             "  consumes %s (%s): %s",
-            dependency.image,
-            dependency.usage,
-            json.dumps(rendered(resolved[dependency.image]), sort_keys=True),
+            edge.dependency.image,
+            edge.dependency.usage,
+            json.dumps(rendered(edge.provenance), sort_keys=True),
         )
     return resolved
 
@@ -226,7 +206,7 @@ def _compact(payload: Any) -> str:
 
 
 def selector_arguments(
-    task: Task, registry_repository: str, resolved: Mapping[str, Provenance]
+    task: Task, registry_repository: str, resolved: tuple[ResolvedEdge, ...]
 ) -> tuple[str, ...]:
     """The `--build-arg` arguments pinning each of this task's references.
 
@@ -242,26 +222,24 @@ def selector_arguments(
     `unlabelled` or `unreadable`, so a degraded build is described rather than
     silently different from a pinned one.
     """
-    if not task.dependencies:
+    if not resolved:
         return ()
 
     # The repository half of every reference, passed once. The Dockerfiles carry
     # the upstream path as a default so they build standalone; a fork's workflow
     # passes its own here and its images reference each other rather than ours.
-    def pin(dependency: Dependency) -> str:
-        found = resolved.get(dependency.image)
+    def pin(edge: ResolvedEdge) -> str:
+        found = edge.provenance
         batch = found.batch if isinstance(found, Minted) else None
-        return f"{selector_argument(dependency.image)}={selector(batch)}"
+        return f"{selector_argument(edge.dependency.image)}={selector(batch)}"
 
     return ("--build-arg", f"REGISTRY={registry_repository}") + tuple(
-        argument
-        for dependency in task.dependencies
-        for argument in ("--build-arg", pin(dependency))
+        argument for edge in resolved for argument in ("--build-arg", pin(edge))
     )
 
 
 def label_arguments(
-    task: Task, batch: BatchId, resolved: Mapping[str, Provenance]
+    task: Task, batch: BatchId, resolved: tuple[ResolvedEdge, ...]
 ) -> tuple[str, ...]:
     """The `--label` arguments describing this task's place in the graph.
 
@@ -287,15 +265,15 @@ def label_arguments(
         IMAGE_LABEL: task.image,
         BATCH_LABEL: str(batch),
     }
-    if task.dependencies:
+    if resolved:
         labels[CONSUMES_LABEL] = _compact(
             [
                 {
-                    "image": dependency.image,
-                    "usage": str(dependency.usage),
-                    **rendered(resolved.get(dependency.image, Unreadable("not resolved"))),
+                    "image": edge.dependency.image,
+                    "usage": str(edge.dependency.usage),
+                    **rendered(edge.provenance),
                 }
-                for dependency in task.dependencies
+                for edge in resolved
             ]
         )
 

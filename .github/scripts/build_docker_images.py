@@ -29,7 +29,6 @@ from ci.domain import (
     Task,
     TunnelReady,
     TunnelUnavailable,
-    succeeded,
 )
 from ci.env import (
     COUNT,
@@ -44,6 +43,7 @@ from ci.env import (
 )
 from ci.logs import configure
 from ci.mesh import MeshClient, Rendezvous, SoloMesh, derive_run_key, serve_mesh
+from ci.report import outcome_rows, provenance_section
 from ci.scheduling import TaskQueue, run_worker
 from ci.tunnel import quick_tunnel, resolve_binary
 from ci.utilisation import effective_parallelism, intervals_of, peak_concurrency
@@ -67,7 +67,6 @@ def summarise(
     nothing. At or near it means they were saturated and a higher count is worth
     testing -- against disk, which is what actually collides.
     """
-    rows = sorted(outcomes, key=lambda outcome: -outcome.duration_seconds)
     spans = intervals_of((o.started_at, o.duration_seconds) for o in outcomes)
     achieved = effective_parallelism(spans)
     total = sum(o.duration_seconds for o in outcomes)
@@ -84,14 +83,8 @@ def summarise(
             "",
             "| Image | Result | Attempts | Duration | Origin |",
             "| --- | --- | --- | --- | --- |",
-            *(
-                f"| `{outcome.task.image}.{outcome.task.platform}` "
-                f"| {'ok' if succeeded(outcome) else '**failed**'} "
-                f"| {outcome.attempts} "
-                f"| {outcome.duration_seconds / 60:.1f} min "
-                f"| {'dealt' if outcome.task.image in dealt else 'stolen'} |"
-                for outcome in rows
-            ),
+            *outcome_rows(outcomes, dealt),
+            *provenance_section(f"Worker {worker_id} — what each image consumed", outcomes),
             "",
         ]
     )
