@@ -215,8 +215,22 @@ def run_section(
     return tuple(lines)
 
 
+def _oldest_content(level: int) -> str:
+    """How old the deepest thing inside an image at this level is.
+
+    `level - 1`, and not the largest offset on the image's own edges, which is
+    the number a per-edge table cannot show. `code-server-full` pins
+    `code-server` one generation back, but that build had already pinned its own
+    base two further back, so its oldest layers are three generations old while
+    every edge on its row reads one or two.
+    """
+    return "this run" if level <= 1 else f"N-{level - 1}"
+
+
 def graph_section(
-    edges: Mapping[str, tuple[Dependency, ...]], dependents: Mapping[str, tuple[str, ...]]
+    edges: Mapping[str, tuple[Dependency, ...]],
+    dependents: Mapping[str, tuple[str, ...]],
+    levels: Mapping[str, int],
 ) -> tuple[str, ...]:
     """The repository's own dependency graph, once, from the plan job.
 
@@ -231,8 +245,8 @@ def graph_section(
     """
     members = sorted(image for image in edges if edges[image] or dependents[image])
     isolated = sorted(set(edges) - set(members))
-    reach = {image: max((d.generations_back for d in edges[image]), default=0) for image in edges}
-    deepest = max(reach.values(), default=0)
+    deepest = max((levels[image] for image in members), default=1)
+    oldest = sorted(image for image in members if levels[image] == deepest)
 
     return (
         "",
@@ -244,15 +258,21 @@ def graph_section(
         "- a **generation** is one completed run, not a fixed span of time: pushes to "
         "`main` produce generations as well as the schedule, so how old a generation is "
         "depends on how often the repository changes",
-        f"- the deepest edge reaches **{deepest} generation(s)** back. An edge reaching "
-        "back *k* is pinned to the *k*-th newest generation, because an artifact's "
-        "binaries were compiled against a base one generation older than its own batch, "
-        "so the base it lands on has to be that much older too or they disagree",
+        f"- the oldest content in any image here is **{_oldest_content(deepest)}**, in "
+        + _joined(f"`{image}`" for image in oldest)
+        + ". That is the transitive figure and it is not the largest number on an "
+        "image's own row: pinning an edge *k* generations back means the build it "
+        "names had already pinned its own edges further back still",
+        "- an edge reaching back *k* is pinned to the *k*-th newest generation, because "
+        "an artifact's binaries were compiled against a base one generation older than "
+        "its own batch, so the base it lands on has to be that much older too or they "
+        "disagree",
         "",
-        "| Image | Consumes (usage, generations back) | Consumed by |",
-        "| --- | --- | --- |",
+        "| Image | Oldest content | Consumes (usage, generations back) | Consumed by |",
+        "| --- | --- | --- | --- |",
         *(
-            f"| `{image}` | {_joined(_edge_label(d) for d in edges[image])} "
+            f"| `{image}` | {_oldest_content(levels[image])} "
+            f"| {_joined(_edge_label(d) for d in edges[image])} "
             f"| {_joined(f'`{name}`' for name in dependents[image])} |"
             for image in members
         ),

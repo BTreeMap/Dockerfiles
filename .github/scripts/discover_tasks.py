@@ -35,6 +35,7 @@ from ci.references import (
     dependents_of,
     generations_needed,
     graph,
+    levels_of,
     probe_for,
 )
 from ci.report import graph_section, run_section
@@ -133,7 +134,7 @@ def main() -> int:
                 images=len({task.image for task in tasks}),
                 platforms=len(platforms),
             ),
-            *graph_section(discovered, dependents_of(discovered)),
+            *graph_section(discovered, dependents_of(discovered), levels_of(discovered)),
         ]
     )
 

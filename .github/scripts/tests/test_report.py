@@ -135,8 +135,9 @@ def test_isolated_images_are_folded_away_but_not_lost() -> None:
     """
     edges = {"base": (), "app": (Dependency(image="base", usage=Usage.BASE),), "alone": ()}
     dependents = {"base": ("app",), "app": (), "alone": ()}
+    levels = {"base": 1, "app": 2, "alone": 1}
 
-    lines = graph_section(edges, dependents)
+    lines = graph_section(edges, dependents, levels)
     rendered = "\n".join(lines)
 
     assert "<details><summary>Isolated images</summary>" in rendered
@@ -150,7 +151,8 @@ def test_isolated_images_are_folded_away_but_not_lost() -> None:
 def test_an_empty_cell_reads_as_empty_rather_than_missing() -> None:
     edges = {"base": (), "app": (Dependency(image="base", usage=Usage.BASE),)}
     dependents = {"base": ("app",), "app": ()}
-    assert any(line.endswith("| (none) |") for line in graph_section(edges, dependents))
+    levels = {"base": 1, "app": 2}
+    assert any(line.endswith("| (none) |") for line in graph_section(edges, dependents, levels))
 
 
 # --- ordering ---------------------------------------------------------------
@@ -227,3 +229,32 @@ def test_a_graph_needing_no_generations_says_that_instead() -> None:
     lines = run_section(identity(BATCH), (), 0, None, 5, 1)
     assert any("no generations are needed" in line for line in lines)
     assert not any("floating" in line for line in lines)
+
+
+def test_the_table_answers_how_stale_an_image_is_in_total() -> None:
+    """The question a per-edge table cannot answer.
+
+    A chain of four levels reads "1 back" on its top row while its oldest layers
+    are three generations old, because the build it names had already pinned its
+    own edges further back. Level minus one is that transitive figure, and it is
+    what a reader actually wants to know.
+    """
+    edges = {
+        "base": (),
+        "mid": (Dependency(image="base", usage=Usage.BASE, generations_back=1),),
+        "top": (Dependency(image="mid", usage=Usage.BASE, generations_back=1),),
+        "apex": (Dependency(image="top", usage=Usage.BASE, generations_back=1),),
+    }
+    dependents = {"base": ("mid",), "mid": ("top",), "top": ("apex",), "apex": ()}
+    levels = {"base": 1, "mid": 2, "top": 3, "apex": 4}
+
+    rendered = "\n".join(graph_section(edges, dependents, levels))
+
+    assert "| `base` | this run |" in rendered
+    assert "| `mid` | N-1 |" in rendered
+    assert "| `apex` | N-3 |" in rendered
+    # Stated above the table too, naming the image that carries it.
+    assert "oldest content in any image here is **N-3**" in rendered
+    assert "`apex`" in rendered
+    # And the distinction spelled out, since every edge on that row reads "1 back".
+    assert "not the largest number on an image's own row" in rendered
