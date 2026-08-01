@@ -3,8 +3,11 @@
 #
 # Extracted verbatim from the racket_builder stage of ./Dockerfile so it can be
 # built as its own task, in parallel with the other toolchains, instead of
-# serially inside the main image. The stage remains in ./Dockerfile for now;
-# that copy is retired once this tag exists in the registry.
+# serially inside the main image.
+#
+# ./full.Dockerfile is now the only image that reads this tag -- ./Dockerfile
+# dropped its copy when Racket was trimmed out of the default image. The build
+# stays: it is what makes :code-server-full a thin layer rather than a fork.
 #
 # Racket is a general-purpose, multi-paradigm programming language in the
 # Lisp/Scheme family.

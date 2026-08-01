@@ -9,7 +9,7 @@ ENV CABAL_UPDATE_PACKAGES=true \
     PATCH_JSON=true \
     PATCH_JSON_ENABLE_SORT_KEYS=true \
     PATCH_JSON_USE_FORCE=true \
-    PATH=$RACKET_HOME/bin:$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$GO_HOME/bin:$EBPF_TOOLS_HOME:$LLVM_HOME:$PATH \
+    PATH=$CABAL_DIR/bin:$HASKELL_HOME/.ghcup/bin:$FNM_DIR:$CARGO_HOME/bin:$GO_HOME/bin:$EBPF_TOOLS_HOME:$LLVM_HOME:$PATH \
     USER_INIT_DIR=/config/.entrypoint.d \
     USER_INIT_FILE=/config/.entrypoint \
     VENV_DIR=/opt/shared-venv
@@ -40,8 +40,12 @@ ENV UV_INSTALL_DIR=/opt/uv \
 COPY root/ /
 
 # -----------------------------------------------------------------------------
-# Toolchains, copied from the images ./proot.Dockerfile, ./racket.Dockerfile,
-# ./haskell.Dockerfile, ./go.Dockerfile, and ./ebpf-tools.Dockerfile publish.
+# Toolchains, copied from the images ./proot.Dockerfile, ./haskell.Dockerfile,
+# ./go.Dockerfile, and ./ebpf-tools.Dockerfile publish.
+#
+# Racket is deliberately absent -- it is the one toolchain here nothing was
+# actually using, and it is the largest. It now layers back on top of this image
+# in ./full.Dockerfile, so anyone who wants it pulls :code-server-full instead.
 #
 # These were builder stages in this file until every one of them had to finish
 # before this image could start. As separate tasks the mesh spreads them across
@@ -60,10 +64,6 @@ COPY root/ /
 # privileges. Renamed on the way in, as it was from the builder stage.
 COPY --from=ghcr.io/btreemap/dockerfiles:code-server-proot \
     /proot/dist/proot /usr/local/bin/proot
-
-# Racket, for development and execution of Racket programs
-COPY --from=ghcr.io/btreemap/dockerfiles:code-server-racket \
-    --chown=${PUID}:${PGID} $RACKET_HOME $RACKET_HOME
 
 # Haskell (GHC, Cabal, HLS), for development and execution of Haskell programs
 COPY --from=ghcr.io/btreemap/dockerfiles:code-server-haskell \
