@@ -13,15 +13,13 @@
 # standalone against the floating tag. Only the batch is negotiable -- the image
 # is literal above, so a build argument can sharpen this reference but never
 # redirect it. See ci/domain.selector.
-# The repository these images are published under. A default rather than a bare
-# ARG so this file still builds standalone, and a build argument so a fork builds
-# against its *own* images instead of silently consuming upstream's. The workflow
-# passes the same value it pushes to, so this redirects no further than the push
-# destination already does -- while the image name after the colon stays literal,
-# which is the part a mistake must never be able to move.
-ARG REGISTRY=ghcr.io/btreemap/dockerfiles
-ARG SELECT_CODE_SERVER_BASE=
-FROM ${REGISTRY}:code-server-base${SELECT_CODE_SERVER_BASE} AS go_builder
+# One argument per reference from this repository, each defaulting to the
+# reference itself. Without the build system this file resolves exactly these
+# images; with it, every argument is replaced by the same image in the registry
+# being published to, pinned to a batch. The argument names are free: the build
+# system reads each one off the declaration it appears in.
+ARG CODE_SERVER_BASE=ghcr.io/btreemap/dockerfiles:code-server-base
+FROM ${CODE_SERVER_BASE} AS go_builder
 
 RUN set -ex && \
     # Determine target architecture

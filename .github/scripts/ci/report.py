@@ -37,6 +37,7 @@ from ci.domain import (
     Usage,
     succeeded,
 )
+from ci.env import BuildIdentity
 
 # A digest is 71 characters and only ever wanted as evidence, not as an
 # identifier to compare by eye, so enough of it to be unambiguous is enough. A
@@ -160,6 +161,58 @@ def provenance_section(heading: str, outcomes: Iterable[BuildOutcome]) -> tuple[
             for row in _edge_rows(outcome.task.image, outcome.edges)
         ),
     )
+
+
+def run_section(
+    identity: BuildIdentity,
+    generations: Sequence[BatchId],
+    needed: int,
+    probe: str | None,
+    images: int,
+    platforms: int,
+) -> tuple[str, ...]:
+    """What this run *is*, for someone opening the summary to troubleshoot.
+
+    The batch leads because every question about a published image starts with
+    it: it names the tag to look for, it is what the labels record, and it is what
+    a reader greps the log for. Shown in full for that reason.
+
+    The generation table follows because it is the run's most consequential
+    input and the least visible. A short table is not an error and not obviously
+    wrong from anywhere else, yet it silently means edges reaching past its end
+    were left floating, which is the difference between the mechanism working and
+    quietly doing nothing.
+    """
+    short = len(generations) < needed
+    lines = [
+        "",
+        "### This run",
+        "",
+        f"- batch **`{identity.batch}`**; every image published now is tagged "
+        f"`<image>.{identity.batch}`",
+        f"- commit `{identity.commit_sha}`, planned at `{identity.date_time}` UTC",
+        f"- publishing {images} image(s) to `{identity.base_image}` for {platforms} platform(s)",
+    ]
+    if needed == 0:
+        lines.append("- no image depends on another here, so no generations are needed")
+        return tuple(lines)
+
+    lines.append(
+        f"- generation table: **{len(generations)} of {needed}** resolved"
+        + (f", walked through `{probe}`" if probe else "")
+        + ("; edges reaching past the end are left floating" if short else "")
+    )
+    lines.extend(
+        f"  {position}. `{batch}` (N-{position})"
+        for position, batch in enumerate(generations, start=1)
+    )
+    if not generations:
+        lines.append(
+            "  - none resolved, so every reference falls back to its floating tag. "
+            "Expected on a registry with no provenance labels yet; otherwise check "
+            "the plan job's log for why the probe did not resolve"
+        )
+    return tuple(lines)
 
 
 def graph_section(

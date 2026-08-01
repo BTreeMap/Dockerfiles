@@ -8,6 +8,7 @@ decisions worth pinning -- a report nobody reads is worse than none.
 from __future__ import annotations
 
 from ci.domain import (
+    BatchId,
     BuildFailed,
     BuildSucceeded,
     Dependency,
@@ -20,7 +21,13 @@ from ci.domain import (
     Unreadable,
     Usage,
 )
-from ci.report import graph_section, outcome_rows, provenance_section
+from ci.env import BuildIdentity
+from ci.report import (
+    graph_section,
+    outcome_rows,
+    provenance_section,
+    run_section,
+)
 from tests.test_provenance import BATCH, OTHER
 
 
@@ -170,3 +177,53 @@ def test_failures_lead_and_the_slowest_survivor_follows() -> None:
 
     images = [row.split("`")[1] for row in outcome_rows(outcomes, frozenset())]
     assert images == ["broken.amd64", "slow.amd64", "quick.amd64"]
+
+
+# --- what a run says about itself -------------------------------------------
+
+
+def identity(batch: BatchId) -> BuildIdentity:
+    return BuildIdentity(
+        date="2026-08-01",
+        date_time="2026-08-01.04-00-00",
+        commit_sha="170bd6e",
+        batch=batch,
+        base_image="ghcr.io/example/dockerfiles",
+    )
+
+
+def test_the_batch_leads_and_is_shown_whole() -> None:
+    """Every question about a published image starts from the batch.
+
+    It names the tag to look for, it is what the labels record, and it is what a
+    reader greps a log for, so it is not abbreviated.
+    """
+    lines = run_section(identity(BATCH), (BATCH,), 1, "probe", 38, 2)
+    assert any(str(BATCH) in line and "batch" in line for line in lines)
+    assert any("<image>." + str(BATCH) in line for line in lines)
+
+
+def test_a_short_table_says_so_and_says_what_it_costs() -> None:
+    """The run's most consequential input and its least visible one.
+
+    A short table is not an error and is invisible from anywhere else, yet it
+    means edges past its end were left floating, which is the difference between
+    the mechanism working and quietly doing nothing.
+    """
+    lines = run_section(identity(BATCH), (BATCH,), 2, "probe", 38, 2)
+    assert any("**1 of 2**" in line for line in lines)
+    assert any("floating" in line for line in lines)
+
+
+def test_an_empty_table_explains_both_readings() -> None:
+    """Expected while bootstrapping, a defect afterwards; the reader is told both."""
+    lines = run_section(identity(BATCH), (), 2, "probe", 38, 2)
+    assert any("no provenance labels yet" in line for line in lines)
+    assert any("check the plan job's log" in line for line in lines)
+
+
+def test_a_graph_needing_no_generations_says_that_instead() -> None:
+    """A repository whose images do not build on each other needs no table."""
+    lines = run_section(identity(BATCH), (), 0, None, 5, 1)
+    assert any("no generations are needed" in line for line in lines)
+    assert not any("floating" in line for line in lines)

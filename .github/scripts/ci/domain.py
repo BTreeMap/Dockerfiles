@@ -114,35 +114,6 @@ def selector(batch: BatchId | None) -> str:
     return "" if batch is None else f".{batch}"
 
 
-# ASCII only, deliberately -- see `selector_argument`.
-_ARGUMENT_ALPHABET = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-
-def selector_argument(image: str) -> str:
-    """The build argument that carries one image's selector.
-
-    Derived rather than declared, so a Dockerfile and the build stage cannot
-    disagree about what to call it, and so a group of images added tomorrow gets
-    its arguments named by the same rule with no edit anywhere.
-
-    Anything a Dockerfile argument name may not contain becomes an underscore.
-    That is many-to-one -- `a-b` and `a.b` would collide -- which is why
-    discovery checks that the tree's image names stay distinct under it rather
-    than assuming they do.
-
-    Tested against an explicit ASCII set rather than `str.isalnum`, which is
-    Unicode-aware: it admits `é`, and an image name carrying one would have
-    produced `SELECT_CAFÉ_X` -- not a name any Dockerfile argument may take. A
-    directory name is not restricted to ASCII, so this is reachable.
-    """
-    return (
-        "SELECT_"
-        + "".join(
-            character if character in _ARGUMENT_ALPHABET else "_" for character in image
-        ).upper()
-    )
-
-
 class Platform(StrEnum):
     """The closed set of architectures this repository publishes."""
 
@@ -265,6 +236,15 @@ class Dependency:
 
     image: _NonEmptyText
     usage: Usage
+    # The build argument this file expresses the reference through, recorded from
+    # the declaration rather than derived from the image name.
+    #
+    # Deriving it was the original design and every defect in it descended from
+    # writing one value down twice: a folding rule, an ASCII hazard, a collision
+    # check across the tree, and a whole class of "carries the wrong selector".
+    # The parser reads the name off the same line it reads the image from, so
+    # nothing has to connect them and none of that machinery has to exist.
+    argument: _NonEmptyText = ""
     # How many generations back this edge must reach to stay coherent, which is
     # the difference in graph level between the image declaring it and the image
     # it names.

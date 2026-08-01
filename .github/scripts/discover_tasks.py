@@ -18,7 +18,16 @@ from ci.discovery import (
     seed_for,
 )
 from ci.domain import Platform
-from ci.env import COUNT, RETRIES, TEXT, read, registry_repository, write_output, write_summary
+from ci.env import (
+    COUNT,
+    RETRIES,
+    TEXT,
+    BuildIdentity,
+    read,
+    registry_repository,
+    write_output,
+    write_summary,
+)
 from ci.logs import configure
 from ci.provenance import generations
 from ci.references import (
@@ -28,7 +37,7 @@ from ci.references import (
     graph,
     probe_for,
 )
-from ci.report import graph_section
+from ci.report import graph_section, run_section
 
 logger = logging.getLogger("ci.discover")
 
@@ -97,28 +106,40 @@ def main() -> int:
         ),
     )
 
-    # Reported from the plan job because it is a fact about the tree, not about
-    # this run: identical between two runs unless a Dockerfile moved, which is
-    # what makes any difference in it worth a second look.
+    # Reported from the plan job because the graph is a fact about the tree, not
+    # about this run: identical between two runs unless a Dockerfile moved, which
+    # is what makes any difference in it worth a second look.
     discovered = graph(definitions(Path.cwd()), Path.cwd())
-    write_summary(list(graph_section(discovered, dependents_of(discovered))))
-
-    # The generation table, walked once here so every builder pins against one
-    # answer. Read live from the registry rather than threaded from anywhere: the
-    # plan job is the only place that runs once per run, and a table computed per
-    # worker could differ between them mid-run.
     probe = probe_for(discovered)
+    needed = generations_needed(discovered)
     table = (
         generations(
             probe=probe[0],
             base=probe[1],
             registry_repository=registry_repository(),
             platform=platforms[0],
-            depth=generations_needed(discovered),
+            depth=needed,
         )
         if probe is not None
         else ()
     )
+    write_summary(
+        [
+            *run_section(
+                identity=BuildIdentity.from_environment(),
+                generations=table,
+                needed=needed,
+                probe=probe[0] if probe else None,
+                images=len({task.image for task in tasks}),
+                platforms=len(platforms),
+            ),
+            *graph_section(discovered, dependents_of(discovered)),
+        ]
+    )
+
+    # Walked once here so every builder pins against one answer: the plan job is
+    # the only stage that runs once per run, and a table computed per worker could
+    # differ between them mid-run.
     write_output("generations", ",".join(str(batch) for batch in table))
 
     write_output("images", json.dumps(sorted({task.image for task in tasks})))

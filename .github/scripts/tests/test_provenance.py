@@ -259,7 +259,10 @@ def test_labels_are_byte_stable_for_an_unchanged_graph() -> None:
 
 
 def edge(image: str, usage: Usage, back: int, provenance: Provenance) -> ResolvedEdge:
-    return ResolvedEdge(Dependency(image=image, usage=usage, generations_back=back), provenance)
+    return ResolvedEdge(
+        Dependency(image=image, usage=usage, argument=f"REF_{image}", generations_back=back),
+        provenance,
+    )
 
 
 def test_a_base_is_pinned_a_generation_behind_the_artifacts_landing_on_it() -> None:
@@ -281,8 +284,9 @@ def test_a_base_is_pinned_a_generation_behind_the_artifacts_landing_on_it() -> N
         for pair in selector_arguments(task(), "reg", resolved, (newest, older))[1::2]
     )
 
-    assert rendered_args["SELECT_CODE_SERVER_BASE"] == f".{older}"
-    assert rendered_args["SELECT_CODE_SERVER_GO"] == f".{newest}"
+    # The whole reference, in the registry being published to, not a fragment.
+    assert rendered_args["REF_code-server-base"] == f"reg:code-server-base.{older}"
+    assert rendered_args["REF_code-server-go"] == f"reg:code-server-go.{newest}"
 
 
 def test_an_edge_reaching_past_the_table_floats() -> None:
@@ -297,7 +301,8 @@ def test_an_edge_reaching_past_the_table_floats() -> None:
     rendered_args = dict(
         pair.split("=", 1) for pair in selector_arguments(task(), "reg", resolved, (newest,))[1::2]
     )
-    assert rendered_args["SELECT_CODE_SERVER_BASE"] == ""
+    # Floating, and still a whole reference: the fork's registry, no batch.
+    assert rendered_args["REF_code-server-base"] == "reg:code-server-base"
 
 
 def test_a_dependency_records_what_it_was_itself_built_on() -> None:
