@@ -273,18 +273,6 @@ def selector_arguments(
     if not resolved:
         return ()
 
-    def pin(edge: ResolvedEdge) -> str:
-        """One argument set to the whole reference, not to a fragment of one.
-
-        The Dockerfile's default already names this image in the upstream
-        registry; what the build substitutes is the same image in the registry it
-        is publishing to, pinned to a batch. That is why a fork needs no edited
-        Dockerfile and why the value is assembled here rather than concatenated
-        out of three pieces in the file, where nothing could check it.
-        """
-        image = edge.dependency.image
-        return f"{edge.dependency.argument}={registry_repository}:{image}{selector(chosen(edge))}"
-
     def chosen(edge: ResolvedEdge) -> BatchId | None:
         """The generation this edge must reach, or absence to leave it floating.
 
@@ -302,6 +290,18 @@ def selector_arguments(
             return generations[index]
         found = edge.provenance
         return found.batch if isinstance(found, Minted) else None
+
+    def pin(edge: ResolvedEdge) -> str:
+        """One argument set to the whole reference, not to a fragment of one.
+
+        The Dockerfile's default already names this image in the upstream
+        registry; what the build substitutes is the same image in the registry it
+        is publishing to, pinned to a batch. That is why a fork needs no edited
+        Dockerfile and why the value is assembled here rather than concatenated
+        out of three pieces in the file, where nothing could check it.
+        """
+        image = edge.dependency.image
+        return f"{edge.dependency.argument}={registry_repository}:{image}{selector(chosen(edge))}"
 
     return tuple(argument for edge in resolved for argument in ("--build-arg", pin(edge)))
 
