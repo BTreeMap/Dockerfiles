@@ -16,6 +16,7 @@ import pytest
 
 from ci.domain import Dependency, Usage, selector_argument
 from ci.references import (
+    CyclicGraph,
     DanglingReference,
     External,
     Internal,
@@ -24,9 +25,11 @@ from ci.references import (
     classify,
     dependencies_in,
     dependents_of,
+    generations_needed,
     graph,
     images_in_graph,
     logical_lines,
+    probe_for,
 )
 
 # The literal build argument every internal reference is written against, not a
@@ -242,9 +245,13 @@ def test_a_second_group_joins_the_graph_without_a_code_change(tmp_path: Path) ->
 
     edges = graph(definitions, root)
 
+    # The depth rule falls out of the new group's own shape, with nothing here
+    # naming it: `reporting` sits two levels above `warehouse` and one above
+    # `warehouse-etl`, so the base it lands on must reach a generation further
+    # back than the artifacts compiled against that base.
     assert edges["reporting"] == (
-        Dependency(image="warehouse", usage=Usage.BASE),
-        Dependency(image="warehouse-etl", usage=Usage.ARTIFACT),
+        Dependency(image="warehouse", usage=Usage.BASE, generations_back=2),
+        Dependency(image="warehouse-etl", usage=Usage.ARTIFACT, generations_back=1),
     )
     assert dependents_of(edges)["warehouse"] == ("reporting", "warehouse-etl")
     assert images_in_graph(edges) == frozenset(
@@ -400,3 +407,50 @@ def test_a_selector_argument_is_a_legal_dockerfile_argument_name() -> None:
         argument = selector_argument(image)
         assert argument.isascii(), argument
         assert re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", argument), argument
+
+
+# --- levels and the generation offsets they imply ---------------------------
+
+
+def test_a_cycle_is_refused_rather_than_walked(tmp_path: Path) -> None:
+    """A level is one more than the deepest thing below it, which a cycle leaves
+    undefined -- and the walk that computes it would not terminate."""
+    root = tree(
+        tmp_path,
+        {"a/Dockerfile": f"FROM {ref('b')}\n", "b/Dockerfile": f"FROM {ref('a')}\n"},
+    )
+    definitions = {name: Path(f"{name}/Dockerfile") for name in ("a", "b")}
+
+    with pytest.raises(CyclicGraph, match="->"):
+        graph(definitions, root)
+
+
+def test_the_probe_is_an_image_one_generation_above_a_root(tmp_path: Path) -> None:
+    """What the generation walk steps through, chosen by rule not by name.
+
+    Any such image reports the same generation -- floating tags advance only as a
+    complete set -- so the choice is alphabetical solely to keep a run
+    reproducible from its inputs.
+    """
+    root = tree(
+        tmp_path,
+        {
+            "base/Dockerfile": "FROM scratch\n",
+            "mid/Dockerfile": f"FROM {ref('base')}\n",
+            "top/Dockerfile": f"FROM {ref('mid')}\nCOPY --from={ref('base')} /x /x\n",
+        },
+    )
+    definitions = {name: Path(f"{name}/Dockerfile") for name in ("base", "mid", "top")}
+    edges = graph(definitions, root)
+
+    assert probe_for(edges) == ("mid", "base")
+    assert generations_needed(edges) == 2
+
+
+def test_a_graph_with_no_chain_needs_no_generations(tmp_path: Path) -> None:
+    """A repository whose images do not build on each other floats everything."""
+    root = tree(tmp_path, {"solo/Dockerfile": "FROM alpine:3.21\n"})
+    edges = graph({"solo": Path("solo/Dockerfile")}, root)
+
+    assert probe_for(edges) is None
+    assert generations_needed(edges) == 0

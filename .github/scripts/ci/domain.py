@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Self
@@ -135,9 +135,12 @@ def selector_argument(image: str) -> str:
     produced `SELECT_CAFÉ_X` -- not a name any Dockerfile argument may take. A
     directory name is not restricted to ASCII, so this is reachable.
     """
-    return "SELECT_" + "".join(
-        character if character in _ARGUMENT_ALPHABET else "_" for character in image
-    ).upper()
+    return (
+        "SELECT_"
+        + "".join(
+            character if character in _ARGUMENT_ALPHABET else "_" for character in image
+        ).upper()
+    )
 
 
 class Platform(StrEnum):
@@ -262,6 +265,20 @@ class Dependency:
 
     image: _NonEmptyText
     usage: Usage
+    # How many generations back this edge must reach to stay coherent, which is
+    # the difference in graph level between the image declaring it and the image
+    # it names.
+    #
+    # An artifact image's content is fixed when it is built: its binaries were
+    # compiled against a base one generation older than its own batch. So an
+    # image cannot sit on the same generation it copies artifacts from -- the
+    # base has to be one older still, or the binaries land on libraries they were
+    # not linked against. Level difference is exactly that offset, which is what
+    # makes a single depth-indexed rule cover the whole graph rather than each
+    # consumer needing its own unification.
+    #
+    # Defaults to one: a direct dependency of an image with no deeper chain.
+    generations_back: _Integer = 1
 
     def sort_key(self) -> tuple[str, str]:
         return (self.image, str(self.usage))
@@ -339,6 +356,16 @@ class Minted:
 
     batch: BatchId
     digest: str
+    # What *this* image recorded consuming, read back off its own `consumes`
+    # label, keyed by image name and holding only the edges it managed to pin.
+    #
+    # One level of indirection that the batch alone cannot give. `batch` says
+    # which generation this dependency belongs to; `built_on` says which
+    # generation its *contents* were compiled against. The difference between
+    # those two is the skew this whole mechanism exists to find, and comparing
+    # batches alone can never show it -- every floating tag in a run carries the
+    # same batch, so they always agree.
+    built_on: Mapping[str, BatchId] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,7 +389,6 @@ class Unreadable:
 
 
 Provenance = Minted | Unlabelled | Unreadable
-
 
 
 @dataclass(frozen=True, slots=True)

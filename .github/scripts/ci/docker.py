@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from typing import assert_never
 
 from ci.domain import BuildFailed, BuildOutcome, BuildSucceeded, Task
-from ci.env import BuildIdentity
+from ci.env import BuildIdentity, generation_table
 from ci.provenance import label_arguments, resolve_all, selector_arguments
 from ci.retry import Exhausted, Succeeded, with_retries
 
@@ -208,7 +208,7 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
     # description drift between attempts of a single build.
     resolved = resolve_all(task.dependencies, identity.base_image, task.platform)
     labels = label_arguments(task, identity.batch, resolved)
-    selectors = selector_arguments(task, identity.base_image, resolved)
+    selectors = selector_arguments(task, identity.base_image, resolved, generation_table())
 
     command = (
         "docker",

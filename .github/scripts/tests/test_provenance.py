@@ -18,6 +18,7 @@ from ci.domain import (
     Dependency,
     Minted,
     Platform,
+    Provenance,
     ResolvedEdge,
     Task,
     Unlabelled,
@@ -29,9 +30,11 @@ from ci.provenance import (
     CONSUMES_LABEL,
     IMAGE_LABEL,
     _batch_in,
+    _built_on,
     _configuration_for,
     label_arguments,
     rendered,
+    selector_arguments,
 )
 
 BATCH = BatchId.derive(run_id="17", run_attempt="1", commit_sha="abc", date_time="t")
@@ -250,3 +253,73 @@ def test_labels_are_byte_stable_for_an_unchanged_graph() -> None:
     first = label_arguments(consuming, BATCH, resolved)
     assert first == label_arguments(consuming, BATCH, resolved)
     assert " " not in labels(first)[CONSUMES_LABEL]
+
+
+# --- depth-indexed pinning --------------------------------------------------
+
+
+def edge(image: str, usage: Usage, back: int, provenance: Provenance) -> ResolvedEdge:
+    return ResolvedEdge(Dependency(image=image, usage=usage, generations_back=back), provenance)
+
+
+def test_a_base_is_pinned_a_generation_behind_the_artifacts_landing_on_it() -> None:
+    """The fix, in one assertion.
+
+    An artifact's binaries were compiled against a base one generation older than
+    its own batch, so an image cannot sit on the same generation it copies from.
+    Level difference is that offset, and the table is indexed by it.
+    """
+    newest = BatchId.derive(run_id="3", run_attempt="1", commit_sha="a", date_time="t")
+    older = BatchId.derive(run_id="2", run_attempt="1", commit_sha="a", date_time="t")
+
+    resolved = (
+        edge("code-server-base", Usage.BASE, 2, Minted(newest, "sha256:a")),
+        edge("code-server-go", Usage.ARTIFACT, 1, Minted(newest, "sha256:b")),
+    )
+    rendered_args = dict(
+        pair.split("=", 1)
+        for pair in selector_arguments(task(), "reg", resolved, (newest, older))[1::2]
+    )
+
+    assert rendered_args["SELECT_CODE_SERVER_BASE"] == f".{older}"
+    assert rendered_args["SELECT_CODE_SERVER_GO"] == f".{newest}"
+
+
+def test_an_edge_reaching_past_the_table_floats() -> None:
+    """A short table is the bootstrap, and floating is what happened before.
+
+    Falling back to the edge's own resolution rather than to nothing keeps a
+    partially-built table useful: the edges it does cover are still pinned.
+    """
+    newest = BatchId.derive(run_id="3", run_attempt="1", commit_sha="a", date_time="t")
+    resolved = (edge("code-server-base", Usage.BASE, 2, Unlabelled("sha256:a")),)
+
+    rendered_args = dict(
+        pair.split("=", 1) for pair in selector_arguments(task(), "reg", resolved, (newest,))[1::2]
+    )
+    assert rendered_args["SELECT_CODE_SERVER_BASE"] == ""
+
+
+def test_a_dependency_records_what_it_was_itself_built_on() -> None:
+    """The level below the batch, and the one a skew is visible at."""
+    older = BatchId.derive(run_id="2", run_attempt="1", commit_sha="a", date_time="t")
+    payload = {
+        "config": {
+            "Labels": {
+                BATCH_LABEL: str(BATCH),
+                CONSUMES_LABEL: json.dumps(
+                    [
+                        {"image": "code-server-base", "state": "minted", "batch": str(older)},
+                        {"image": "code-server-proot", "state": "unreadable", "reason": "x"},
+                    ]
+                ),
+            }
+        }
+    }
+    assert _built_on(payload) == {"code-server-base": older}
+
+
+def test_an_unparseable_consumes_label_yields_no_claims() -> None:
+    """Written by an earlier run of unknown vintage, so nothing is guessed at."""
+    for raw in ("not json", "{}", json.dumps([{"image": 1}]), json.dumps(["x"])):
+        assert _built_on({"config": {"Labels": {CONSUMES_LABEL: raw}}}) == {}

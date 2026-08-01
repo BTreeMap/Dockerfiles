@@ -307,7 +307,67 @@ def graph(definitions: Mapping[str, Path], root: Path) -> Mapping[str, tuple[Dep
     }
     if dangling:
         raise DanglingReference(dangling)
-    return edges
+
+    # Stamped here rather than computed by each consumer: the offset is a fact
+    # about the whole graph, and an edge that carried the wrong one would pin to
+    # a generation nothing agrees with.
+    level = levels_of(edges)
+    return {
+        image: tuple(
+            Dependency(
+                image=edge.image,
+                usage=edge.usage,
+                generations_back=level[image] - level[edge.image],
+            )
+            for edge in found
+        )
+        for image, found in edges.items()
+    }
+
+
+class CyclicGraph(RuntimeError):
+    """Images of this repository depend on each other in a loop.
+
+    A layout defect, and one that has to be refused rather than worked around:
+    a level is defined as one more than the deepest thing below it, which a cycle
+    leaves undefined, and Docker could not build such a tree either. Raised for
+    the same reason the other two are -- the alternative is a non-terminating
+    walk in the plan job.
+    """
+
+    def __init__(self, cycle: tuple[str, ...]) -> None:
+        super().__init__("These images form a dependency cycle:\n  " + " -> ".join(cycle))
+        self.cycle = cycle
+
+
+def levels_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, int]:
+    """Each image's depth in the graph: one more than the deepest it depends on.
+
+    Level is the whole basis of the pinning rule. An image at level L is
+    assembled from generation N-(L-1) of the roots, so the difference in level
+    between two images *is* the number of generations between the builds that can
+    coherently be combined -- see `Dependency.generations_back`.
+
+    Memoised over an explicit stack rather than written as plain recursion:
+    Python has no tail-call elimination and this is called once per image, so a
+    deep chain in some future repository would be frames rather than iterations.
+    The visiting set is what turns a cycle into a raised defect instead of a hang.
+    """
+    level: dict[str, int] = {}
+
+    def resolve(image: str, visiting: tuple[str, ...]) -> int:
+        if image in level:
+            return level[image]
+        if image in visiting:
+            raise CyclicGraph(visiting[visiting.index(image) :] + (image,))
+        depth = 1 + max(
+            (resolve(edge.image, visiting + (image,)) for edge in edges.get(image, ())),
+            default=0,
+        )
+        level[image] = depth
+        return depth
+
+    return {image: resolve(image, ()) for image in edges}
 
 
 def dependents_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, tuple[str, ...]]:
@@ -349,3 +409,36 @@ def images_in_graph(edges: Mapping[str, tuple[Dependency, ...]]) -> frozenset[st
     """
     referenced = {dependency.image for found in edges.values() for dependency in found}
     return frozenset(referenced | {image for image, found in edges.items() if found})
+
+
+def probe_for(edges: Mapping[str, tuple[Dependency, ...]]) -> tuple[str, str] | None:
+    """An image whose base edge steps back exactly one generation, and that base.
+
+    The pair the generation walk needs. Any such image will do -- floating tags
+    advance only as a complete generation, so every one of them reports the same
+    batch -- so the choice is alphabetical purely to keep a run reproducible from
+    its inputs.
+
+    Absence when the graph has no chain deep enough to step through, which is a
+    repository whose images do not build on each other. Nothing needs a table
+    then, and the caller floats everything.
+    """
+    return next(
+        (
+            (image, edge.image)
+            for image in sorted(edges)
+            for edge in edges[image]
+            if edge.usage is Usage.BASE and edge.generations_back == 1
+        ),
+        None,
+    )
+
+
+def generations_needed(edges: Mapping[str, tuple[Dependency, ...]]) -> int:
+    """How far back any edge in this graph reaches.
+
+    The table's length. Deeper than this buys nothing: an edge pinned to
+    generation k inherits whatever *that* build was pinned to, so the chain past
+    the table is already baked into the images being named.
+    """
+    return max((edge.generations_back for found in edges.values() for edge in found), default=0)

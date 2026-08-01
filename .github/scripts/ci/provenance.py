@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, assert_never
 
 from ci.domain import (
@@ -121,6 +121,51 @@ def _batch_in(configuration: Mapping[str, Any]) -> BatchId | None:
     return BatchId.parse(raw) if isinstance(raw, str) else None
 
 
+def _minted_entry(entry: Any) -> tuple[str, BatchId] | None:
+    """One `consumes` entry admitted into the domain, or absence.
+
+    Named rather than inlined so each way an entry can fail to be one keeps its
+    own line: not an object, not minted, no image, no batch, or a batch that does
+    not parse. Written by an earlier run of unknown vintage, so none of it is
+    believed because of where it was found.
+    """
+    if not isinstance(entry, Mapping) or entry.get("state") != "minted":
+        return None
+    image, raw = entry.get("image"), entry.get("batch")
+    if not isinstance(image, str) or not isinstance(raw, str):
+        return None
+    batch = BatchId.parse(raw)
+    return None if batch is None else (image, batch)
+
+
+def _built_on(configuration: Mapping[str, Any]) -> Mapping[str, BatchId]:
+    """What this image's own `consumes` label says it was assembled from.
+
+    One level deeper than `_batch_in`, and the level that matters: a batch says
+    which generation a dependency belongs to, this says which generation its
+    contents were compiled against. Every floating tag in a run carries the same
+    batch, so comparing batches alone can never expose a skew -- comparing these
+    can.
+
+    Untrusted like every other label: entries that are not minted, or whose batch
+    does not parse, are dropped rather than guessed at. A partial answer is
+    correct here, because an edge nobody could resolve is one this cannot
+    constrain.
+    """
+    configured = configuration.get("config")
+    labels = configured.get("Labels") if isinstance(configured, Mapping) else None
+    raw = labels.get(CONSUMES_LABEL) if isinstance(labels, Mapping) else None
+    if not isinstance(raw, str):
+        return {}
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(entries, list):
+        return {}
+    return dict(filter(None, map(_minted_entry, entries)))
+
+
 def resolve(reference: str, platform: Platform) -> Provenance:
     """Asks the registry what `reference` currently is, for one platform.
 
@@ -161,7 +206,9 @@ def resolve(reference: str, platform: Platform) -> Provenance:
         return Unreadable(f"no image configuration for linux/{platform}")
 
     batch = _batch_in(configuration)
-    return Unlabelled(digest) if batch is None else Minted(batch, digest)
+    if batch is None:
+        return Unlabelled(digest)
+    return Minted(batch=batch, digest=digest, built_on=_built_on(configuration))
 
 
 def resolve_all(
@@ -206,7 +253,10 @@ def _compact(payload: Any) -> str:
 
 
 def selector_arguments(
-    task: Task, registry_repository: str, resolved: tuple[ResolvedEdge, ...]
+    task: Task,
+    registry_repository: str,
+    resolved: tuple[ResolvedEdge, ...],
+    generations: Sequence[BatchId] = (),
 ) -> tuple[str, ...]:
     """The `--build-arg` arguments pinning each of this task's references.
 
@@ -229,9 +279,25 @@ def selector_arguments(
     # the upstream path as a default so they build standalone; a fork's workflow
     # passes its own here and its images reference each other rather than ours.
     def pin(edge: ResolvedEdge) -> str:
+        return f"{selector_argument(edge.dependency.image)}={selector(chosen(edge))}"
+
+    def chosen(edge: ResolvedEdge) -> BatchId | None:
+        """The generation this edge must reach, or absence to leave it floating.
+
+        The table is indexed by how far back the edge reaches: an edge one
+        generation back takes the newest entry, two back the one before it. That
+        offset is `Dependency.generations_back`, stamped on the edge from the
+        difference in graph level, and it is what makes a base land on the same
+        generation the artifacts copied onto it were compiled against.
+
+        Past the end of the table -- a short bootstrap, a broken walk -- the edge
+        floats, which is what it did before any of this existed.
+        """
+        index = edge.dependency.generations_back - 1
+        if 0 <= index < len(generations):
+            return generations[index]
         found = edge.provenance
-        batch = found.batch if isinstance(found, Minted) else None
-        return f"{selector_argument(edge.dependency.image)}={selector(batch)}"
+        return found.batch if isinstance(found, Minted) else None
 
     return ("--build-arg", f"REGISTRY={registry_repository}") + tuple(
         argument for edge in resolved for argument in ("--build-arg", pin(edge))
@@ -280,3 +346,53 @@ def label_arguments(
     return tuple(
         argument for name, value in labels.items() for argument in ("--label", f"{name}={value}")
     )
+
+
+# --- the run's generation table ---------------------------------------------
+
+
+def generations(
+    probe: str, base: str, registry_repository: str, platform: Platform, depth: int
+) -> tuple[BatchId, ...]:
+    """The batches of the last `depth` complete runs, newest first.
+
+    A batch id is a global run marker -- every image built in a run publishes
+    `{image}.{batch}` -- so holding one generation lets any image be named at it.
+    That is what makes this a walk rather than a search: ask the probe what it was
+    built on to step back one generation, then name the probe at *that* generation
+    and ask again.
+
+    The probe is any image whose base edge reaches exactly one generation back, so
+    that each hop is one step. Which image it is does not matter: floating tags
+    advance only when the manifest stage runs, and that runs only when reconcile
+    confirmed every expected image landed, so a generation is complete or absent
+    and every floating tag reports the same one.
+
+    Total. A missing label, an unlabelled ancestor, a pruned tag, or a registry
+    that will not answer ends the table early, and the caller floats every edge
+    reaching past its end. That is also the bootstrap: on a registry with no
+    labels at all this returns nothing and every reference behaves as it did
+    before the mechanism existed.
+    """
+    found = resolve(f"{registry_repository}:{probe}", platform)
+    if not isinstance(found, Minted):
+        logger.warning("No generation table: %s did not resolve to a labelled build", probe)
+        return ()
+
+    table = [found.batch]
+    while len(table) < depth:
+        older = found.built_on.get(base)
+        if older is None:
+            break
+        table.append(older)
+        found = resolve(f"{registry_repository}:{probe}.{older}", platform)
+        if not isinstance(found, Minted):
+            break
+
+    logger.info(
+        "Generation table (%d of %d): %s",
+        len(table),
+        depth,
+        ", ".join(str(batch) for batch in table),
+    )
+    return tuple(table)

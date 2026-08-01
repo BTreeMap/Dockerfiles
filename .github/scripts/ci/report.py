@@ -25,6 +25,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import assert_never
 
 from ci.domain import (
+    BatchId,
     BuildOutcome,
     Dependency,
     Minted,
@@ -33,6 +34,7 @@ from ci.domain import (
     Task,
     Unlabelled,
     Unreadable,
+    Usage,
     succeeded,
 )
 
@@ -66,38 +68,52 @@ def _state_of(provenance: Provenance) -> tuple[str, str]:
 
 def _edge_rows(image: str, edges: Sequence[ResolvedEdge]) -> Iterator[str]:
     return (
-        f"| `{image}` | `{edge.dependency.image}` | {edge.dependency.usage} "
-        f"| {marker} | {detail} |"
+        f"| `{image}` | `{edge.dependency.image}` | {edge.dependency.usage} | {marker} | {detail} |"
         for edge in edges
         for marker, detail in (_state_of(edge.provenance),)
     )
 
 
-def _skew_in(edges: Sequence[ResolvedEdge]) -> str | None:
-    """Whether one image's edges disagree about the batch they came from.
+def _claims_of(edge: ResolvedEdge) -> Mapping[str, BatchId]:
+    """Which generation of which ancestor this one edge commits the image to.
 
-    The single fact this whole report exists to surface. A base edge and an
-    artifact edge resolving to different batches is what leaves binaries linked
-    against libraries the runtime does not ship, and it is invisible in a list of
-    per-edge states unless somebody compares them -- so it is compared here.
-
-    Only `Minted` edges take part: an edge that floated has no batch to disagree
-    with, and reporting it as a disagreement would bury the real ones.
+    A base edge commits the image to *being* that batch of that image, and to
+    everything that build in turn sat on. An artifact edge commits nothing about
+    what the image runs on -- its binaries merely have to have been compiled
+    against the same ancestors, which is what its own record says.
     """
-    batches = {
-        str(edge.provenance.batch)
-        for edge in edges
-        if isinstance(edge.provenance, Minted)
-    }
-    if len(batches) < 2:
+    found = edge.provenance
+    if not isinstance(found, Minted):
+        return {}
+    if edge.dependency.usage is Usage.BASE:
+        return {edge.dependency.image: found.batch, **found.built_on}
+    return found.built_on
+
+
+def _skew_in(edges: Sequence[ResolvedEdge]) -> str | None:
+    """Whether one image's edges disagree about an ancestor they share.
+
+    The single fact this whole report exists to surface, and the one a naive
+    check misses. Comparing the edges' *own* batches proves nothing: floating
+    tags advance only as a complete generation, so every edge of a run reports
+    the same batch and they always agree while the image is still assembled from
+    two. What matters is one level down -- which generation each edge's contents
+    were compiled against -- and that is what `built_on` records.
+
+    An ancestor claimed at two batches is exactly the case where binaries meet
+    libraries they were not linked against. Edges that could not be resolved
+    claim nothing and so cannot disagree, which is also why a first run against
+    an unlabelled registry reports no skew rather than nothing but skew.
+    """
+    claimed: dict[str, set[str]] = {}
+    for edge in edges:
+        for ancestor, batch in _claims_of(edge).items():
+            claimed.setdefault(ancestor, set()).add(str(batch))
+
+    disputed = sorted(ancestor for ancestor, batches in claimed.items() if len(batches) > 1)
+    if not disputed:
         return None
-    kinds = {
-        str(edge.dependency.usage)
-        for edge in edges
-        if isinstance(edge.provenance, Minted)
-    }
-    across = " and ".join(sorted(kinds))
-    return f"{len(batches)} distinct batches across its {across} edges"
+    return "assembled from two generations of " + ", ".join(f"`{name}`" for name in disputed)
 
 
 def provenance_section(heading: str, outcomes: Iterable[BuildOutcome]) -> tuple[str, ...]:
@@ -165,6 +181,8 @@ def graph_section(
     """
     members = sorted(image for image in edges if edges[image] or dependents[image])
     isolated = sorted(set(edges) - set(members))
+    reach = {image: max((d.generations_back for d in edges[image]), default=0) for image in edges}
+    deepest = max(reach.values(), default=0)
 
     return (
         "",
@@ -173,12 +191,19 @@ def graph_section(
         f"- **{len(members)}** image(s) reference each other; "
         f"these carry provenance labels and pinned references",
         f"- **{len(isolated)}** isolated image(s) build from outside this repository only",
+        "- a **generation** is one completed run, not a fixed span of time: pushes to "
+        "`main` produce generations as well as the schedule, so how old a generation is "
+        "depends on how often the repository changes",
+        f"- the deepest edge reaches **{deepest} generation(s)** back. An edge reaching "
+        "back *k* is pinned to the *k*-th newest generation, because an artifact's "
+        "binaries were compiled against a base one generation older than its own batch -- "
+        "so the base it lands on has to be that much older too, or they disagree",
         "",
-        "| Image | Consumes | Consumed by |",
+        "| Image | Consumes (usage, generations back) | Consumed by |",
         "| --- | --- | --- |",
         *(
             f"| `{image}` "
-            f"| {_joined(f'`{d.image}` ({d.usage})' for d in edges[image])} "
+            f"| {_joined(f'`{d.image}` ({d.usage}, −{d.generations_back})' for d in edges[image])} "
             f"| {_joined(f'`{name}`' for name in dependents[image])} |"
             for image in members
         ),

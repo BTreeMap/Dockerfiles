@@ -53,27 +53,40 @@ GO = Dependency(image="code-server-go", usage=Usage.ARTIFACT)
 # --- the fact the report exists to surface ----------------------------------
 
 
-def test_edges_from_two_batches_are_called_out_above_the_table() -> None:
-    """The skew is invisible in a list of per-edge states unless compared.
+def test_an_ancestor_claimed_at_two_generations_is_called_out() -> None:
+    """The real skew, which comparing the edges' own batches cannot see.
 
-    Every row can read "pinned" while the image is still assembled from two
-    generations, which is exactly the failure this whole mechanism is for. So the
-    comparison happens here rather than in the reader's head.
+    Both edges here carry the *same* batch -- as every edge of a run does, since
+    floating tags advance only as a complete generation. The disagreement is one
+    level down: the base *is* generation BATCH, while the artifact's binaries were
+    compiled against generation OTHER of that same base. The first version of this
+    check compared edge batches and so reported agreement on exactly this case.
     """
     lines = provenance_section(
         "W",
-        [built("code-server", (BASE, Minted(BATCH, "sha256:a")), (GO, Minted(OTHER, "sha256:b")))],
+        [
+            built(
+                "code-server",
+                (BASE, Minted(BATCH, "sha256:a")),
+                (GO, Minted(BATCH, "sha256:b", {"code-server-base": OTHER})),
+            )
+        ],
     )
 
     assert any("⚠️" in line and "1 image(s)" in line for line in lines)
-    assert any("`code-server`: 2 distinct batches" in line for line in lines)
-    assert any("artifact and base" in line for line in lines)
+    assert any("two generations of `code-server-base`" in line for line in lines)
 
 
-def test_edges_from_one_batch_report_agreement() -> None:
+def test_an_ancestor_claimed_consistently_reports_agreement() -> None:
     lines = provenance_section(
         "W",
-        [built("code-server", (BASE, Minted(BATCH, "sha256:a")), (GO, Minted(BATCH, "sha256:b")))],
+        [
+            built(
+                "code-server",
+                (BASE, Minted(BATCH, "sha256:a")),
+                (GO, Minted(BATCH, "sha256:b", {"code-server-base": BATCH})),
+            )
+        ],
     )
     assert any("✅" in line for line in lines)
     assert not any("⚠️" in line for line in lines)

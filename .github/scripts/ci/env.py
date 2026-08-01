@@ -71,6 +71,24 @@ _Name = Annotated[
 NAME_LIST: TypeAdapter[tuple[str, ...]] = TypeAdapter(tuple[_Name, ...])
 
 
+def generation_table() -> tuple[BatchId, ...]:
+    """The batches the plan job pinned for this run, newest first.
+
+    Empty is a valid answer and the bootstrap one: a registry with no labels yet
+    yields no table, and every reference then floats exactly as it did before the
+    mechanism existed. So absence is a default rather than a failure.
+
+    Parsed, not trusted. The value crosses a job boundary as a string, and an
+    entry that is not a batch id would otherwise be interpolated straight into a
+    tag; `BatchId.parse` rejects it and the run degrades to floating instead.
+    """
+    raw = read("GENERATIONS", OPTIONAL_TEXT, default="")
+    parsed = tuple(filter(None, map(BatchId.parse, filter(None, raw.split(",")))))
+    if len(parsed) != len([part for part in raw.split(",") if part]):
+        raise MissingEnvironment(f"GENERATIONS={raw!r}: not every entry is a batch id")
+    return parsed
+
+
 def _explain(name: str, source: object, error: ValidationError) -> str:
     """One line naming the variable, its value, and what was wrong with it.
 
@@ -125,6 +143,19 @@ def read_json[T](name: str, schema: TypeAdapter[T]) -> T:
         raise MissingEnvironment(_explain(name, raw, error)) from error
 
 
+def registry_repository() -> str:
+    """The registry reference this repository publishes every image under.
+
+    Its own function again because two callers now need it and must agree
+    exactly: `BuildIdentity` builds tags from it, and the plan job names the
+    probe it walks the generation table through. A discrepancy between those two
+    would have the table describing a different repository than the tags do.
+    """
+    registry = read("DOCKER_REGISTRY", TEXT).lower()
+    repository = read("DOCKER_IMAGE_NAME", TEXT).lower()
+    return f"{registry}/{repository}"
+
+
 @dataclass(frozen=True, slots=True)
 class BuildIdentity:
     """The batch, timestamp, and commit facts that every tag in a run derives from.
@@ -147,8 +178,6 @@ class BuildIdentity:
         # (MESH_SECRET) and dynamically defaulted (BUILD_SLOTS from cpu_count),
         # so the alias and factory boilerplate would exceed what it saves. The
         # constraint work is already pydantic's; only the lookup is not.
-        registry = read("DOCKER_REGISTRY", TEXT).lower()
-        repository = read("DOCKER_IMAGE_NAME", TEXT).lower()
         # Bound before the call rather than read inside it: the batch is a
         # function of these two, and reading them twice would let the tag and the
         # token they appear in drift if a read ever became non-deterministic.
@@ -172,7 +201,7 @@ class BuildIdentity:
                 commit_sha=commit_sha,
                 date_time=date_time,
             ),
-            base_image=f"{registry}/{repository}",
+            base_image=registry_repository(),
         )
 
 

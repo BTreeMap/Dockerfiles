@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from ci.domain import BatchId
 from ci.env import (
     COUNT,
     JSON_ARRAY,
@@ -22,6 +23,7 @@ from ci.env import (
     TEXT,
     BuildIdentity,
     MissingEnvironment,
+    generation_table,
     read,
     read_json,
     write_env,
@@ -302,3 +304,38 @@ def test_the_registry_reference_is_lowercased(monkeypatch: pytest.MonkeyPatch) -
     """A repository name may not carry uppercase; the workflow supplies both cased."""
     _stage_environment(monkeypatch)
     assert BuildIdentity.from_environment().base_image == "ghcr.io/btreemap/dockerfiles"
+
+
+# --- the generation table ---------------------------------------------------
+
+
+def test_no_table_is_the_bootstrap_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A registry with no labels yields nothing, and every edge then floats.
+
+    Absence has to be a default rather than a failure, or the very first run
+    against an empty registry could never produce the labels the table is read
+    from.
+    """
+    monkeypatch.delenv("GENERATIONS", raising=False)
+    assert generation_table() == ()
+    monkeypatch.setenv("GENERATIONS", "")
+    assert generation_table() == ()
+
+
+def test_the_table_is_parsed_not_trusted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """It crosses a job boundary as a string and is interpolated into a tag.
+
+    An entry that is not a batch id would otherwise be pasted straight into a
+    reference, so it is refused here rather than resolved into a 404 much later.
+    """
+    monkeypatch.setenv("GENERATIONS", "not-a-batch")
+    with pytest.raises(MissingEnvironment, match="not every entry is a batch id"):
+        generation_table()
+
+
+def test_the_table_keeps_its_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Newest first: an edge reaching back k takes the k-th entry."""
+    first = BatchId.derive(run_id="1", run_attempt="1", commit_sha="a", date_time="t")
+    second = BatchId.derive(run_id="2", run_attempt="1", commit_sha="a", date_time="t")
+    monkeypatch.setenv("GENERATIONS", f"{first},{second}")
+    assert generation_table() == (first, second)

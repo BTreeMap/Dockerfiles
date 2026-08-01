@@ -18,9 +18,16 @@ from ci.discovery import (
     seed_for,
 )
 from ci.domain import Platform
-from ci.env import COUNT, RETRIES, TEXT, read, write_output, write_summary
+from ci.env import COUNT, RETRIES, TEXT, read, registry_repository, write_output, write_summary
 from ci.logs import configure
-from ci.references import DanglingReference, dependents_of, graph
+from ci.provenance import generations
+from ci.references import (
+    DanglingReference,
+    dependents_of,
+    generations_needed,
+    graph,
+    probe_for,
+)
 from ci.report import graph_section
 
 logger = logging.getLogger("ci.discover")
@@ -95,6 +102,24 @@ def main() -> int:
     # what makes any difference in it worth a second look.
     discovered = graph(definitions(Path.cwd()), Path.cwd())
     write_summary(list(graph_section(discovered, dependents_of(discovered))))
+
+    # The generation table, walked once here so every builder pins against one
+    # answer. Read live from the registry rather than threaded from anywhere: the
+    # plan job is the only place that runs once per run, and a table computed per
+    # worker could differ between them mid-run.
+    probe = probe_for(discovered)
+    table = (
+        generations(
+            probe=probe[0],
+            base=probe[1],
+            registry_repository=registry_repository(),
+            platform=platforms[0],
+            depth=generations_needed(discovered),
+        )
+        if probe is not None
+        else ()
+    )
+    write_output("generations", ",".join(str(batch) for batch in table))
 
     write_output("images", json.dumps(sorted({task.image for task in tasks})))
     write_output("platforms", json.dumps([str(platform) for platform in platforms]))

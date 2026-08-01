@@ -36,12 +36,18 @@ env:
 jobs:
   plan:
     runs-on: ubuntu-24.04
+    # Reading only: the plan job publishes nothing, it walks the generation table
+    # back through tags earlier runs published.
+    permissions:
+      contents: read
+      packages: read
     outputs:
       date: ${{ steps.timestamp.outputs.date }}
       date_time: ${{ steps.timestamp.outputs.date_time }}
       source_date_epoch: ${{ steps.timestamp.outputs.source_date_epoch }}
       run_id: ${{ steps.timestamp.outputs.run_id }}
       run_attempt: ${{ steps.timestamp.outputs.run_attempt }}
+      generations: ${{ steps.discover.outputs.generations }}
       matrix: ${{ steps.discover.outputs.matrix }}
       reconcile_matrix: ${{ steps.discover.outputs.reconcile_matrix }}
       images: ${{ steps.discover.outputs.images }}
@@ -55,6 +61,15 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: .github/scripts/uv.lock
+
+      # The plan job inspects the registry to walk the generation table, so it
+      # needs a credential even though it pushes nothing.
+      - name: Log into Docker Registry ${{ env.DOCKER_REGISTRY }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate build timestamp
         id: timestamp
@@ -171,6 +186,7 @@ jobs:
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
           PLAN_RUN_ID: ${{ needs.plan.outputs.run_id }}
           PLAN_RUN_ATTEMPT: ${{ needs.plan.outputs.run_attempt }}
+          GENERATIONS: ${{ needs.plan.outputs.generations }}
           DOCKER_PLATFORM: ${{ matrix.platform }}
           SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
           WORKER_ID: ${{ matrix.worker_id }}
@@ -236,6 +252,7 @@ jobs:
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
           PLAN_RUN_ID: ${{ needs.plan.outputs.run_id }}
           PLAN_RUN_ATTEMPT: ${{ needs.plan.outputs.run_attempt }}
+          GENERATIONS: ${{ needs.plan.outputs.generations }}
           SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}
           BUILD_SLOTS: ${{ env.BUILD_SLOTS }}
@@ -282,6 +299,7 @@ jobs:
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
           PLAN_RUN_ID: ${{ needs.plan.outputs.run_id }}
           PLAN_RUN_ATTEMPT: ${{ needs.plan.outputs.run_attempt }}
+          GENERATIONS: ${{ needs.plan.outputs.generations }}
           IMAGES: ${{ needs.plan.outputs.images }}
           PLATFORMS: ${{ needs.plan.outputs.platforms }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}
