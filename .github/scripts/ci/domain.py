@@ -20,7 +20,61 @@ from typing import Annotated, Any, Self
 from pydantic import BeforeValidator, Field, TypeAdapter, ValidationError
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
+from ci.derive import Derivation, Scope
+
 # --- refined primitives ----------------------------------------------------
+
+
+# 20 bytes is 32 base32 characters exactly, since 160 bits divides by five and
+# so encodes without padding. Width is the point rather than entropy: the run id
+# and attempt already identify an execution exactly, and a digest over them can
+# only lose information. What it buys is one fixed-size token, comparable at a
+# glance across the images sharing it, instead of a composite that grows with
+# whatever GitHub's run counter reaches.
+_BATCH = Derivation(scope=Scope(b"batch-id-v1"), width=20)
+
+_BATCH_ALPHABET = frozenset("abcdefghijklmnopqrstuvwxyz234567")
+
+
+@dataclass(frozen=True, slots=True)
+class BatchId:
+    """Names the group of images one execution of the workflow publishes.
+
+    Nominal rather than a bare `str`, for the reason `Hostname` below is: a
+    `BuildIdentity` carries four strings, and while they were all `str` nothing
+    but argument order stopped a commit from being passed where a batch was
+    wanted. Here the type checker stops it.
+
+    The invariant is checked in `__post_init__` rather than only in `derive`,
+    because Python cannot make the constructor private and a batch id that is
+    not 32 base32 characters would be a tag component of unpredictable width.
+    """
+
+    value: str
+
+    def __post_init__(self) -> None:
+        if len(self.value) != 32 or not _BATCH_ALPHABET.issuperset(self.value):
+            raise ValueError(f"not a batch id: {self.value!r}")
+
+    @classmethod
+    def derive(cls, run_id: str, run_attempt: str, commit_sha: str, date_time: str) -> Self:
+        """Mints the batch for one execution.
+
+        Pure and total, and deliberately derived rather than passed between
+        jobs: every job in a run computes the same token from variables the
+        runner already sets, so there is no wire along which the build,
+        reconcile, and manifest stages could come to disagree about which batch
+        they are in.
+
+        The attempt is mixed in for the reason it is in `mesh.derive_run_key`:
+        GITHUB_RUN_ID is stable across re-runs and only the attempt increments,
+        so without it a re-run would publish into the batch it was replacing.
+        """
+        return cls(_BATCH.of(run_id, run_attempt, commit_sha, date_time).base32())
+
+    def __str__(self) -> str:
+        """The tag algebra interpolates this directly; rendering belongs here."""
+        return self.value
 
 
 class Platform(StrEnum):

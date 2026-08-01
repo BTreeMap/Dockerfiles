@@ -14,7 +14,6 @@ Reconciliation against the registry is what turns that into a guarantee.
 
 from __future__ import annotations
 
-import hashlib
 import hmac
 import json
 import logging
@@ -31,6 +30,7 @@ from typing import Annotated, Any, assert_never
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from ci.derive import Derivation, Scope, material
 from ci.domain import (
     Authenticated,
     AuthOutcome,
@@ -113,26 +113,14 @@ class HealthReport(BaseModel):
     pending: Annotated[int, Field(ge=0)] = 0
 
 
-# BLAKE2b personalisation strings, giving domain separation natively: the same
-# key cannot produce a valid tag in the wrong context, because the scope is
-# mixed into the compression function rather than prepended to the message and
-# hoped for. Each must be at most blake2b.PERSON_SIZE (16) bytes.
-KEY_SCOPE = b"mesh-key-v1"
-REQUEST_SCOPE = b"mesh-req-v1"
-
-_MAX_BLAKE2B_KEY = hashlib.blake2b.MAX_KEY_SIZE
-
-
-def _as_key(material: bytes) -> bytes:
-    """Fits arbitrary key material into BLAKE2b's 64-byte key limit.
-
-    HMAC pre-hashes an oversized key silently; BLAKE2b raises instead, so the
-    reduction is explicit here. An arbitrarily long MESH_SECRET is therefore
-    still valid -- it simply gets compressed, exactly as HMAC would have done.
-    """
-    if len(material) <= _MAX_BLAKE2B_KEY:
-        return material
-    return hashlib.blake2b(material, digest_size=_MAX_BLAKE2B_KEY).digest()
+# The three derivations this module mints. Distinct scopes give domain
+# separation natively: a tag minted under one cannot be replayed under another,
+# because the scope is mixed into the compression function rather than prepended
+# to the message and hoped for. All three are 32 bytes -- the wire carries only
+# tags of that width, and a key of that width is what keyed BLAKE2b wants.
+RUN_KEY = Derivation(scope=Scope(b"mesh-key-v1"), width=32)
+REQUEST = Derivation(scope=Scope(b"mesh-req-v1"), width=32)
+BODY = Derivation(scope=Scope(b"mesh-body-v1"), width=32)
 
 
 def derive_run_key(repository_secret: str, run_id: str, run_attempt: str = "1") -> bytes:
@@ -148,20 +136,15 @@ def derive_run_key(repository_secret: str, run_id: str, run_attempt: str = "1") 
     re-runs while only GITHUB_RUN_ATTEMPT increments; without it, "re-run failed
     jobs" would reuse a key that may already have been exposed.
 
-    Scoped to KEY_SCOPE so a derivation tag can never be replayed as a request
+    Scoped to RUN_KEY so a derivation tag can never be replayed as a request
     signature, even though both use one key and one primitive.
     """
-    return hashlib.blake2b(
-        f"{run_id}/{run_attempt}".encode(),
-        key=_as_key(repository_secret.encode()),
-        person=KEY_SCOPE,
-        digest_size=32,
-    ).digest()
+    return RUN_KEY.of(run_id, run_attempt, key=repository_secret.encode()).raw
 
 
 def body_digest(body: bytes) -> str:
     """Digests a body so a signature can commit to it without it being read."""
-    return hashlib.blake2b(body, digest_size=32).hexdigest()
+    return BODY.over(body).hex()
 
 
 def canonical_request(
@@ -176,22 +159,22 @@ def canonical_request(
 
     The length is covered too, so a receiver may trust it enough to allocate
     against before it has seen a single byte of the body.
+
+    Built by `derive.material`, which rejects a field containing the separator
+    rather than trusting none to. A path is the field that could: it arrives
+    from the request line, and a `%0A` that some future handler unescaped before
+    signing would otherwise let one request present another's canonical form.
     """
-    return "\n".join(
-        (method.upper(), path, timestamp, str(content_length), digest)
-    ).encode()
+    return material(method.upper(), path, timestamp, str(content_length), digest)
 
 
 def sign_request(
     key: bytes, method: str, path: str, timestamp: str, content_length: int, digest: str
 ) -> str:
     """Tags a request. Keyed BLAKE2b is a MAC by construction; no HMAC wrapper."""
-    return hashlib.blake2b(
-        canonical_request(method, path, timestamp, content_length, digest),
-        key=key,
-        person=REQUEST_SCOPE,
-        digest_size=32,
-    ).hexdigest()
+    return REQUEST.over(
+        canonical_request(method, path, timestamp, content_length, digest), key=key
+    ).hex()
 
 
 def verify_headers(

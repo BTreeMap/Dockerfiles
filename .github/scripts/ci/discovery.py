@@ -6,7 +6,6 @@ independently, so the two can no longer disagree about which images exist.
 
 from __future__ import annotations
 
-import hashlib
 import random
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from itertools import groupby
@@ -17,6 +16,7 @@ from typing import Any
 from pydantic import TypeAdapter
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
+from ci.derive import Derivation, Scope
 from ci.domain import Platform, Task
 
 # Each glob is paired with the naming rule it implies, so no layout can be
@@ -164,10 +164,11 @@ class MatrixEntry:
 _MATRIX_ENTRY: TypeAdapter[MatrixEntry] = TypeAdapter(MatrixEntry)
 
 
-# BLAKE2b personalisation, matching ci/mesh.py: the scope is mixed into the
-# compression function, so a digest minted here can never be mistaken for one
-# minted for the mesh even though both use the same primitive.
-_SEED_SCOPE = b"deal-seed-v1"
+# Eight bytes because the consumer is `random.Random`, which takes an arbitrary
+# integer; more entropy than that buys a deal no better distributed. The scope
+# is what keeps a seed from ever coinciding with a mesh tag or a batch id, all
+# three being the same primitive.
+_SEED = Derivation(scope=Scope(b"deal-seed-v1"), width=8)
 
 
 def seed_for(platform: Platform) -> int:
@@ -184,7 +185,4 @@ def seed_for(platform: Platform) -> int:
     established. This one is the same primitive the mesh already signs with, so
     the repository has one hash function and one reason for it.
     """
-    return int.from_bytes(
-        hashlib.blake2b(str(platform).encode(), person=_SEED_SCOPE, digest_size=8).digest(),
-        "big",
-    )
+    return _SEED.of(str(platform)).integer()

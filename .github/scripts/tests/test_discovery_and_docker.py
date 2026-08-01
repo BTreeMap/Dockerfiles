@@ -11,15 +11,15 @@ import pytest
 
 from ci.discovery import ConflictingDockerfiles, deal, definitions, discover, seed_for
 from ci.docker import tags_for
-from ci.domain import Platform, Task
-from ci.env import BuildIdentity, batch_id
+from ci.domain import BatchId, Platform, Task
+from ci.env import BuildIdentity
 from ci.retry import backoff_seconds
 
 IDENTITY = BuildIdentity(
     date="2026-07-28",
     date_time="2026-07-28.12-00-00",
     commit_sha="abc123",
-    batch=batch_id(
+    batch=BatchId.derive(
         run_id="17", run_attempt="1", commit_sha="abc123", date_time="2026-07-28.12-00-00"
     ),
     base_image="ghcr.io/btreemap/dockerfiles",
@@ -233,16 +233,29 @@ _BATCH_INPUTS = {
 }
 
 
-def test_the_batch_id_is_a_fixed_width_lowercase_token() -> None:
+def test_a_batch_id_is_a_fixed_width_lowercase_token() -> None:
     """Width and alphabet are what a tag component is allowed to be.
 
     128 characters is the whole tag's budget, and this token shares it with an
     image name and a platform suffix, so its size may not drift silently.
     """
-    batch = batch_id(**_BATCH_INPUTS)
+    batch = BatchId.derive(**_BATCH_INPUTS)
 
-    assert len(batch) == 32, batch
-    assert set(batch) <= set("abcdefghijklmnopqrstuvwxyz234567"), batch
+    assert len(batch.value) == 32, batch
+    assert set(batch.value) <= set("abcdefghijklmnopqrstuvwxyz234567"), batch
+    assert str(batch) == batch.value
+
+
+@pytest.mark.parametrize("malformed", ["", "abc123", "A" * 32, "x" * 33, "0" * 32, "1" * 32])
+def test_a_malformed_batch_id_cannot_be_constructed(malformed: str) -> None:
+    """The invariant holds on the constructor, not only on `derive`.
+
+    Python cannot make a dataclass constructor private, so a check that lived
+    only in the factory would be a convention. The uppercase and 0/1 cases are
+    the ones a hand-written token would plausibly get wrong.
+    """
+    with pytest.raises(ValueError, match="not a batch id"):
+        BatchId(malformed)
 
 
 def test_the_batch_id_is_derived_not_random() -> None:
@@ -252,7 +265,7 @@ def test_the_batch_id_is_derived_not_random() -> None:
     manifest stages would each name a different batch and reconciliation would
     rebuild everything on every run.
     """
-    assert batch_id(**_BATCH_INPUTS) == batch_id(**_BATCH_INPUTS)
+    assert BatchId.derive(**_BATCH_INPUTS) == BatchId.derive(**_BATCH_INPUTS)
 
 
 @pytest.mark.parametrize("field", sorted(_BATCH_INPUTS))
@@ -263,7 +276,7 @@ def test_every_input_moves_the_batch_id(field: str) -> None:
     name of the input that stopped mattering.
     """
     changed = {**_BATCH_INPUTS, field: _BATCH_INPUTS[field] + "9"}
-    assert batch_id(**changed) != batch_id(**_BATCH_INPUTS)
+    assert BatchId.derive(**changed) != BatchId.derive(**_BATCH_INPUTS)
 
 
 def test_the_batch_material_cannot_be_reassociated() -> None:
@@ -273,9 +286,9 @@ def test_the_batch_material_cannot_be_reassociated() -> None:
     17/attempt 1 the same material, which is exactly the collision the batch id
     exists to remove.
     """
-    assert batch_id(run_id="1", run_attempt="71", commit_sha="abc123", date_time="t") != batch_id(
-        run_id="17", run_attempt="1", commit_sha="abc123", date_time="t"
-    )
+    assert BatchId.derive(
+        run_id="1", run_attempt="71", commit_sha="abc123", date_time="t"
+    ) != BatchId.derive(run_id="17", run_attempt="1", commit_sha="abc123", date_time="t")
 
 
 # --- tagging ---------------------------------------------------------------
@@ -363,7 +376,7 @@ def test_manifest_sources_are_run_unique_never_floating() -> None:
     sources = [run_tag("redis", str(platform), IDENTITY) for platform in platforms]
 
     for source in sources:
-        assert IDENTITY.batch in source, source
+        assert str(IDENTITY.batch) in source, source
 
     # None of the floating tags the build or manifest stages publish may appear
     # as a manifest source. The date and timestamp are floating now: a re-run of
@@ -372,7 +385,7 @@ def test_manifest_sources_are_run_unique_never_floating() -> None:
     floating = {
         tag
         for tag in (*tags_for(task, IDENTITY), *manifest_tags("redis", IDENTITY))
-        if IDENTITY.batch not in tag
+        if str(IDENTITY.batch) not in tag
     }
     assert floating, "expected some floating tags to exist"
     assert not (set(sources) & floating)

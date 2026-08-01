@@ -6,15 +6,15 @@ one of these parsers rather than being coerced at the point of use.
 
 from __future__ import annotations
 
-import hashlib
 import os
-from base64 import b32encode
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
 
 from pydantic import BeforeValidator, Field, TypeAdapter, ValidationError
+
+from ci.domain import BatchId
 
 
 class MissingEnvironment(RuntimeError):
@@ -125,49 +125,6 @@ def read_json[T](name: str, schema: TypeAdapter[T]) -> T:
         raise MissingEnvironment(_explain(name, raw, error)) from error
 
 
-# --- the batch a run publishes under ---------------------------------------
-
-# BLAKE2b personalisation, so this derivation cannot collide with another one
-# over the same material. At most blake2b.PERSON_SIZE (16) bytes.
-_BATCH_SCOPE = b"batch-id-v1"
-
-# 20 bytes is 32 base32 characters exactly: 160 bits divides by 5, so nothing is
-# padded and every batch id is the same width. Width is the point, not entropy --
-# the run id and attempt already identify an execution exactly, and a digest over
-# them can only lose information. What it buys is one opaque token of fixed size,
-# comparable at a glance across the images that share it, instead of a composite
-# that grows with whatever GitHub's run counter reaches.
-_BATCH_BYTES = 20
-
-
-def batch_id(run_id: str, run_attempt: str, commit_sha: str, date_time: str) -> str:
-    """Names the group of images one execution publishes.
-
-    Pure and total, and deliberately derived rather than passed between jobs:
-    every job in a run computes the same token from variables the runner already
-    sets, so there is no wire along which the build, reconcile, and manifest
-    stages could come to disagree about which batch they are in.
-
-    The attempt is mixed in for the reason it is in `mesh.derive_run_key`:
-    GITHUB_RUN_ID is stable across re-runs and only the attempt increments, so
-    without it a re-run would publish into the batch it was meant to replace.
-
-    Newline-joined because none of the four inputs can contain a newline -- the
-    run id and attempt are decimal, the commit is hex, the timestamp is dashes
-    and dots. That makes the encoding injective, which is what stops two distinct
-    runs from presenting identical material to the hash.
-    """
-    material = "\n".join((run_id, run_attempt, commit_sha, date_time))
-    digest = hashlib.blake2b(
-        material.encode(), person=_BATCH_SCOPE, digest_size=_BATCH_BYTES
-    ).digest()
-    # Lowercased because a tag is case-sensitive while a repository name may not
-    # be, and a token that is sometimes shouted invites a 404 nobody can read.
-    # Base32's alphabet is A-Z and 2-7, which already excludes the 0/O and 1/I
-    # pairs, so folding the case costs no distinctness and adds no ambiguity.
-    return b32encode(digest).decode("ascii").lower()
-
-
 @dataclass(frozen=True, slots=True)
 class BuildIdentity:
     """The batch, timestamp, and commit facts that every tag in a run derives from.
@@ -179,7 +136,7 @@ class BuildIdentity:
     date: str
     date_time: str
     commit_sha: str
-    batch: str
+    batch: BatchId
     base_image: str
 
     @classmethod
@@ -203,7 +160,7 @@ class BuildIdentity:
             commit_sha=commit_sha,
             # Defaulted because GITHUB_RUN_ATTEMPT is set by the runner but not by
             # a local invocation, and the first attempt is what its absence means.
-            batch=batch_id(
+            batch=BatchId.derive(
                 run_id=read("GITHUB_RUN_ID", TEXT),
                 run_attempt=read("GITHUB_RUN_ATTEMPT", TEXT, default="1"),
                 commit_sha=commit_sha,
