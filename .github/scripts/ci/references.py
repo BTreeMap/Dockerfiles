@@ -219,42 +219,109 @@ class UnpinnableReference(RuntimeError):
         self.defects = dict(defects)
 
 
+@dataclass(frozen=True, slots=True)
+class _Stage:
+    """One FROM: what it is built on, and what this file calls it."""
+
+    reference: str
+    alias: str | None
+
+
+def _instructions(
+    text: str, collected: dict[str, str]
+) -> tuple[tuple[_Stage, ...], tuple[str, ...], tuple[str, ...]]:
+    """One pass: the stages this file declares and the sources it copies from.
+
+    The argument bindings accumulate into `collected` as they are read, because a
+    declaration binds a name that later instructions resolve through. That state
+    is the scope, not an optimisation.
+    """
+    stages: list[_Stage] = []
+    copied: list[str] = []
+    rebound: list[str] = []
+    for instruction in logical_lines(text):
+        tokens = tuple(instruction.split())
+        if not tokens:
+            continue
+        if tokens[0].lower() == "arg":
+            for name, default in _bindings_in(tokens[1:]):
+                if collected.get(name, default) != default:
+                    rebound.append(
+                        f"${{{name}}}  -- redeclared with a different default: "
+                        f"{collected[name]} then {default}"
+                    )
+                collected[name] = default
+            continue
+        found = _reference_in(tokens)
+        if found is None:
+            continue
+        reference, usage = found
+        if usage is Usage.ARTIFACT:
+            copied.append(reference)
+            continue
+        operand = tuple(dropwhile(lambda token: token.startswith("--"), tokens[1:]))
+        alias = operand[2] if len(operand) >= 3 and operand[1].lower() == "as" else None
+        stages.append(_Stage(reference=reference, alias=alias))
+    return tuple(stages), tuple(copied), tuple(rebound)
+
+
+def _ancestry(stages: Sequence[_Stage]) -> frozenset[str]:
+    """Every stage the published image is built on, following aliases upward.
+
+    The last FROM is what a Dockerfile publishes, so this is what decides whether
+    a reference is a base or a source of artifacts. The instruction alone cannot:
+    a toolchain file names its base with FROM and publishes `FROM scratch`, while
+    a consumer names the images it copies with FROM too, now that BuildKit will
+    not expand an argument inside `COPY --from`. Only the position of a stage
+    relative to the final one tells them apart.
+    """
+    by_alias = {stage.alias: stage for stage in stages if stage.alias is not None}
+    ancestry: set[str] = set()
+    current: _Stage | None = stages[-1] if stages else None
+    while current is not None:
+        ancestry.add(current.reference)
+        nxt = by_alias.get(current.reference)
+        current = nxt if nxt is not None and nxt.reference not in ancestry else None
+    return frozenset(ancestry)
+
+
 def classified_in(
     text: str, known: frozenset[str], collected: dict[str, str] | None = None
 ) -> Iterator[Classified]:
-    """Every reference one Dockerfile makes, classified, in order of appearance.
+    """Every reference one Dockerfile makes, classified.
 
-    A fold whose accumulator is real rather than incidental: an ARG declaration
-    binds a name that later instructions resolve through, so the state *is* the
-    scope. It never escapes, which is what keeps this observationally pure.
+    Two passes over the parsed instructions rather than one over the text: the
+    final stage decides how every other reference reads, and it is not known
+    until the file has been read to the end.
     """
     bindings = {} if collected is None else collected
-    for instruction in logical_lines(text):
-        tokens = tuple(instruction.split())
-        if tokens and tokens[0].lower() == "arg":
-            bindings.update(_bindings_in(tokens[1:]))
-            continue
-        found = _reference_in(tokens)
-        if found is not None:
-            yield classify(found[0], found[1], bindings, known)
+    stages, copied, _ = _instructions(text, bindings)
+    ancestry = _ancestry(stages)
+    aliased = {stage.alias for stage in stages if stage.alias is not None}
+
+    for stage in stages:
+        usage = Usage.BASE if stage.reference in ancestry else Usage.ARTIFACT
+        yield classify(stage.reference, usage, bindings, known)
+
+    # A COPY naming a stage of this file was already accounted for by that
+    # stage's FROM. Anything else is a reference in its own right, and since
+    # expansion is unavailable here it can only be a literal one -- which is
+    # exactly the misdeclaration the check exists to catch.
+    for reference in copied:
+        if reference not in aliased:
+            yield classify(reference, Usage.ARTIFACT, bindings, known)
 
 
-def _ambiguous_arguments(edges: Sequence[Dependency]) -> Iterator[str]:
-    """Arguments one file uses for more than one image.
+def _rebindings_in(text: str) -> tuple[str, ...]:
+    """Arguments this file declares twice with different defaults.
 
-    The only way free naming can go wrong, and unlike the derived scheme it
-    replaced this is a property of a single file rather than of the whole tree.
-    Pinning such an argument would set whichever image the build asked for and
-    silently redirect the other.
+    The only way free naming can go wrong, and it is refused at the cause rather
+    than detected at the symptom: the build sets an argument once, so a file whose
+    references resolve it two ways would have one of them silently redirected. An
+    argument declared once and imported later with a bare `ARG NAME` is untouched,
+    which is the form a stage needs to see a global declaration.
     """
-    claimed: dict[str, set[str]] = {}
-    for edge in edges:
-        claimed.setdefault(edge.argument, set()).add(edge.image)
-    return (
-        f"${{{argument}}}  -- names more than one image here: {', '.join(sorted(images))}"
-        for argument, images in sorted(claimed.items())
-        if len(images) > 1
-    )
+    return _instructions(text, {})[2]
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +366,7 @@ def _read(text: str, known: frozenset[str]) -> FileFacts:
                 pass
             case unreachable:
                 assert_never(unreachable)
-    defects.extend(_ambiguous_arguments(edges))
+    defects.extend(_rebindings_in(text))
     return FileFacts(
         edges=tuple(sorted(set(edges), key=Dependency.sort_key)),
         defects=tuple(defects),
@@ -494,9 +561,11 @@ def images_in_graph(edges: Mapping[str, tuple[Dependency, ...]]) -> frozenset[st
 
 
 def probe_for(edges: Mapping[str, tuple[Dependency, ...]]) -> tuple[str, str] | None:
-    """An image whose base edge steps back exactly one generation, and that base.
+    """An image with an edge stepping back exactly one generation, and its target.
 
-    The pair the generation walk needs. Any such image will do -- floating tags
+    The pair the generation walk needs. Usage does not matter: what the walk reads
+    is `built_on`, which keeps every edge it could pin regardless of how the image
+    consumed it. Any such image will do -- floating tags
     advance only as a complete generation, so every one of them reports the same
     batch -- so the choice is alphabetical purely to keep a run reproducible from
     its inputs.
@@ -510,7 +579,7 @@ def probe_for(edges: Mapping[str, tuple[Dependency, ...]]) -> tuple[str, str] | 
             (image, edge.image)
             for image in sorted(edges)
             for edge in edges[image]
-            if edge.usage is Usage.BASE and edge.generations_back == 1
+            if edge.generations_back == 1
         ),
         None,
     )

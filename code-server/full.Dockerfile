@@ -24,11 +24,14 @@
 # system reads each one off the declaration it appears in.
 ARG CODE_SERVER=ghcr.io/btreemap/dockerfiles:code-server
 ARG CODE_SERVER_RACKET=ghcr.io/btreemap/dockerfiles:code-server-racket
+
+# Each image copied from is named as a stage first. BuildKit does not expand
+# build arguments inside `COPY --from`, so the reference has to reach it through
+# a stage alias; an unused stage is never pulled, so naming them costs nothing.
+FROM ${CODE_SERVER_RACKET} AS racket_artifacts
+
 FROM ${CODE_SERVER}
 
-# Re-declared so the COPY below can see it: a global argument is not in scope
-# inside a build stage until the stage asks for it again.
-ARG CODE_SERVER_RACKET
 
 # Restore Racket to the front of the PATH ./Dockerfile builds.
 ENV PATH=$RACKET_HOME/bin:$PATH
@@ -41,5 +44,5 @@ COPY root-full/ /
 # Racket, for development and execution of Racket programs. Built by
 # ./racket.Dockerfile; the --chown is what ./Dockerfile's toolchain copies do,
 # for the same reason -- the artifact image carries root-owned files.
-COPY --from=${CODE_SERVER_RACKET} \
+COPY --from=racket_artifacts \
     --chown=${PUID}:${PGID} $RACKET_HOME $RACKET_HOME

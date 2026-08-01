@@ -113,21 +113,23 @@ def test_a_from_is_a_base_edge_and_a_copy_from_is_an_artifact_edge() -> None:
     """
     text = f"FROM {ref('code-server-base')}\nCOPY --from={ref('code-server-go')} /opt/go /opt/go\n"
     assert parse(text) == (
-        Dependency(
-            image="code-server-base", usage=Usage.BASE, argument="REF_CODE_SERVER_BASE"
-        ),
-        Dependency(
-            image="code-server-go", usage=Usage.ARTIFACT, argument="REF_CODE_SERVER_GO"
-        ),
+        Dependency(image="code-server-base", usage=Usage.BASE, argument="REF_CODE_SERVER_BASE"),
+        Dependency(image="code-server-go", usage=Usage.ARTIFACT, argument="REF_CODE_SERVER_GO"),
     )
 
 
-def test_a_stage_alias_is_not_an_internal_reference() -> None:
-    """The exclusion that needs no alias tracking to hold.
+def test_usage_follows_a_stage_position_not_its_instruction() -> None:
+    """The distinction the instruction alone can no longer make.
 
-    A stage name cannot contain a slash or a colon, so it can never match the
-    registry prefix. If this ever fails, the prefix test has been loosened into
-    something that would put builder stages into the published graph.
+    BuildKit will not expand an argument inside `COPY --from`, so a consumer names
+    the images it copies with FROM, exactly as a toolchain names the base it
+    compiles on. Only position relative to the published stage tells them apart:
+    what the last FROM descends from is a base, and everything else is a source of
+    artifacts.
+
+    Here the file publishes `FROM scratch`, so the image it compiled on is not a
+    base of anything it ships; its contents merely expect that base's libraries,
+    which is what an artifact edge records.
     """
     text = (
         f"FROM {ref('code-server-base')} AS haskell_builder\n"
@@ -135,9 +137,20 @@ def test_a_stage_alias_is_not_an_internal_reference() -> None:
         "COPY --from=haskell_builder /opt/haskell /opt/haskell\n"
     )
     assert parse(text) == (
-        Dependency(
-            image="code-server-base", usage=Usage.BASE, argument="REF_CODE_SERVER_BASE"
-        ),
+        Dependency(image="code-server-base", usage=Usage.ARTIFACT, argument="REF_CODE_SERVER_BASE"),
+    )
+
+
+def test_the_published_stage_decides_which_reference_is_the_base() -> None:
+    """The consumer shape: hoisted stages are artifacts, the final FROM is the base."""
+    text = (
+        f"FROM {ref('code-server-go')} AS go_artifacts\n"
+        f"FROM {ref('code-server-base')}\n"
+        "COPY --from=go_artifacts /opt/go /opt/go\n"
+    )
+    assert parse(text) == (
+        Dependency(image="code-server-base", usage=Usage.BASE, argument="REF_CODE_SERVER_BASE"),
+        Dependency(image="code-server-go", usage=Usage.ARTIFACT, argument="REF_CODE_SERVER_GO"),
     )
 
 
@@ -364,12 +377,13 @@ def test_a_literal_reference_to_one_of_our_images_is_refused(tmp_path: Path) -> 
     assert "ARG <NAME>=" in str(raised.value)
 
 
-def test_one_argument_naming_two_images_in_a_file_is_refused(tmp_path: Path) -> None:
-    """The only way free argument names can go wrong.
+def test_an_argument_redeclared_with_a_different_default_is_refused(tmp_path: Path) -> None:
+    """The only way free argument names can go wrong, refused at the cause.
 
-    Unlike the derived scheme this replaced, it is a property of a single file
-    rather than of the whole tree: pinning the argument would set whichever image
-    the build asked for and silently redirect the other.
+    The build sets an argument once, so a file whose references resolve it two
+    ways would have one of them silently redirected. Refusing the redeclaration
+    is stricter than detecting the redirect and needs no reasoning about which
+    reference won.
     """
     root = tree(
         tmp_path,
@@ -386,7 +400,7 @@ def test_one_argument_naming_two_images_in_a_file_is_refused(tmp_path: Path) -> 
     )
     definitions = {name: Path(f"{name}/Dockerfile") for name in ("a", "b", "app")}
 
-    with pytest.raises(UnpinnableReference, match="names more than one image here: a, b"):
+    with pytest.raises(UnpinnableReference, match="redeclared with a different default"):
         graph(definitions, root)
 
 
@@ -394,6 +408,8 @@ def test_an_external_reference_needs_no_declaration(tmp_path: Path) -> None:
     """The rule binds only images we publish; nothing else is pinnable at all."""
     root = tree(tmp_path, {"app/Dockerfile": "FROM alpine:3.21\nCOPY --from=gcc:12 /a /b\n"})
     assert graph({"app": Path("app/Dockerfile")}, root) == {"app": ()}
+
+
 def test_an_external_image_sharing_no_name_with_ours_is_untouched(tmp_path: Path) -> None:
     """The check binds only names this tree builds, so upstreams stay upstreams."""
     root = tree(
@@ -443,6 +459,8 @@ def test_membership_is_what_separates_a_defect_from_an_external_image() -> None:
 
     assert classify(reference, Usage.BASE, {}, frozenset()) == External()
     assert isinstance(classify(reference, Usage.BASE, {}, frozenset({"widget"})), Misdeclared)
+
+
 def test_a_cycle_is_refused_rather_than_walked(tmp_path: Path) -> None:
     """A level is one more than the deepest thing below it, which a cycle leaves
     undefined -- and the walk that computes it would not terminate."""
