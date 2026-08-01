@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import assert_never
 
-from ci.docker import run_tag
+from ci.docker import manifest_tags, run_tag
 from ci.domain import Platform
 from ci.env import NAME_LIST, RETRIES, BuildIdentity, read, read_json
 from ci.logs import configure
@@ -34,25 +34,6 @@ class ManifestFailed:
 
 
 ManifestOutcome = ManifestPushed | ManifestFailed
-
-
-def manifest_tags(image: str, identity: BuildIdentity) -> tuple[str, ...]:
-    """The architecture-independent tags that point at the fused manifest.
-
-    Mirrors `docker.tags_for` minus the platform suffix, including the retirement
-    of the `{commit}.{date}` and `{commit}.{date_time}` composites: the batch id
-    is the run-unique pointer now, and the two sets have to agree about that or a
-    manifest would advertise a name no per-platform build published.
-    """
-    stem = f"{identity.base_image}:{image}"
-    return (
-        stem,
-        f"{stem}.latest",
-        f"{stem}.{identity.date}",
-        f"{stem}.{identity.date_time}",
-        f"{stem}.{identity.commit_sha}",
-        f"{stem}.{identity.batch}",
-    )
 
 
 def push_manifest(

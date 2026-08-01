@@ -78,12 +78,14 @@ def proxy_build_args(proxy_url: str | None) -> tuple[str, ...]:
     )
 
 
-def tags_for(task: Task, identity: BuildIdentity) -> tuple[str, ...]:
-    """The full tag set a single platform build publishes.
+def manifest_tags(image: str, identity: BuildIdentity) -> tuple[str, ...]:
+    """Every name a run publishes an image under, architecture-independent.
 
-    Pure, and the single definition of the naming scheme: reconciliation checks
-    for the run-unique tag produced here rather than rebuilding the string, so
-    the two cannot drift apart.
+    Pure, and the single definition of the naming scheme. The manifest stage
+    publishes exactly these and the build stage publishes each with a platform
+    suffix, so a manifest cannot advertise a name no per-platform build produced.
+    The two lists were written out separately and kept in step by a test, which
+    is a fact about the code that only held while somebody was watching.
 
     Every tag but the batch one floats: it names a coordinate -- an image, a day,
     a commit -- that more than one run can land on, and the newest run to finish
@@ -95,16 +97,24 @@ def tags_for(task: Task, identity: BuildIdentity) -> tuple[str, ...]:
     one commit starting in the same second collided. The batch id supersedes
     them, so publishing them as well would leave two answers to the same question.
     """
-    stem = f"{identity.base_image}:{task.image}"
-    suffix = task.platform
+    stem = f"{identity.base_image}:{image}"
     return (
-        f"{stem}.{suffix}",
-        f"{stem}.latest.{suffix}",
-        f"{stem}.{identity.date}.{suffix}",
-        f"{stem}.{identity.date_time}.{suffix}",
-        f"{stem}.{identity.commit_sha}.{suffix}",
-        f"{stem}.{identity.batch}.{suffix}",
+        stem,
+        f"{stem}.latest",
+        f"{stem}.{identity.date}",
+        f"{stem}.{identity.date_time}",
+        f"{stem}.{identity.commit_sha}",
+        f"{stem}.{identity.batch}",
     )
+
+
+def tags_for(task: Task, identity: BuildIdentity) -> tuple[str, ...]:
+    """The tag set a single platform build publishes: the same names, suffixed.
+
+    The suffix is what keeps two architectures of one image from overwriting each
+    other before the manifest fuses them.
+    """
+    return tuple(f"{tag}.{task.platform}" for tag in manifest_tags(task.image, identity))
 
 
 def run_tag(image: str, platform: str, identity: BuildIdentity) -> str:

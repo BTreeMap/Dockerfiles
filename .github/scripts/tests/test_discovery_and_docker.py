@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from ci.discovery import ConflictingDockerfiles, deal, definitions, discover, seed_for
-from ci.docker import tags_for
+from ci.docker import manifest_tags, tags_for
 from ci.domain import BatchId, Platform, Task
 from ci.env import BuildIdentity
 from ci.retry import backoff_seconds
@@ -310,8 +310,6 @@ def test_the_superseded_composite_tags_are_no_longer_published() -> None:
     Asserted rather than left to the tag count so that reinstating either one
     fails here with its own name, instead of as an off-by-one nobody can place.
     """
-    from create_docker_manifests import manifest_tags
-
     task = tasks(1)[0]
     superseded = (
         f"{IDENTITY.commit_sha}.{IDENTITY.date}",
@@ -325,11 +323,9 @@ def test_the_superseded_composite_tags_are_no_longer_published() -> None:
 def test_the_build_and_manifest_tag_sets_agree() -> None:
     """A manifest may not advertise a name no per-platform build published.
 
-    The two lists are written out separately -- one carries a platform suffix and
-    the other does not -- so nothing but this check keeps them in step.
+    Now true by construction -- one list, suffixed -- so this asserts the
+    construction rather than policing two copies of it.
     """
-    from create_docker_manifests import manifest_tags
-
     task = tasks(1)[0]
     stripped = tuple(tag.removesuffix(".amd64") for tag in tags_for(task, IDENTITY))
     assert stripped == manifest_tags("image-0", IDENTITY)
@@ -370,7 +366,6 @@ def test_manifest_sources_are_run_unique_never_floating() -> None:
     image out from under a manifest mid-publish.
     """
     from ci.docker import run_tag
-    from create_docker_manifests import manifest_tags
 
     platforms = (Platform.AMD64, Platform.ARM64)
     sources = [run_tag("redis", str(platform), IDENTITY) for platform in platforms]
