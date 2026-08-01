@@ -173,11 +173,10 @@ def resolve(reference: str, platform: Platform) -> Provenance:
     Nothing here may raise, because a build must not fail over a description of
     itself.
 
-    The answer would be only a snapshot -- the build resolving the same floating
-    tag moments later could get something else -- if the build did not then pin
-    to it. `selector_arguments` turns this reading into the reference the build
-    actually uses, which is what makes the label a statement about the image
-    rather than about the registry at an earlier instant.
+    The reference asked about here is the one the build is then given, which is
+    what makes the answer a statement about the image rather than about the
+    registry at an earlier instant. Asking about a floating tag and building
+    against a pinned one would describe a different image than the one consumed.
     """
     try:
         completed = subprocess.run(
@@ -210,28 +209,86 @@ def resolve(reference: str, platform: Platform) -> Provenance:
     return Minted(batch=batch, digest=digest, built_on=_built_on(configuration))
 
 
+def _chosen(dependency: Dependency, generations: Sequence[BatchId]) -> BatchId | None:
+    """The generation this edge must reach, or absence to leave it floating.
+
+    The table is indexed by how far back the edge reaches: an edge one generation
+    back takes the newest entry, two back the one before it. That offset is
+    `Dependency.generations_back`, stamped on the edge from the difference in
+    graph level, and it is what makes a base land on the same generation the
+    artifacts copied onto it were compiled against.
+
+    Past the end of the table -- a short bootstrap, a broken walk -- the edge
+    floats, which is what it did before any of this existed.
+    """
+    index = dependency.generations_back - 1
+    return generations[index] if 0 <= index < len(generations) else None
+
+
+def _edge_from(
+    dependency: Dependency,
+    registry_repository: str,
+    platform: Platform,
+    generations: Sequence[BatchId],
+) -> ResolvedEdge:
+    """One edge: the reference the build will be given, and what it resolves to.
+
+    The pinned reference is tried first and the floating tag is the fallback,
+    which keeps this total in the one way that matters. A generation the table
+    names may not be in the registry -- a pruned tag, a retention policy, a run
+    whose manifest stage never completed -- and pinning to it regardless would
+    turn a description of the build into a reason it cannot run at all.
+
+    Resolving the same reference the build is handed is what makes the label
+    true. Reading the floating tag and then building against a pinned one, which
+    is what this did before, published a `consumes` record naming a generation
+    the image was not assembled from -- and since the skew check reads exactly
+    that record, it reported the skew that pinning had just prevented.
+    """
+    chosen = _chosen(dependency, generations)
+    if chosen is not None:
+        pinned = f"{registry_repository}:{dependency.image}{selector(chosen)}"
+        found = resolve(pinned, platform)
+        if not isinstance(found, Unreadable):
+            return ResolvedEdge(dependency=dependency, provenance=found, reference=pinned)
+        logger.warning(
+            "  %s: generation %s did not resolve (%s); falling back to the floating tag",
+            dependency.image,
+            chosen,
+            found.reason,
+        )
+
+    floating = f"{registry_repository}:{dependency.image}"
+    return ResolvedEdge(
+        dependency=dependency, provenance=resolve(floating, platform), reference=floating
+    )
+
+
 def resolve_all(
-    dependencies: tuple[Dependency, ...], registry_repository: str, platform: Platform
+    dependencies: tuple[Dependency, ...],
+    registry_repository: str,
+    platform: Platform,
+    generations: Sequence[BatchId] = (),
 ) -> tuple[ResolvedEdge, ...]:
-    """Resolves every edge of one task, keyed by image name.
+    """Every edge of one task, pinned and resolved.
 
     Sequential, and the boundedness argument is the graph's: an image has a
     handful of edges, so the concurrency that matters is already the one between
     tasks. Logged per edge because this is the observable boundary -- a build log
-    that says which batch each input came from is the whole point of the exercise.
+    that says which reference each input came from is the whole point of the
+    exercise.
     """
     resolved = tuple(
-        ResolvedEdge(
-            dependency=dependency,
-            provenance=resolve(f"{registry_repository}:{dependency.image}", platform),
-        )
+        _edge_from(dependency, registry_repository, platform, generations)
         for dependency in dependencies
     )
     for edge in resolved:
         logger.info(
-            "  consumes %s (%s): %s",
+            "  consumes %s (%s, %d back) as %s: %s",
             edge.dependency.image,
             edge.dependency.usage,
+            edge.dependency.generations_back,
+            edge.reference,
             json.dumps(rendered(edge.provenance), sort_keys=True),
         )
     return resolved
@@ -251,59 +308,24 @@ def _compact(payload: Any) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
-def selector_arguments(
-    registry_repository: str,
-    resolved: tuple[ResolvedEdge, ...],
-    generations: Sequence[BatchId] = (),
-) -> tuple[str, ...]:
-    """The `--build-arg` arguments pinning each of this task's references.
+def selector_arguments(resolved: tuple[ResolvedEdge, ...]) -> tuple[str, ...]:
+    """The `--build-arg` arguments redirecting each of this task's references.
 
-    An edge we could resolve is pinned to exactly the batch we inspected, which
-    is what closes the gap between describing a build and performing it: without
-    this the label records what the floating tag pointed at when we asked, while
-    the build resolves that same tag again moments later and may get something
-    else. Pinned, the two cannot disagree.
+    A straight render, because the decision was already made: the reference on
+    each edge is the one the registry was asked about, so the image described and
+    the image built against are the same by construction rather than by two
+    computations agreeing.
 
-    An edge we could not resolve is passed the empty selector -- the Dockerfile's
-    own default -- so the build proceeds against the floating tag exactly as it
-    did before this mechanism existed. The label already records why, as
-    `unlabelled` or `unreadable`, so a degraded build is described rather than
-    silently different from a pinned one.
+    Each argument carries a whole reference, not a fragment of one. The
+    Dockerfile's default already names this image in the upstream registry; what
+    the build substitutes is the same image in the registry it is publishing to,
+    pinned to a generation. That is why a fork needs no edited Dockerfile.
     """
-    if not resolved:
-        return ()
-
-    def chosen(edge: ResolvedEdge) -> BatchId | None:
-        """The generation this edge must reach, or absence to leave it floating.
-
-        The table is indexed by how far back the edge reaches: an edge one
-        generation back takes the newest entry, two back the one before it. That
-        offset is `Dependency.generations_back`, stamped on the edge from the
-        difference in graph level, and it is what makes a base land on the same
-        generation the artifacts copied onto it were compiled against.
-
-        Past the end of the table -- a short bootstrap, a broken walk -- the edge
-        floats, which is what it did before any of this existed.
-        """
-        index = edge.dependency.generations_back - 1
-        if 0 <= index < len(generations):
-            return generations[index]
-        found = edge.provenance
-        return found.batch if isinstance(found, Minted) else None
-
-    def pin(edge: ResolvedEdge) -> str:
-        """One argument set to the whole reference, not to a fragment of one.
-
-        The Dockerfile's default already names this image in the upstream
-        registry; what the build substitutes is the same image in the registry it
-        is publishing to, pinned to a batch. That is why a fork needs no edited
-        Dockerfile and why the value is assembled here rather than concatenated
-        out of three pieces in the file, where nothing could check it.
-        """
-        image = edge.dependency.image
-        return f"{edge.dependency.argument}={registry_repository}:{image}{selector(chosen(edge))}"
-
-    return tuple(argument for edge in resolved for argument in ("--build-arg", pin(edge)))
+    return tuple(
+        argument
+        for edge in resolved
+        for argument in ("--build-arg", f"{edge.dependency.argument}={edge.reference}")
+    )
 
 
 def label_arguments(

@@ -216,9 +216,11 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
     # Resolved once, outside the retry loop: this describes what the run is
     # consuming, and re-asking on each of up to fifty attempts would let the
     # description drift between attempts of a single build.
-    resolved = resolve_all(task.dependencies, identity.base_image, task.platform)
+    resolved = resolve_all(
+        task.dependencies, identity.base_image, task.platform, generation_table()
+    )
     labels = label_arguments(task, identity.batch, resolved)
-    selectors = selector_arguments(identity.base_image, resolved, generation_table())
+    selectors = selector_arguments(resolved)
 
     command = (
         "docker",

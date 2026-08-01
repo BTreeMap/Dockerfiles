@@ -65,8 +65,15 @@ def _state_of(provenance: Provenance) -> tuple[str, str]:
 
 
 def _edge_rows(image: str, edges: Sequence[ResolvedEdge]) -> Iterator[str]:
+    """One row per edge: what was consumed, how, from how far back, and what it was.
+
+    The offset is shown because without it every row of one image looks alike
+    while carrying different generations, which is exactly the reading that made
+    a correctly pinned build look wrong.
+    """
     return (
-        f"| `{image}` | `{edge.dependency.image}` | {edge.dependency.usage} | {marker} | {detail} |"
+        f"| `{image}` | `{edge.dependency.image}` | {edge.dependency.usage} "
+        f"| N-{edge.dependency.generations_back} | {marker} | {detail} |"
         for edge in edges
         for marker, detail in (_state_of(edge.provenance),)
     )
@@ -91,17 +98,20 @@ def _claims_of(edge: ResolvedEdge) -> Mapping[str, BatchId]:
 def _skew_in(edges: Sequence[ResolvedEdge]) -> str | None:
     """Whether one image's edges disagree about an ancestor they share.
 
-    The single fact this whole report exists to surface, and the one a naive
-    check misses. Comparing the edges' *own* batches proves nothing: floating
-    tags advance only as a complete generation, so every edge of a run reports
-    the same batch and they always agree while the image is still assembled from
-    two. What matters is one level down -- which generation each edge's contents
-    were compiled against -- and that is what `built_on` records.
+    The single fact this whole report exists to surface, and it is a question
+    one level below the batch. A batch says which generation an edge belongs to;
+    `built_on` says which generation its *contents* were compiled against, and an
+    ancestor claimed at two batches is exactly the case where binaries meet
+    libraries they were not linked against.
 
-    An ancestor claimed at two batches is exactly the case where binaries meet
-    libraries they were not linked against. Edges that could not be resolved
-    claim nothing and so cannot disagree, which is also why a first run against
-    an unlabelled registry reports no skew rather than nothing but skew.
+    Comparing the edges' own batches would answer a different and useless
+    question. Depth-indexed pinning gives them different batches on purpose, and
+    before that pinning existed they all carried the same one, so neither reading
+    ever bore on whether the pieces fit.
+
+    Edges that could not be resolved claim nothing and so cannot disagree, which
+    is why a first run against an unlabelled registry reports no skew rather than
+    nothing but skew.
     """
     claimed: dict[str, set[str]] = {}
     for edge in edges:
@@ -153,8 +163,8 @@ def provenance_section(heading: str, outcomes: Iterable[BuildOutcome]) -> tuple[
         f"{len(with_edges)} image(s), {unresolved} unpinned",
         *(f"  - `{image}`: {detail}" for image, detail in sorted(skewed.items())),
         "",
-        "| Image | Consumes | As | Pin | Batch or reason |",
-        "| --- | --- | --- | --- | --- |",
+        "| Image | Consumes | As | Reaches | Pin | Batch or reason |",
+        "| --- | --- | --- | --- | --- | --- |",
         *(
             row
             for outcome in sorted(with_edges, key=lambda o: o.task.image)

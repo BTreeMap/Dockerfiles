@@ -9,6 +9,7 @@ SOURCE_DATE_EPOCH monthly precisely so that unchanged images keep theirs.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -34,6 +35,7 @@ from ci.provenance import (
     _configuration_for,
     label_arguments,
     rendered,
+    resolve_all,
     selector_arguments,
 )
 
@@ -50,6 +52,12 @@ def task(**overrides: Any) -> Task:
         "max_retries": 50,
     }
     return Task(**{**fields, **overrides})
+
+
+def landed(dependency: Dependency, provenance: Provenance) -> ResolvedEdge:
+    """An edge as a build records it: what it consumed, from where, and what
+    the registry said that was."""
+    return ResolvedEdge(dependency, provenance, reference=f"reg:{dependency.image}")
 
 
 def labels(arguments: tuple[str, ...]) -> dict[str, str]:
@@ -183,8 +191,8 @@ def test_a_consuming_image_records_the_batch_behind_each_edge() -> None:
         )
     )
     resolved = (
-        ResolvedEdge(consuming.dependencies[0], Minted(BATCH, "sha256:aa")),
-        ResolvedEdge(consuming.dependencies[1], Minted(OTHER, "sha256:bb")),
+        landed(consuming.dependencies[0], Minted(BATCH, "sha256:aa")),
+        landed(consuming.dependencies[1], Minted(OTHER, "sha256:bb")),
     )
 
     consumes = json.loads(labels(label_arguments(consuming, BATCH, resolved))[CONSUMES_LABEL])
@@ -220,7 +228,7 @@ def test_an_unresolved_edge_is_recorded_rather_than_dropped() -> None:
             label_arguments(
                 consuming,
                 BATCH,
-                (ResolvedEdge(consuming.dependencies[0], Unreadable("not resolved")),),
+                (landed(consuming.dependencies[0], Unreadable("not resolved")),),
             )
         )[CONSUMES_LABEL]
     )
@@ -250,8 +258,8 @@ def test_labels_are_byte_stable_for_an_unchanged_graph() -> None:
         dependents=("x", "y"),
     )
     resolved = (
-        ResolvedEdge(consuming.dependencies[0], Minted(BATCH, "sha256:aa")),
-        ResolvedEdge(consuming.dependencies[1], Unlabelled("sha256:bb")),
+        landed(consuming.dependencies[0], Minted(BATCH, "sha256:aa")),
+        landed(consuming.dependencies[1], Unlabelled("sha256:bb")),
     )
 
     first = label_arguments(consuming, BATCH, resolved)
@@ -270,13 +278,28 @@ def _assignments(arguments: tuple[str, ...]) -> dict[str, str]:
 
 
 def edge(image: str, usage: Usage, back: int, provenance: Provenance) -> ResolvedEdge:
-    return ResolvedEdge(
+    return landed(
         Dependency(image=image, usage=usage, argument=f"REF_{image}", generations_back=back),
         provenance,
     )
 
 
-def test_a_base_is_pinned_a_generation_behind_the_artifacts_landing_on_it() -> None:
+def resolving(answers: dict[str, Provenance]) -> Callable[[str, Platform], Provenance]:
+    """A stand-in for the registry: a reference either has an answer or is absent.
+
+    Absence is `Unreadable`, which is what a pruned or never-published tag looks
+    like from `imagetools inspect`, and is the case the fallback exists for.
+    """
+
+    def answer(reference: str, _platform: Platform) -> Provenance:
+        return answers.get(reference, Unreadable("inspect exited 1"))
+
+    return answer
+
+
+def test_a_base_is_pinned_a_generation_behind_the_artifacts_landing_on_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The fix, in one assertion.
 
     An artifact's binaries were compiled against a base one generation older than
@@ -285,30 +308,125 @@ def test_a_base_is_pinned_a_generation_behind_the_artifacts_landing_on_it() -> N
     """
     newest = BatchId.derive(run_id="3", run_attempt="1", commit_sha="a", date_time="t")
     older = BatchId.derive(run_id="2", run_attempt="1", commit_sha="a", date_time="t")
-
-    resolved = (
-        edge("code-server-base", Usage.BASE, 2, Minted(newest, "sha256:a")),
-        edge("code-server-go", Usage.ARTIFACT, 1, Minted(newest, "sha256:b")),
+    monkeypatch.setattr(
+        "ci.provenance.resolve",
+        resolving(
+            {
+                f"reg:code-server-base.{older}": Minted(older, "sha256:a"),
+                f"reg:code-server-go.{newest}": Minted(newest, "sha256:b"),
+            }
+        ),
     )
-    rendered_args = _assignments(selector_arguments("reg", resolved, (newest, older)))
+
+    resolved = resolve_all(
+        (
+            Dependency(
+                image="code-server-base", usage=Usage.BASE, argument="REF_BASE", generations_back=2
+            ),
+            Dependency(
+                image="code-server-go", usage=Usage.ARTIFACT, argument="REF_GO", generations_back=1
+            ),
+        ),
+        "reg",
+        Platform.AMD64,
+        (newest, older),
+    )
 
     # The whole reference, in the registry being published to, not a fragment.
-    assert rendered_args["REF_code-server-base"] == f"reg:code-server-base.{older}"
-    assert rendered_args["REF_code-server-go"] == f"reg:code-server-go.{newest}"
+    rendered_args = _assignments(selector_arguments(resolved))
+    assert rendered_args["REF_BASE"] == f"reg:code-server-base.{older}"
+    assert rendered_args["REF_GO"] == f"reg:code-server-go.{newest}"
 
 
-def test_an_edge_reaching_past_the_table_floats() -> None:
-    """A short table is the bootstrap, and floating is what happened before.
+def test_what_is_recorded_is_the_image_that_was_actually_consumed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The defect that made a correct build report itself broken.
 
-    Falling back to the edge's own resolution rather than to nothing keeps a
-    partially-built table useful: the edges it does cover are still pinned.
+    Resolving the floating tag and then building against a pinned one recorded a
+    generation the image was not assembled from. Every floating tag in a run
+    carries the newest batch, so a base pinned two generations back was published
+    as having consumed the newest one -- and the skew check, reading exactly that
+    record, reported the disagreement that pinning had just prevented.
     """
     newest = BatchId.derive(run_id="3", run_attempt="1", commit_sha="a", date_time="t")
-    resolved = (edge("code-server-base", Usage.BASE, 2, Unlabelled("sha256:a")),)
+    older = BatchId.derive(run_id="2", run_attempt="1", commit_sha="a", date_time="t")
+    monkeypatch.setattr(
+        "ci.provenance.resolve",
+        resolving(
+            {
+                "reg:code-server-base": Minted(newest, "sha256:floating"),
+                f"reg:code-server-base.{older}": Minted(older, "sha256:pinned"),
+            }
+        ),
+    )
 
-    rendered_args = _assignments(selector_arguments("reg", resolved, (newest,)))
+    (resolved,) = resolve_all(
+        (
+            Dependency(
+                image="code-server-base", usage=Usage.BASE, argument="REF_BASE", generations_back=2
+            ),
+        ),
+        "reg",
+        Platform.AMD64,
+        (newest, older),
+    )
+
+    assert resolved.reference == f"reg:code-server-base.{older}"
+    assert resolved.provenance == Minted(older, "sha256:pinned")
+
+
+def test_an_edge_reaching_past_the_table_floats(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A short table is the bootstrap, and floating is what happened before.
+
+    The edges the table does cover are still pinned, so a partially-built table
+    is useful rather than all-or-nothing.
+    """
+    newest = BatchId.derive(run_id="3", run_attempt="1", commit_sha="a", date_time="t")
+    monkeypatch.setattr(
+        "ci.provenance.resolve",
+        resolving({"reg:code-server-base": Unlabelled("sha256:a")}),
+    )
+
+    (resolved,) = resolve_all(
+        (
+            Dependency(
+                image="code-server-base", usage=Usage.BASE, argument="REF_BASE", generations_back=2
+            ),
+        ),
+        "reg",
+        Platform.AMD64,
+        (newest,),
+    )
+
     # Floating, and still a whole reference: the fork's registry, no batch.
-    assert rendered_args["REF_code-server-base"] == "reg:code-server-base"
+    assert _assignments(selector_arguments((resolved,)))["REF_BASE"] == "reg:code-server-base"
+
+
+def test_a_generation_the_registry_no_longer_holds_falls_back_to_floating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pinning describes a build; it must never be the reason one cannot run.
+
+    A table entry names a generation that was complete when it was walked, but a
+    tag can be pruned between then and the build. Handing the build a reference
+    the registry cannot resolve would turn a lost description into a lost image.
+    """
+    newest = BatchId.derive(run_id="3", run_attempt="1", commit_sha="a", date_time="t")
+    monkeypatch.setattr(
+        "ci.provenance.resolve",
+        resolving({"reg:code-server-base": Minted(newest, "sha256:a")}),
+    )
+
+    (resolved,) = resolve_all(
+        (Dependency(image="code-server-base", usage=Usage.BASE, argument="REF_BASE"),),
+        "reg",
+        Platform.AMD64,
+        (newest,),
+    )
+
+    assert resolved.reference == "reg:code-server-base"
+    assert resolved.provenance == Minted(newest, "sha256:a")
 
 
 def test_a_dependency_records_what_it_was_itself_built_on() -> None:

@@ -52,7 +52,10 @@ def built(
         task=task(image, *(dependency for dependency, _ in edges)),
         attempts=1,
         duration_seconds=seconds,
-        edges=tuple(ResolvedEdge(dependency, provenance) for dependency, provenance in edges),
+        edges=tuple(
+            ResolvedEdge(dependency, provenance, reference=f"reg:{dependency.image}")
+            for dependency, provenance in edges
+        ),
     )
 
 
@@ -90,11 +93,11 @@ GO = edge("code-server-go", Usage.ARTIFACT)
 def test_an_ancestor_claimed_at_two_generations_is_called_out() -> None:
     """The real skew, which comparing the edges' own batches cannot see.
 
-    Both edges here carry the *same* batch -- as every edge of a run does, since
-    floating tags advance only as a complete generation. The disagreement is one
-    level down: the base *is* generation BATCH, while the artifact's binaries were
-    compiled against generation OTHER of that same base. The first version of this
-    check compared edge batches and so reported agreement on exactly this case.
+    The disagreement is one level below the batch: the base *is* generation
+    BATCH, while the artifact's binaries were compiled against generation OTHER
+    of that same base. Nothing in the edges' own batches says so -- they are
+    equal here, and under depth-indexed pinning they are unequal by design -- so
+    a check reading them answers a question about neither.
     """
     lines = provenance_section(
         "W",
@@ -111,14 +114,24 @@ def test_an_ancestor_claimed_at_two_generations_is_called_out() -> None:
     assert any("two generations of `code-server-base`" in line for line in lines)
 
 
-def test_an_ancestor_claimed_consistently_reports_agreement() -> None:
+def test_a_correctly_pinned_build_reports_agreement() -> None:
+    """The production shape, which the first version of this reported as skew.
+
+    `code-server` reaches two generations back for its base and one for its
+    toolchains, so the two edges carry *different* batches -- and that is what
+    makes them fit: the toolchains published at BATCH were themselves compiled
+    against OTHER, which is the generation of the base they now land on.
+
+    Reported as skew, this would have fired on every run from here on, which is a
+    warning nobody reads by the time one matters.
+    """
     lines = provenance_section(
         "W",
         [
             built(
                 "code-server",
-                (BASE, Minted(BATCH, "sha256:a")),
-                (GO, Minted(BATCH, "sha256:b", {"code-server-base": BATCH})),
+                (edge("code-server-base", Usage.BASE, back=2), Minted(OTHER, "sha256:a")),
+                (GO, Minted(BATCH, "sha256:b", {"code-server-base": OTHER})),
             )
         ],
     )

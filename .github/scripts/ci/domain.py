@@ -405,6 +405,13 @@ class ResolvedEdge:
 
     dependency: Dependency
     provenance: Provenance
+    # The reference the build is handed for this edge, and the one the registry
+    # was asked about. Carried rather than recomputed because the two must be the
+    # same string: a `consumes` label describing a floating tag while the build
+    # ran against a pinned one is a record of an image that was never consumed,
+    # and every reader downstream -- the skew check first among them -- believes
+    # that record.
+    reference: str
 
 
 # --- build outcomes --------------------------------------------------------
