@@ -208,7 +208,7 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
     # description drift between attempts of a single build.
     resolved = resolve_all(task.dependencies, identity.base_image, task.platform)
     labels = label_arguments(task, identity.batch, resolved)
-    selectors = selector_arguments(task, identity.base_image, resolved, generation_table())
+    selectors = selector_arguments(identity.base_image, resolved, generation_table())
 
     command = (
         "docker",

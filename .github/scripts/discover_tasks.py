@@ -9,14 +9,7 @@ import logging
 import sys
 from pathlib import Path
 
-from ci.discovery import (
-    ConflictingDockerfiles,
-    MatrixEntry,
-    deal,
-    definitions,
-    discover,
-    seed_for,
-)
+from ci.discovery import ConflictingDockerfiles, MatrixEntry, deal, discover, seed_for
 from ci.domain import Platform
 from ci.env import (
     COUNT,
@@ -30,14 +23,7 @@ from ci.env import (
 )
 from ci.logs import configure
 from ci.provenance import generations
-from ci.references import (
-    DanglingReference,
-    dependents_of,
-    generations_needed,
-    graph,
-    levels_of,
-    probe_for,
-)
+from ci.references import CyclicGraph, DanglingReference, MisdeclaredReference
 from ci.report import graph_section, run_section
 
 logger = logging.getLogger("ci.discover")
@@ -59,14 +45,20 @@ def main() -> int:
     worker_count = read("WORKER_COUNT", COUNT, default=4)
 
     try:
-        tasks = discover(Path.cwd(), platforms, read("MAX_RETRIES", RETRIES, default=50))
-    # Both are layout defects the tree can state and only the whole tree can
-    # detect, so both are reported here and refuse the run rather than being
-    # carried into a build that would publish something arbitrary.
-    except (ConflictingDockerfiles, DanglingReference) as defect:
+        discovered = discover(Path.cwd(), platforms, read("MAX_RETRIES", RETRIES, default=50))
+    # Every one of these is a layout defect the tree states and only the whole
+    # tree can detect, so all are reported here and refuse the run rather than
+    # being carried into a build that would publish something arbitrary.
+    except (
+        ConflictingDockerfiles,
+        CyclicGraph,
+        DanglingReference,
+        MisdeclaredReference,
+    ) as defect:
         logger.error("%s", defect)
         return 1
 
+    tasks = discovered.tasks
     if not tasks:
         logger.error("No Dockerfiles found in the current directory or subdirectories.")
         return 1
@@ -107,19 +99,19 @@ def main() -> int:
         ),
     )
 
-    # Reported from the plan job because the graph is a fact about the tree, not
-    # about this run: identical between two runs unless a Dockerfile moved, which
-    # is what makes any difference in it worth a second look.
-    discovered = graph(definitions(Path.cwd()), Path.cwd())
-    probe = probe_for(discovered)
-    needed = generations_needed(discovered)
+    # The graph comes out of the same read the tasks did. It is a fact about the
+    # tree rather than about this run -- identical between two runs unless a
+    # Dockerfile moved, which is what makes any difference in it worth a second
+    # look -- so it is reported here, once, from the only stage that sees it all.
+    found = discovered.graph
+    probe = found.probe
     table = (
         generations(
             probe=probe[0],
             base=probe[1],
             registry_repository=registry_repository(),
             platform=platforms[0],
-            depth=needed,
+            depth=found.depth,
         )
         if probe is not None
         else ()
@@ -129,14 +121,12 @@ def main() -> int:
             *run_section(
                 identity=BuildIdentity.from_environment(),
                 generations=table,
-                needed=needed,
+                needed=found.depth,
                 probe=probe[0] if probe else None,
                 images=len({task.image for task in tasks}),
                 platforms=len(platforms),
             ),
-            *graph_section(
-                discovered, dependents_of(discovered), levels_of(discovered), len(table)
-            ),
+            *graph_section(found, resolved=len(table)),
         ]
     )
 

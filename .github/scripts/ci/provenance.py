@@ -252,7 +252,6 @@ def _compact(payload: Any) -> str:
 
 
 def selector_arguments(
-    task: Task,
     registry_repository: str,
     resolved: tuple[ResolvedEdge, ...],
     generations: Sequence[BatchId] = (),
@@ -274,9 +273,6 @@ def selector_arguments(
     if not resolved:
         return ()
 
-    # The repository half of every reference, passed once. The Dockerfiles carry
-    # the upstream path as a default so they build standalone; a fork's workflow
-    # passes its own here and its images reference each other rather than ours.
     def pin(edge: ResolvedEdge) -> str:
         """One argument set to the whole reference, not to a fragment of one.
 
@@ -284,7 +280,7 @@ def selector_arguments(
         registry; what the build substitutes is the same image in the registry it
         is publishing to, pinned to a batch. That is why a fork needs no edited
         Dockerfile and why the value is assembled here rather than concatenated
-        out of three pieces in the file.
+        out of three pieces in the file, where nothing could check it.
         """
         image = edge.dependency.image
         return f"{edge.dependency.argument}={registry_repository}:{image}{selector(chosen(edge))}"
@@ -315,22 +311,17 @@ def label_arguments(
 ) -> tuple[str, ...]:
     """The `--label` arguments describing this task's place in the graph.
 
-    Empty for an image with no edges in either direction, which is the membership
-    rule stated once: emptiness *is* the answer, so no caller needs a predicate
-    for whether an image is labelled, and no image outside the graph pays a digest
-    change for a batch it has no use for.
-
-    Both directions decide membership, but only one is rendered. An image nothing
-    here consumes gains nothing from a batch label; an image something here
-    consumes must carry one whether or not it has dependencies of its own, or its
-    consumers have nothing to read. `code-server-base` and `code-server-proot` are
-    exactly that case -- no edges out, and unlabelled they would silently break
-    the mechanism for everything downstream of them.
+    Empty for an image outside the graph, and emptiness *is* the answer: no
+    caller needs a predicate for whether an image is labelled. `Task.labelled`
+    holds the membership rule; both directions decide it, but only one is
+    rendered. `code-server-base` and `code-server-proot` are the case that makes
+    the inverse direction necessary -- no edges out, and unlabelled they would
+    silently break the mechanism for everything downstream of them.
 
     `consumes` is omitted when this image has no dependencies, so a root of the
     graph carries no key claiming it depends on nothing.
     """
-    if not task.dependencies and not task.dependents:
+    if not task.labelled:
         return ()
 
     labels: dict[str, str] = {

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from itertools import groupby
 from operator import itemgetter
 from pathlib import Path
@@ -18,7 +19,7 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from ci.derive import Derivation, Scope
 from ci.domain import Platform, Task
-from ci.references import dependents_of, graph
+from ci.references import Graph, graph
 
 # Each glob is paired with the naming rule it implies, so no layout can be
 # admitted without stating what it is called. The two rules agree by
@@ -87,7 +88,22 @@ def definitions(root: Path) -> Mapping[str, Path]:
     return {image: paths[0] for image, paths in grouped.items()}
 
 
-def discover(root: Path, platforms: Iterable[Platform], max_retries: int) -> tuple[Task, ...]:
+@dataclass(frozen=True, slots=True)
+class Discovery:
+    """One reading of the tree: the work it implies and the graph that work sits in.
+
+    Both, from one traversal, because they are two views of the same read. The
+    plan job needs the tasks to deal and the graph to report and to walk
+    generations through, and taking them from separate calls meant globbing the
+    tree and parsing every Dockerfile twice per run -- two answers that nothing
+    obliged to agree.
+    """
+
+    tasks: tuple[Task, ...]
+    graph: Graph
+
+
+def discover(root: Path, platforms: Iterable[Platform], max_retries: int) -> Discovery:
     """Builds one task per (image, platform), ordered deterministically.
 
     Each task carries both directions of its place in the repository's own
@@ -95,24 +111,28 @@ def discover(root: Path, platforms: Iterable[Platform], max_retries: int) -> tup
     view: whether an image is consumed by another is not a fact any single
     Dockerfile can state.
 
-    Raises `ConflictingDockerfiles` if the tree defines one image twice, and
-    `DanglingReference` if one consumes an image nothing here builds.
+    Raises `ConflictingDockerfiles` if the tree defines one image twice,
+    `DanglingReference` if one consumes an image nothing here builds,
+    `MisdeclaredReference` if a reference is written in a form the build cannot
+    use, and `CyclicGraph` if the images depend on each other in a loop.
     """
     found = definitions(root)
     edges = graph(found, root)
-    dependents = dependents_of(edges)
-    return tuple(
-        Task(
-            image=image,
-            dockerfile=str(dockerfile.relative_to(root)),
-            context=str(dockerfile.parent.relative_to(root)),
-            platform=platform,
-            max_retries=max_retries,
-            dependencies=edges[image],
-            dependents=dependents[image],
-        )
-        for image, dockerfile in found.items()
-        for platform in platforms
+    return Discovery(
+        tasks=tuple(
+            Task(
+                image=image,
+                dockerfile=str(dockerfile.relative_to(root)),
+                context=str(dockerfile.parent.relative_to(root)),
+                platform=platform,
+                max_retries=max_retries,
+                dependencies=edges.edges[image],
+                dependents=edges.dependents[image],
+            )
+            for image, dockerfile in found.items()
+            for platform in platforms
+        ),
+        graph=edges,
     )
 
 

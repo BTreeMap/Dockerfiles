@@ -7,6 +7,8 @@ decisions worth pinning -- a report nobody reads is worse than none.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from ci.domain import (
     BatchId,
     BuildFailed,
@@ -22,6 +24,7 @@ from ci.domain import (
     Usage,
 )
 from ci.env import BuildIdentity
+from ci.references import Graph
 from ci.report import (
     graph_section,
     outcome_rows,
@@ -53,8 +56,32 @@ def built(
     )
 
 
-BASE = Dependency(image="code-server-base", usage=Usage.BASE)
-GO = Dependency(image="code-server-go", usage=Usage.ARTIFACT)
+def edge(image: str, usage: Usage, back: int = 1) -> Dependency:
+    """One graph edge. The argument name is inert here: nothing in the report
+    reads it, and the parser is what establishes that it matches a declaration."""
+    return Dependency(
+        image=image,
+        usage=usage,
+        argument="REF_" + image.upper().replace("-", "_"),
+        generations_back=back,
+    )
+
+
+def structure(
+    edges: Mapping[str, tuple[Dependency, ...]],
+    dependents: Mapping[str, tuple[str, ...]],
+    levels: Mapping[str, int],
+) -> Graph:
+    """A graph assembled by hand, since these tests are about rendering it.
+
+    `probe` and `depth` are what the plan job walks generations with, not what
+    this section shows, so they are left at the values a graph with no chain has.
+    """
+    return Graph(edges=edges, levels=levels, dependents=dependents, probe=None, depth=0)
+
+
+BASE = edge("code-server-base", Usage.BASE)
+GO = edge("code-server-go", Usage.ARTIFACT)
 
 
 # --- the fact the report exists to surface ----------------------------------
@@ -133,11 +160,11 @@ def test_isolated_images_are_folded_away_but_not_lost() -> None:
     Inline they would push the eight that matter off the first screen; dropped
     entirely, a reader could not confirm an image was discovered at all.
     """
-    edges = {"base": (), "app": (Dependency(image="base", usage=Usage.BASE),), "alone": ()}
+    edges = {"base": (), "app": (edge("base", Usage.BASE),), "alone": ()}
     dependents = {"base": ("app",), "app": (), "alone": ()}
     levels = {"base": 1, "app": 2, "alone": 1}
 
-    lines = graph_section(edges, dependents, levels, resolved=9)
+    lines = graph_section(structure(edges, dependents, levels), resolved=9)
     rendered = "\n".join(lines)
 
     assert "<details><summary>Isolated images</summary>" in rendered
@@ -149,11 +176,12 @@ def test_isolated_images_are_folded_away_but_not_lost() -> None:
 
 
 def test_an_empty_cell_reads_as_empty_rather_than_missing() -> None:
-    edges = {"base": (), "app": (Dependency(image="base", usage=Usage.BASE),)}
+    edges = {"base": (), "app": (edge("base", Usage.BASE),)}
     dependents = {"base": ("app",), "app": ()}
     levels = {"base": 1, "app": 2}
     assert any(
-        line.endswith("| (none) |") for line in graph_section(edges, dependents, levels, resolved=9)
+        line.endswith("| (none) |")
+        for line in graph_section(structure(edges, dependents, levels), resolved=9)
     )
 
 
@@ -243,14 +271,14 @@ def test_the_table_answers_how_stale_an_image_is_in_total() -> None:
     """
     edges = {
         "base": (),
-        "mid": (Dependency(image="base", usage=Usage.BASE, generations_back=1),),
-        "top": (Dependency(image="mid", usage=Usage.BASE, generations_back=1),),
-        "apex": (Dependency(image="top", usage=Usage.BASE, generations_back=1),),
+        "mid": (edge("base", Usage.BASE),),
+        "top": (edge("mid", Usage.BASE),),
+        "apex": (edge("top", Usage.BASE),),
     }
     dependents = {"base": ("mid",), "mid": ("top",), "top": ("apex",), "apex": ()}
     levels = {"base": 1, "mid": 2, "top": 3, "apex": 4}
 
-    rendered = "\n".join(graph_section(edges, dependents, levels, resolved=9))
+    rendered = "\n".join(graph_section(structure(edges, dependents, levels), resolved=9))
 
     assert "| `base` | this run |" in rendered
     assert "| `mid` | N-1 |" in rendered
@@ -272,14 +300,15 @@ def test_an_image_the_table_could_not_reach_is_marked_as_such() -> None:
     """
     edges = {
         "base": (),
-        "mid": (Dependency(image="base", usage=Usage.BASE, generations_back=1),),
-        "top": (Dependency(image="mid", usage=Usage.BASE, generations_back=2),),
+        "mid": (edge("base", Usage.BASE),),
+        "top": (edge("mid", Usage.BASE, back=2),),
     }
     dependents = {"base": ("mid",), "mid": ("top",), "top": ()}
     levels = {"base": 1, "mid": 2, "top": 3}
+    found = structure(edges, dependents, levels)
 
-    reached = "\n".join(graph_section(edges, dependents, levels, resolved=2))
-    short = "\n".join(graph_section(edges, dependents, levels, resolved=1))
+    reached = "\n".join(graph_section(found, resolved=2))
+    short = "\n".join(graph_section(found, resolved=1))
 
     assert "not reached" not in reached
     assert "| `top` | N-2 (not reached: needs 2 generations) |" in short

@@ -178,8 +178,8 @@ def test_a_consuming_image_records_the_batch_behind_each_edge() -> None:
     """
     consuming = task(
         dependencies=(
-            Dependency(image="code-server-base", usage=Usage.BASE),
-            Dependency(image="code-server-go", usage=Usage.ARTIFACT),
+            Dependency(image="code-server-base", usage=Usage.BASE, argument="REF_BASE"),
+            Dependency(image="code-server-go", usage=Usage.ARTIFACT, argument="REF_GO"),
         )
     )
     resolved = (
@@ -209,7 +209,11 @@ def test_a_consuming_image_records_the_batch_behind_each_edge() -> None:
 
 def test_an_unresolved_edge_is_recorded_rather_than_dropped() -> None:
     """Silence would read as "no dependency"; this reads as "could not tell"."""
-    consuming = task(dependencies=(Dependency(image="code-server-base", usage=Usage.BASE),))
+    consuming = task(
+        dependencies=(
+            Dependency(image="code-server-base", usage=Usage.BASE, argument="REF_BASE"),
+        )
+    )
 
     consumes = json.loads(
         labels(
@@ -240,8 +244,8 @@ def test_labels_are_byte_stable_for_an_unchanged_graph() -> None:
     """
     consuming = task(
         dependencies=(
-            Dependency(image="a", usage=Usage.BASE),
-            Dependency(image="b", usage=Usage.ARTIFACT),
+            Dependency(image="a", usage=Usage.BASE, argument="REF_A"),
+            Dependency(image="b", usage=Usage.ARTIFACT, argument="REF_B"),
         ),
         dependents=("x", "y"),
     )
@@ -256,6 +260,13 @@ def test_labels_are_byte_stable_for_an_unchanged_graph() -> None:
 
 
 # --- depth-indexed pinning --------------------------------------------------
+
+
+def _assignments(arguments: tuple[str, ...]) -> dict[str, str]:
+    """The `--build-arg` pairs, unflagged: every second element is a value."""
+    return dict(
+        (name, value) for pair in arguments[1::2] for name, value in (pair.split("=", 1),)
+    )
 
 
 def edge(image: str, usage: Usage, back: int, provenance: Provenance) -> ResolvedEdge:
@@ -279,10 +290,7 @@ def test_a_base_is_pinned_a_generation_behind_the_artifacts_landing_on_it() -> N
         edge("code-server-base", Usage.BASE, 2, Minted(newest, "sha256:a")),
         edge("code-server-go", Usage.ARTIFACT, 1, Minted(newest, "sha256:b")),
     )
-    rendered_args = dict(
-        pair.split("=", 1)
-        for pair in selector_arguments(task(), "reg", resolved, (newest, older))[1::2]
-    )
+    rendered_args = _assignments(selector_arguments("reg", resolved, (newest, older)))
 
     # The whole reference, in the registry being published to, not a fragment.
     assert rendered_args["REF_code-server-base"] == f"reg:code-server-base.{older}"
@@ -298,9 +306,7 @@ def test_an_edge_reaching_past_the_table_floats() -> None:
     newest = BatchId.derive(run_id="3", run_attempt="1", commit_sha="a", date_time="t")
     resolved = (edge("code-server-base", Usage.BASE, 2, Unlabelled("sha256:a")),)
 
-    rendered_args = dict(
-        pair.split("=", 1) for pair in selector_arguments(task(), "reg", resolved, (newest,))[1::2]
-    )
+    rendered_args = _assignments(selector_arguments("reg", resolved, (newest,)))
     # Floating, and still a whole reference: the fork's registry, no batch.
     assert rendered_args["REF_code-server-base"] == "reg:code-server-base"
 

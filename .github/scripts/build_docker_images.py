@@ -195,9 +195,6 @@ def main() -> int:
                 case InstallFailed(reason):
                     logger.warning("cloudflared unavailable (%s); building solo", reason)
 
-            # cpu_count() concurrent builds: these builds are dominated by
-            # network fetches and layer I/O rather than compute, so running one
-            # per core raises throughput well past a single build.
             outcomes = run_worker(queue=queue, mesh=client, execute=build, slots=slots)
 
     summarise(worker_id, outcomes, dealt, slots)

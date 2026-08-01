@@ -93,17 +93,15 @@ class BatchId:
 
 
 def selector(batch: BatchId | None) -> str:
-    """Renders the optional batch a Dockerfile reference may be sharpened with.
+    """Renders the batch suffix that sharpens a floating tag into a pinned one.
 
-    A Dockerfile writes its dependency as `…:code-server-base${SELECT_…}`, so the
-    image it is built on is literal and unforgeable and only *which batch* is
-    negotiable. That is the whole point of the form: a build argument may narrow
-    the reference, never redirect it. `FROM ${WHOLE_REFERENCE}` would have let a
-    mistake in resolution point the base at any image in the world.
+    `code-server-base` names whatever that tag points at now;
+    `code-server-base.{batch}` names one generation of it and nothing else. The
+    suffix is optional at every call site, which is what lets a build degrade to
+    the floating tag rather than fail when a generation could not be resolved.
 
-    Absence renders as the empty string, which leaves the floating tag -- so the
-    default value of every selector argument is "" and each Dockerfile still
-    builds standalone with no arguments at all.
+    Absence renders as the empty string, so the same code path produces both
+    forms and no caller needs a branch for the degraded one.
 
     The dot lives here, in the rendering, and never in the value. That is what
     makes concatenation injective: a batch id is drawn from `_BATCH_ALPHABET`,
@@ -244,7 +242,12 @@ class Dependency:
     # check across the tree, and a whole class of "carries the wrong selector".
     # The parser reads the name off the same line it reads the image from, so
     # nothing has to connect them and none of that machinery has to exist.
-    argument: _NonEmptyText = ""
+    #
+    # Required, because an edge without one cannot be pinned: the build would
+    # emit `--build-arg =reference` and BuildKit would take it as a nameless
+    # argument. A default of "" declared it non-empty and then supplied the one
+    # value the constraint forbids, since pydantic does not validate defaults.
+    argument: _NonEmptyText
     # How many generations back this edge must reach to stay coherent, which is
     # the difference in graph level between the image declaring it and the image
     # it names.
@@ -299,6 +302,23 @@ class Task:
     # `provenance.label_arguments`.
     dependencies: tuple[Dependency, ...] = ()
     dependents: tuple[_NonEmptyText, ...] = ()
+
+    @property
+    def labelled(self) -> bool:
+        """Whether this image carries provenance labels.
+
+        Membership in the repository's own graph, in either direction, and the
+        rule is stated once here because it has two readings that must not drift.
+        An image nothing consumes gains nothing from a batch label; an image
+        something consumes must carry one whether or not it has dependencies of
+        its own, or its consumers have nothing to read off it.
+
+        The negative case is the one that costs something. A label is part of the
+        image configuration, so labelling all thirty images to describe the eight
+        with edges would change every digest on every run -- which is exactly
+        what pinning SOURCE_DATE_EPOCH to the start of the month exists to avoid.
+        """
+        return bool(self.dependencies or self.dependents)
 
     @classmethod
     def parse(cls, payload: Any) -> Task | None:

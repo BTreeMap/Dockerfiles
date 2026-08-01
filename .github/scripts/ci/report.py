@@ -31,13 +31,13 @@ from ci.domain import (
     Minted,
     Provenance,
     ResolvedEdge,
-    Task,
     Unlabelled,
     Unreadable,
     Usage,
     succeeded,
 )
 from ci.env import BuildIdentity
+from ci.references import Graph
 
 # A digest is 71 characters and only ever wanted as evidence, not as an
 # identifier to compare by eye, so enough of it to be unambiguous is enough. A
@@ -240,12 +240,7 @@ def _oldest_content(level: int) -> str:
     return "this run" if level <= 1 else f"N-{level - 1}"
 
 
-def graph_section(
-    edges: Mapping[str, tuple[Dependency, ...]],
-    dependents: Mapping[str, tuple[str, ...]],
-    levels: Mapping[str, int],
-    resolved: int,
-) -> tuple[str, ...]:
+def graph_section(found: Graph, resolved: int) -> tuple[str, ...]:
     """The repository's own dependency graph, once, from the plan job.
 
     Structure rather than outcome: it changes when a Dockerfile changes, not when
@@ -263,6 +258,7 @@ def graph_section(
     is not composed the way this table would otherwise claim, and saying so is the
     difference between describing the run and describing the intent.
     """
+    edges, dependents, levels = found.edges, found.dependents, found.levels
     members = sorted(image for image in edges if edges[image] or dependents[image])
     isolated = sorted(set(edges) - set(members))
     deepest = max((levels[image] for image in members), default=1)
@@ -334,18 +330,4 @@ def outcome_rows(outcomes: Sequence[BuildOutcome], dealt: frozenset[str]) -> tup
         f"| {outcome.duration_seconds / 60:.1f} min "
         f"| {'dealt' if outcome.task.image in dealt else 'stolen'} |"
         for outcome in sorted(outcomes, key=lambda o: (succeeded(o), -o.duration_seconds))
-    )
-
-
-def task_edge_rows(tasks: Iterable[Task]) -> tuple[str, ...]:
-    """The edges a set of tasks declares, before anything has been resolved.
-
-    Used by the plan job, which knows the graph but has resolved nothing: it
-    reports what *will* be pinned, so a Dockerfile change can be reviewed against
-    it without waiting for a build.
-    """
-    return tuple(
-        f"| `{task.image}` | `{dependency.image}` | {dependency.usage} |"
-        for task in sorted({task.image: task for task in tasks}.values(), key=lambda t: t.image)
-        for dependency in task.dependencies
     )

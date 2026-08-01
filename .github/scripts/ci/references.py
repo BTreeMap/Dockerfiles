@@ -32,32 +32,13 @@ from ci.domain import Dependency, Usage
 # concatenated onto one is not a declaration this can read.
 _ARGUMENT = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$|^\$([A-Za-z_][A-Za-z0-9_]*)$")
 
-# The tag any reference carries, for deciding whether a literal one names an image
-# this repository builds and so should have been declared instead.
-_TAG = re.compile(r":([A-Za-z0-9._-]+)$")
-
-
-class DanglingReference(RuntimeError):
-    """A Dockerfile consumes an image of this repository that nothing builds.
-
-    A layout defect rather than a runtime case, and a silent one until now. The
-    reference still resolves in the registry -- to whatever that tag pointed at
-    the last time something published it, which for a deleted or misspelled
-    image is a build from an arbitrary point in the past that will keep being
-    consumed indefinitely. Raised for the same reason `ConflictingDockerfiles`
-    is: the alternative is guessing, and guessing wrong here is invisible.
-    """
-
-    def __init__(self, dangling: Mapping[str, tuple[str, ...]]) -> None:
-        super().__init__(
-            "These Dockerfiles reference images of this repository that no "
-            "Dockerfile builds:\n"
-            + "\n".join(
-                f"  {image}: referenced by {', '.join(referrers)}"
-                for image, referrers in dangling.items()
-            )
-        )
-        self.dangling = dict(dangling)
+# A reference split into the path it names and the tag it carries. One
+# definition, because the two halves are read by different checks and a
+# disagreement between them would be silent: `rsplit(":")` reads `host:5000/img`
+# as the path `host` at tag `5000`, while a tag must be the trailing component
+# and may not contain a slash. The greedy prefix puts the split at the *last*
+# colon, so a registry port stays in the path where it belongs.
+_TAGGED = re.compile(r"^(?P<path>.+):(?P<tag>[A-Za-z0-9._-]+)$")
 
 
 def logical_lines(text: str) -> Iterator[str]:
@@ -80,61 +61,47 @@ def logical_lines(text: str) -> Iterator[str]:
         yield joined
 
 
-def _reference_in(instruction: Sequence[str]) -> tuple[str, Usage] | None:
-    """The image reference this instruction consumes, and how, or absence.
-
-    Only FROM and COPY can name another image. FROM may carry flags before its
-    argument (`--platform=$BUILDPLATFORM`), so the argument is the first token
-    that is not one; COPY carries its reference inside a `--from=` flag that may
-    sit among others such as `--chown=`.
-    """
-    if not instruction:
-        return None
-    match instruction[0].lower():
-        case "from":
-            operand = tuple(dropwhile(lambda token: token.startswith("--"), instruction[1:]))
-            return (operand[0], Usage.BASE) if operand else None
-        case "copy":
-            source = next(
-                (
-                    token.removeprefix("--from=")
-                    for token in instruction
-                    if token.lower().startswith("--from=")
-                ),
-                None,
-            )
-            return (source, Usage.ARTIFACT) if source else None
-        case _:
-            return None
-
-
-# --- what a reference turns out to be ---------------------------------------
+# --- one Dockerfile, read once ----------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
-class Internal:
-    """A reference to an image this repository builds, declared so it can be pinned."""
-
-    dependency: Dependency
-
-
-@dataclass(frozen=True, slots=True)
-class Misdeclared:
-    """A reference naming one of our images that cannot be pinned to a batch."""
+class _Stage:
+    """One FROM: what it is built on, and what this file calls it."""
 
     reference: str
-    complaint: str
+    alias: str | None
 
 
 @dataclass(frozen=True, slots=True)
-class External:
-    """A reference to an image outside this repository, or to a local stage."""
+class _Parsed:
+    """Everything one Dockerfile says that bears on the graph.
+
+    A record rather than a traversal per question, because the questions are not
+    independent: which stage is the base depends on which one is published, and
+    which image an argument names depends on a declaration that may appear
+    anywhere above it. Parsing twice to answer two of them is how the file's
+    facts drift apart from each other.
+    """
+
+    stages: tuple[_Stage, ...]
+    copied: tuple[str, ...]
+    bindings: Mapping[str, str]
+    # Arguments this file declares twice with different defaults, already
+    # rendered as complaints. The only way free argument naming can go wrong,
+    # and refused at the cause rather than detected at the symptom: the build
+    # sets an argument once, so a file whose references resolve it two ways would
+    # have one of them silently redirected. A bare `ARG NAME` re-import is
+    # untouched, which is the form a stage needs to see a global declaration.
+    rebound: tuple[str, ...]
 
 
-Classified = Internal | Misdeclared | External
+def _operand(tokens: Sequence[str]) -> tuple[str, ...]:
+    """An instruction's arguments with its flags dropped.
 
-# No fields to vary, so one value serves every occurrence.
-_EXTERNAL = External()
+    FROM may carry flags before its argument (`--platform=$BUILDPLATFORM`), so
+    the argument is the first token that is not one.
+    """
+    return tuple(dropwhile(lambda token: token.startswith("--"), tokens))
 
 
 def _bindings_in(operands: Sequence[str]) -> Iterator[tuple[str, str]]:
@@ -153,10 +120,123 @@ def _bindings_in(operands: Sequence[str]) -> Iterator[tuple[str, str]]:
     )
 
 
+def _stage_in(tokens: Sequence[str]) -> _Stage | None:
+    """The stage one FROM declares, or absence if it declares none."""
+    operand = _operand(tokens)
+    if not operand:
+        return None
+    alias = operand[2] if len(operand) >= 3 and operand[1].lower() == "as" else None
+    return _Stage(reference=operand[0], alias=alias)
+
+
+def _copied_in(tokens: Sequence[str]) -> str | None:
+    """What one COPY copies from, or absence if it copies from the context.
+
+    The reference sits inside a `--from=` flag that may appear among others such
+    as `--chown=`, so it is found by name rather than by position.
+    """
+    return next(
+        (
+            token.removeprefix("--from=")
+            for token in tokens
+            if token.lower().startswith("--from=")
+        ),
+        None,
+    )
+
+
+def _parse(text: str) -> _Parsed:
+    """One traversal, from which every question about this file is answered.
+
+    The bindings accumulate as they are read because a declaration binds a name
+    that later instructions resolve through; that state is the scope, not an
+    optimisation. It is also why a redeclaration is caught here rather than by
+    comparing outcomes afterwards -- at this point both defaults are in hand.
+    """
+    stages: list[_Stage] = []
+    copied: list[str] = []
+    rebound: list[str] = []
+    bindings: dict[str, str] = {}
+
+    for instruction in logical_lines(text):
+        tokens = tuple(instruction.split())
+        match tokens[0].lower() if tokens else "":
+            case "arg":
+                for name, default in _bindings_in(tokens[1:]):
+                    if bindings.get(name, default) != default:
+                        rebound.append(
+                            f"${{{name}}}  -- redeclared with a different default: "
+                            f"{bindings[name]} then {default}"
+                        )
+                    bindings[name] = default
+            case "from":
+                stage = _stage_in(tokens[1:])
+                if stage is not None:
+                    stages.append(stage)
+            case "copy":
+                source = _copied_in(tokens)
+                if source:
+                    copied.append(source)
+            case _:
+                pass
+
+    return _Parsed(
+        stages=tuple(stages),
+        copied=tuple(copied),
+        bindings=bindings,
+        rebound=tuple(rebound),
+    )
+
+
+# --- what a reference turns out to be ---------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Internal:
+    """A reference to an image this repository builds, declared so it can be pinned."""
+
+    dependency: Dependency
+
+
+@dataclass(frozen=True, slots=True)
+class Misdeclared:
+    """A reference naming one of our images that the build cannot work with."""
+
+    reference: str
+    complaint: str
+
+
+@dataclass(frozen=True, slots=True)
+class External:
+    """A reference to an image outside this repository, or to a local stage."""
+
+
+Classified = Internal | Misdeclared | External
+
+# No fields to vary, so one value serves every occurrence.
+_EXTERNAL = External()
+
+# BuildKit resolves `COPY --from` before argument expansion and refuses the
+# instruction outright rather than copying from something unintended. Refused
+# here because the alternative is learning it from a build that has already
+# queued, pulled its base, and burned its retry budget.
+_NO_EXPANSION = (
+    "BuildKit does not expand build arguments inside COPY --from. Hoist it to a "
+    "stage instead -- `FROM <the argument> AS <name>` above, then "
+    "`COPY --from=<name>`"
+)
+
+
 def _image_named(reference: str, known: frozenset[str]) -> str | None:
     """The image of this repository a reference names, if it names one."""
-    found = _TAG.search(reference)
-    return found.group(1) if found is not None and found.group(1) in known else None
+    found = _TAGGED.match(reference)
+    return found["tag"] if found is not None and found["tag"] in known else None
+
+
+def _path_of(reference: str) -> str | None:
+    """The registry path a reference names, without its tag."""
+    found = _TAGGED.match(reference)
+    return None if found is None else found["path"]
 
 
 def classify(
@@ -199,80 +279,14 @@ def classify(
     return Internal(Dependency(image=image, usage=usage, argument=argument))
 
 
-class UnpinnableReference(RuntimeError):
-    """A Dockerfile names one of our images in a form the build cannot pin.
-
-    Refused rather than tolerated because tolerating it is invisible. The build
-    would pass an argument, the Dockerfile would ignore it, the floating tag would
-    resolve to whatever is newest, and the label would still claim the batch that
-    was asked for. Every downstream reader would be told something untrue.
-    """
-
-    def __init__(self, defects: Mapping[str, tuple[str, ...]]) -> None:
-        super().__init__(
-            "These references cannot be pinned to a batch:\n"
-            + "\n".join(
-                f"  {where}:\n" + "\n".join(f"    {detail}" for detail in details)
-                for where, details in defects.items()
-            )
-        )
-        self.defects = dict(defects)
-
-
-@dataclass(frozen=True, slots=True)
-class _Stage:
-    """One FROM: what it is built on, and what this file calls it."""
-
-    reference: str
-    alias: str | None
-
-
-def _instructions(
-    text: str, collected: dict[str, str]
-) -> tuple[tuple[_Stage, ...], tuple[str, ...], tuple[str, ...]]:
-    """One pass: the stages this file declares and the sources it copies from.
-
-    The argument bindings accumulate into `collected` as they are read, because a
-    declaration binds a name that later instructions resolve through. That state
-    is the scope, not an optimisation.
-    """
-    stages: list[_Stage] = []
-    copied: list[str] = []
-    rebound: list[str] = []
-    for instruction in logical_lines(text):
-        tokens = tuple(instruction.split())
-        if not tokens:
-            continue
-        if tokens[0].lower() == "arg":
-            for name, default in _bindings_in(tokens[1:]):
-                if collected.get(name, default) != default:
-                    rebound.append(
-                        f"${{{name}}}  -- redeclared with a different default: "
-                        f"{collected[name]} then {default}"
-                    )
-                collected[name] = default
-            continue
-        found = _reference_in(tokens)
-        if found is None:
-            continue
-        reference, usage = found
-        if usage is Usage.ARTIFACT:
-            copied.append(reference)
-            continue
-        operand = tuple(dropwhile(lambda token: token.startswith("--"), tokens[1:]))
-        alias = operand[2] if len(operand) >= 3 and operand[1].lower() == "as" else None
-        stages.append(_Stage(reference=reference, alias=alias))
-    return tuple(stages), tuple(copied), tuple(rebound)
-
-
 def _ancestry(stages: Sequence[_Stage]) -> frozenset[str]:
     """Every stage the published image is built on, following aliases upward.
 
     The last FROM is what a Dockerfile publishes, so this is what decides whether
     a reference is a base or a source of artifacts. The instruction alone cannot:
     a toolchain file names its base with FROM and publishes `FROM scratch`, while
-    a consumer names the images it copies with FROM too, now that BuildKit will
-    not expand an argument inside `COPY --from`. Only the position of a stage
+    a consumer names the images it copies with FROM too, since BuildKit will not
+    expand an argument inside `COPY --from`. Only the position of a stage
     relative to the final one tells them apart.
     """
     by_alias = {stage.alias: stage for stage in stages if stage.alias is not None}
@@ -285,43 +299,28 @@ def _ancestry(stages: Sequence[_Stage]) -> frozenset[str]:
     return frozenset(ancestry)
 
 
-def classified_in(
-    text: str, known: frozenset[str], collected: dict[str, str] | None = None
-) -> Iterator[Classified]:
+def _classified_in(parsed: _Parsed, known: frozenset[str]) -> Iterator[Classified]:
     """Every reference one Dockerfile makes, classified.
 
-    Two passes over the parsed instructions rather than one over the text: the
-    final stage decides how every other reference reads, and it is not known
-    until the file has been read to the end.
+    Only a FROM can yield an edge. A COPY reaches its source through a stage
+    alias -- accounted for by that stage's own FROM -- or it is one of the two
+    forms the build cannot use, and both are reported rather than parsed into an
+    edge that would never have resolved.
     """
-    bindings = {} if collected is None else collected
-    stages, copied, _ = _instructions(text, bindings)
-    ancestry = _ancestry(stages)
-    aliased = {stage.alias for stage in stages if stage.alias is not None}
+    ancestry = _ancestry(parsed.stages)
+    aliased = {stage.alias for stage in parsed.stages if stage.alias is not None}
 
-    for stage in stages:
+    for stage in parsed.stages:
         usage = Usage.BASE if stage.reference in ancestry else Usage.ARTIFACT
-        yield classify(stage.reference, usage, bindings, known)
+        yield classify(stage.reference, usage, parsed.bindings, known)
 
-    # A COPY naming a stage of this file was already accounted for by that
-    # stage's FROM. Anything else is a reference in its own right, and since
-    # expansion is unavailable here it can only be a literal one -- which is
-    # exactly the misdeclaration the check exists to catch.
-    for reference in copied:
-        if reference not in aliased:
-            yield classify(reference, Usage.ARTIFACT, bindings, known)
-
-
-def _rebindings_in(text: str) -> tuple[str, ...]:
-    """Arguments this file declares twice with different defaults.
-
-    The only way free naming can go wrong, and it is refused at the cause rather
-    than detected at the symptom: the build sets an argument once, so a file whose
-    references resolve it two ways would have one of them silently redirected. An
-    argument declared once and imported later with a bare `ARG NAME` is untouched,
-    which is the form a stage needs to see a global declaration.
-    """
-    return _instructions(text, {})[2]
+    for reference in parsed.copied:
+        if reference in aliased:
+            continue
+        if _ARGUMENT.match(reference):
+            yield Misdeclared(reference, _NO_EXPANSION)
+            continue
+        yield classify(reference, Usage.ARTIFACT, parsed.bindings, known)
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,22 +340,22 @@ class FileFacts:
 
 
 def _read(text: str, known: frozenset[str]) -> FileFacts:
-    """One file's edges and its defects, from one traversal.
+    """One file's edges and its defects, from one parse.
 
     A loop rather than two comprehensions because both outputs come from one
     elimination: `match` over a closed sum with `assert_never` is what makes a
     fourth variant a type error here rather than a silently dropped reference.
 
     Edges are deduplicated and ordered by (image, usage) rather than by
-    appearance, so a label rendered from them is byte-stable: moving a COPY within
-    a file must not change the digest of the image it builds. One image may
-    legitimately appear twice with different usages, so the pair is the unit of
-    identity, not the name.
+    appearance, so a label rendered from them is byte-stable: moving a stage
+    within a file must not change the digest of the image it builds. One image
+    may legitimately appear twice with different usages, so the pair is the unit
+    of identity, not the name.
     """
+    parsed = _parse(text)
     edges: list[Dependency] = []
     defects: list[str] = []
-    declarations: dict[str, str] = {}
-    for item in classified_in(text, known, declarations):
+    for item in _classified_in(parsed, known):
         match item:
             case Internal(dependency):
                 edges.append(dependency)
@@ -366,11 +365,10 @@ def _read(text: str, known: frozenset[str]) -> FileFacts:
                 pass
             case unreachable:
                 assert_never(unreachable)
-    defects.extend(_rebindings_in(text))
     return FileFacts(
         edges=tuple(sorted(set(edges), key=Dependency.sort_key)),
-        defects=tuple(defects),
-        declarations=dict(declarations),
+        defects=tuple(defects) + parsed.rebound,
+        declarations=parsed.bindings,
     )
 
 
@@ -383,95 +381,53 @@ def dependencies_in(text: str, known: frozenset[str] = frozenset()) -> tuple[Dep
     return _read(text, known).edges
 
 
-def _repository_of(reference: str) -> str:
-    """The registry path a reference names, without its tag."""
-    return reference.rsplit(":", 1)[0]
+# --- defects the whole tree defines -----------------------------------------
 
 
-def _dangling_in(
-    parsed: Mapping[str, FileFacts], ours: frozenset[str] | set[str], known: frozenset[str]
-) -> Mapping[str, set[str]]:
-    """Declarations pointing into one of our own paths at an image nothing builds.
+class DanglingReference(RuntimeError):
+    """A Dockerfile consumes an image of this repository that nothing builds.
 
-    The typo and the deleted Dockerfile, and the reason they are worth refusing:
-    such a tag still resolves in the registry, to whatever last published it, so
-    the build succeeds and consumes something arbitrarily old, indefinitely.
-
-    This can no longer be found among the edges. Internality is decided by the
-    image name, so a reference to an image nothing builds is classified external
-    and never becomes an edge at all -- which is precisely the case in question.
-    So it is found among the declarations instead, against the set of paths the
-    resolving declarations revealed this tree to publish under.
+    A layout defect rather than a runtime case, and a silent one until now. The
+    reference still resolves in the registry -- to whatever that tag pointed at
+    the last time something published it, which for a deleted or misspelled
+    image is a build from an arbitrary point in the past that will keep being
+    consumed indefinitely. Raised for the same reason `ConflictingDockerfiles`
+    is: the alternative is guessing, and guessing wrong here is invisible.
     """
-    dangling: dict[str, set[str]] = {}
-    for image, facts in parsed.items():
-        for declared in facts.declarations.values():
-            target = declared.rsplit(":", 1)[-1]
-            if _repository_of(declared) in ours and target not in known:
-                dangling.setdefault(target, set()).add(image)
-    return dangling
 
-
-def graph(definitions: Mapping[str, Path], root: Path) -> Mapping[str, tuple[Dependency, ...]]:
-    """Every image's outgoing edges, for every image the repository defines.
-
-    Raises `UnpinnableReference` if a reference cannot carry a batch, and
-    `DanglingReference` if any edge names an image no Dockerfile builds. Both are
-    checked here rather than per file because both are questions about the whole
-    tree: a name is dangling only if *nothing* defines it, and whether a literal
-    reference should have been a declaration depends on what else the tree builds.
-
-    Each Dockerfile is read once and traversed once; `_read` returns both answers
-    from that single pass.
-    """
-    known = frozenset(definitions)
-    parsed = {
-        image: _read((root / path).read_text(encoding="utf-8"), known)
-        for image, path in definitions.items()
-    }
-
-    unpinnable = {
-        str(definitions[image]): facts.defects for image, facts in parsed.items() if facts.defects
-    }
-    if unpinnable:
-        raise UnpinnableReference(unpinnable)
-
-    edges = {image: facts.edges for image, facts in parsed.items()}
-
-    # The repository paths this tree actually publishes under, inferred from the
-    # declarations that resolved rather than configured. Inferred because the
-    # parser must stay registry-agnostic to be fork-safe: a fork's checkout still
-    # defaults to upstream's path, and hardcoding either one would either miss its
-    # typos or reject its references wholesale.
-    ours = {
-        _repository_of(declared)
-        for image, facts in parsed.items()
-        for name, declared in facts.declarations.items()
-        if _image_named(declared, known) is not None
-    }
-    dangling = {
-        target: tuple(sorted(referrers))
-        for target, referrers in sorted(_dangling_in(parsed, ours, known).items())
-    }
-    if dangling:
-        raise DanglingReference(dangling)
-
-    # Stamped here rather than computed by each consumer: the offset is a fact
-    # about the whole graph, and an edge that carried the wrong one would pin to
-    # a generation nothing agrees with.
-    level = levels_of(edges)
-    return {
-        image: tuple(
-            Dependency(
-                image=edge.image,
-                usage=edge.usage,
-                argument=edge.argument,
-                generations_back=level[image] - level[edge.image],
+    def __init__(self, dangling: Mapping[str, tuple[str, ...]]) -> None:
+        super().__init__(
+            "These Dockerfiles reference images of this repository that no "
+            "Dockerfile builds:\n"
+            + "\n".join(
+                f"  {image}: referenced by {', '.join(referrers)}"
+                for image, referrers in dangling.items()
             )
-            for edge in found
         )
-        for image, found in edges.items()
-    }
+        self.dangling = dict(dangling)
+
+
+class MisdeclaredReference(RuntimeError):
+    """A Dockerfile names one of our images in a form the build cannot use.
+
+    Refused rather than tolerated because tolerating either form is expensive in
+    its own way. A literal reference fails silently: the build passes an
+    argument, the Dockerfile ignores it, the floating tag resolves to whatever is
+    newest, and the label still claims the batch that was asked for, so every
+    downstream reader is told something untrue. An argument inside `COPY --from`
+    fails loudly, but only after the build has queued, pulled, and worked through
+    a retry budget measured in dozens.
+    """
+
+    def __init__(self, defects: Mapping[str, tuple[str, ...]]) -> None:
+        super().__init__(
+            "These references are written in a form the build cannot use:\n"
+            + "\n".join(
+                f"  {where}:\n" + "\n".join(f"    {detail}" for detail in details)
+                for where, details in defects.items()
+            )
+        )
+        self.defects = dict(defects)
 
 
 class CyclicGraph(RuntimeError):
@@ -489,18 +445,54 @@ class CyclicGraph(RuntimeError):
         self.cycle = cycle
 
 
-def levels_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, int]:
+# --- the graph over a whole tree --------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Graph:
+    """This repository's own dependency graph and the facts derived from it.
+
+    A record rather than four functions over one mapping. Each field is a total
+    function of `edges`, so they cannot disagree; kept together because every
+    one of them was previously recomputed by a second caller from a second read
+    of the tree, which made "the graph" a thing the plan job assembled twice and
+    could in principle assemble differently.
+    """
+
+    edges: Mapping[str, tuple[Dependency, ...]]
+    # Each image's depth: one more than the deepest image it depends on. Level is
+    # the whole basis of the pinning rule -- see `Dependency.generations_back`.
+    levels: Mapping[str, int]
+    # The graph inverted: for each image, who consumes it. Never published as a
+    # label, because who consumes an image is a fact about the source tree rather
+    # than about the build, recoverable by running this parser over any checkout.
+    # It decides whether an image is labelled at all, and nothing else.
+    dependents: Mapping[str, tuple[str, ...]]
+    # An image with an edge stepping back exactly one generation, and its target:
+    # the pair the generation walk steps through. Absent when no chain is deep
+    # enough to step through, which is a repository whose images do not build on
+    # each other; nothing needs a table then, and the caller floats everything.
+    probe: tuple[str, str] | None
+    # How far back any edge reaches, which is the generation table's length.
+    # Deeper buys nothing: an edge pinned to generation k inherits whatever
+    # *that* build was pinned to, so the chain past the table is already baked
+    # into the images being named.
+    depth: int
+
+
+def _levels_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, int]:
     """Each image's depth in the graph: one more than the deepest it depends on.
 
-    Level is the whole basis of the pinning rule. An image at level L is
-    assembled from generation N-(L-1) of the roots, so the difference in level
-    between two images *is* the number of generations between the builds that can
-    coherently be combined -- see `Dependency.generations_back`.
+    An image at level L is assembled from generation N-(L-1) of the roots, so the
+    difference in level between two images *is* the number of generations between
+    the builds that can coherently be combined.
 
-    Memoised over an explicit stack rather than written as plain recursion:
-    Python has no tail-call elimination and this is called once per image, so a
-    deep chain in some future repository would be frames rather than iterations.
-    The visiting set is what turns a cycle into a raised defect instead of a hang.
+    Recursion is the honest shape here -- a level is defined in terms of the
+    levels below it -- and it is safe because the depth it recurses to is the
+    graph's, which is four in this repository and bounded by the number of images
+    in any repository. Memoised so that a diamond is not re-walked once per path,
+    and carrying the path it came by, which is what turns a cycle into a raised
+    defect rather than a hang.
     """
     level: dict[str, int] = {}
 
@@ -519,22 +511,9 @@ def levels_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, int]:
     return {image: resolve(image, ()) for image in edges}
 
 
-def dependents_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, tuple[str, ...]]:
-    """The graph inverted: for each image, who consumes it.
-
-    Carried on the task to decide whether it is labelled at all, which is the
-    one thing this direction is needed for. An image nothing here consumes has
-    no use for a batch label; an image something here consumes must carry one
-    even when it has no dependencies of its own, or its consumers have nothing
-    to read off it.
-
-    Not published as a label. Who consumes an image is a fact about the source
-    tree rather than about the build -- recoverable by running this function over
-    any checkout -- so recording it on the image would duplicate git.
-
-    Usage is dropped for the same reason: membership does not depend on it, and
-    the consumer's own `consumes` label states it more precisely.
-    """
+def _dependents_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, tuple[str, ...]]:
+    """The graph inverted. Usage is dropped: membership does not depend on it,
+    and the consumer's own `consumes` label states it more precisely."""
     return {
         image: tuple(
             sorted(
@@ -547,32 +526,14 @@ def dependents_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, t
     }
 
 
-def images_in_graph(edges: Mapping[str, tuple[Dependency, ...]]) -> frozenset[str]:
-    """The images that participate in the repository's own graph, either way.
-
-    The membership rule the provenance labels key on. A referenced image must
-    carry a batch label for its consumers to be able to read one, and a
-    referencing image must carry one to be comparable against what it consumed,
-    so both directions are members. Everything else stays unlabelled and keeps a
-    digest that changes only when its content does.
-    """
-    referenced = {dependency.image for found in edges.values() for dependency in found}
-    return frozenset(referenced | {image for image, found in edges.items() if found})
-
-
-def probe_for(edges: Mapping[str, tuple[Dependency, ...]]) -> tuple[str, str] | None:
+def _probe_for(edges: Mapping[str, tuple[Dependency, ...]]) -> tuple[str, str] | None:
     """An image with an edge stepping back exactly one generation, and its target.
 
-    The pair the generation walk needs. Usage does not matter: what the walk reads
-    is `built_on`, which keeps every edge it could pin regardless of how the image
-    consumed it. Any such image will do -- floating tags
-    advance only as a complete generation, so every one of them reports the same
-    batch -- so the choice is alphabetical purely to keep a run reproducible from
-    its inputs.
-
-    Absence when the graph has no chain deep enough to step through, which is a
-    repository whose images do not build on each other. Nothing needs a table
-    then, and the caller floats everything.
+    Usage does not matter: what the walk reads is `built_on`, which keeps every
+    edge it could pin regardless of how the image consumed it. Any such image
+    will do, since floating tags advance only as a complete generation and so
+    every one of them reports the same batch, which leaves the choice
+    alphabetical purely to keep a run reproducible from its inputs.
     """
     return next(
         (
@@ -585,11 +546,94 @@ def probe_for(edges: Mapping[str, tuple[Dependency, ...]]) -> tuple[str, str] | 
     )
 
 
-def generations_needed(edges: Mapping[str, tuple[Dependency, ...]]) -> int:
-    """How far back any edge in this graph reaches.
+def _dangling_in(
+    parsed: Mapping[str, FileFacts], ours: frozenset[str], known: frozenset[str]
+) -> Mapping[str, tuple[str, ...]]:
+    """Declarations pointing into one of our own paths at an image nothing builds.
 
-    The table's length. Deeper than this buys nothing: an edge pinned to
-    generation k inherits whatever *that* build was pinned to, so the chain past
-    the table is already baked into the images being named.
+    The typo and the deleted Dockerfile, and the reason they are worth refusing:
+    such a tag still resolves in the registry, to whatever last published it, so
+    the build succeeds and consumes something arbitrarily old, indefinitely.
+
+    This cannot be found among the edges. Internality is decided by the image
+    name, so a reference to an image nothing builds is classified external and
+    never becomes an edge at all -- which is precisely the case in question. So
+    it is found among the declarations instead, against the set of paths the
+    resolving declarations revealed this tree to publish under.
     """
-    return max((edge.generations_back for found in edges.values() for edge in found), default=0)
+    dangling: dict[str, set[str]] = {}
+    for image, facts in parsed.items():
+        for declared in facts.declarations.values():
+            found = _TAGGED.match(declared)
+            if found is not None and found["path"] in ours and found["tag"] not in known:
+                dangling.setdefault(found["tag"], set()).add(image)
+    return {target: tuple(sorted(referrers)) for target, referrers in sorted(dangling.items())}
+
+
+def graph(definitions: Mapping[str, Path], root: Path) -> Graph:
+    """The whole tree's graph, read once.
+
+    Raises `MisdeclaredReference` if a reference is written in a form the build
+    cannot use, `DanglingReference` if a declaration names an image no Dockerfile
+    builds, and `CyclicGraph` if the images depend on each other in a loop. All
+    three are questions about the whole tree rather than about one file: a name
+    is dangling only if *nothing* defines it, and whether a literal reference
+    should have been a declaration depends on what else the tree builds.
+    """
+    known = frozenset(definitions)
+    parsed = {
+        image: _read((root / path).read_text(encoding="utf-8"), known)
+        for image, path in definitions.items()
+    }
+
+    misdeclared = {
+        str(definitions[image]): facts.defects for image, facts in parsed.items() if facts.defects
+    }
+    if misdeclared:
+        raise MisdeclaredReference(misdeclared)
+
+    # The repository paths this tree actually publishes under, inferred from the
+    # declarations that resolved rather than configured. Inferred because the
+    # parser must stay registry-agnostic to be fork-safe: a fork's checkout still
+    # defaults to upstream's path, and hardcoding either one would either miss its
+    # typos or reject its references wholesale.
+    ours = frozenset(
+        path
+        for facts in parsed.values()
+        for declared in facts.declarations.values()
+        if _image_named(declared, known) is not None
+        for path in (_path_of(declared),)
+        if path is not None
+    )
+    dangling = _dangling_in(parsed, ours, known)
+    if dangling:
+        raise DanglingReference(dangling)
+
+    declared_edges = {image: facts.edges for image, facts in parsed.items()}
+    levels = _levels_of(declared_edges)
+
+    # Stamped here rather than computed by each consumer: the offset is a fact
+    # about the whole graph, and an edge that carried the wrong one would pin to
+    # a generation nothing agrees with.
+    edges = {
+        image: tuple(
+            Dependency(
+                image=edge.image,
+                usage=edge.usage,
+                argument=edge.argument,
+                generations_back=levels[image] - levels[edge.image],
+            )
+            for edge in found
+        )
+        for image, found in declared_edges.items()
+    }
+
+    return Graph(
+        edges=edges,
+        levels=levels,
+        dependents=_dependents_of(edges),
+        probe=_probe_for(edges),
+        depth=max(
+            (edge.generations_back for found in edges.values() for edge in found), default=0
+        ),
+    )

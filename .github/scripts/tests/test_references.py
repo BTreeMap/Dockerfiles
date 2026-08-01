@@ -21,15 +21,11 @@ from ci.references import (
     External,
     Internal,
     Misdeclared,
-    UnpinnableReference,
+    MisdeclaredReference,
     classify,
     dependencies_in,
-    dependents_of,
-    generations_needed,
     graph,
-    images_in_graph,
     logical_lines,
-    probe_for,
 )
 
 # Any registry will do. The parser keys on the image name a declaration's default
@@ -105,19 +101,6 @@ def test_a_comment_inside_a_continuation_is_still_a_comment() -> None:
 # --- what counts as internal ------------------------------------------------
 
 
-def test_a_from_is_a_base_edge_and_a_copy_from_is_an_artifact_edge() -> None:
-    """The distinction the whole mechanism exists to expose.
-
-    Runtime libraries come from the base; binaries compiled elsewhere arrive over
-    an artifact edge. A skew between the two is invisible if both are just "uses".
-    """
-    text = f"FROM {ref('code-server-base')}\nCOPY --from={ref('code-server-go')} /opt/go /opt/go\n"
-    assert parse(text) == (
-        Dependency(image="code-server-base", usage=Usage.BASE, argument="REF_CODE_SERVER_BASE"),
-        Dependency(image="code-server-go", usage=Usage.ARTIFACT, argument="REF_CODE_SERVER_GO"),
-    )
-
-
 def test_usage_follows_a_stage_position_not_its_instruction() -> None:
     """The distinction the instruction alone can no longer make.
 
@@ -142,7 +125,11 @@ def test_usage_follows_a_stage_position_not_its_instruction() -> None:
 
 
 def test_the_published_stage_decides_which_reference_is_the_base() -> None:
-    """The consumer shape: hoisted stages are artifacts, the final FROM is the base."""
+    """The consumer shape, and the distinction the whole mechanism exposes.
+
+    Runtime libraries come from the base; binaries compiled elsewhere arrive over
+    an artifact edge. A skew between the two is invisible if both are just "uses".
+    """
     text = (
         f"FROM {ref('code-server-go')} AS go_artifacts\n"
         f"FROM {ref('code-server-base')}\n"
@@ -172,8 +159,9 @@ def test_an_external_or_local_reference_is_not_an_edge(instruction: str) -> None
 
 def test_flags_do_not_hide_the_operand() -> None:
     text = (
-        f"FROM --platform=$BUILDPLATFORM {ref('code-server-base')} AS builder\n"
-        f"COPY --chown=1000:1000 --from={ref('code-server-go')} /opt/go /opt/go\n"
+        f"FROM --platform=$BUILDPLATFORM {ref('code-server-go')} AS go_artifacts\n"
+        f"FROM --platform=$BUILDPLATFORM {ref('code-server-base')}\n"
+        "COPY --chown=1000:1000 --from=go_artifacts /opt/go /opt/go\n"
     )
     assert {dependency.image for dependency in parse(text)} == {
         "code-server-base",
@@ -182,10 +170,20 @@ def test_flags_do_not_hide_the_operand() -> None:
 
 
 def test_one_image_may_be_both_a_base_and_a_source_of_artifacts() -> None:
-    """Two distinct edges, so the pair is the unit of identity, not the name."""
-    text = f"FROM {ref('a')}\nCOPY --from={ref('a')} /x /x\n"
+    """Two distinct edges, so the pair is the unit of identity, not the name.
+
+    Two declarations of one image: the hoisted stage is where artifacts are taken
+    from, the final FROM is what the result is built on. They pin independently,
+    which is the reason the pair rather than the name has to be the key.
+    """
+    text = (
+        f"ARG ALSO_A={REGISTRY}:a\n"
+        "FROM ${ALSO_A} AS a_artifacts\n"
+        f"FROM {ref('a')}\n"
+        "COPY --from=a_artifacts /x /x\n"
+    )
     assert parse(text) == (
-        Dependency(image="a", usage=Usage.ARTIFACT, argument="REF_A"),
+        Dependency(image="a", usage=Usage.ARTIFACT, argument="ALSO_A"),
         Dependency(image="a", usage=Usage.BASE, argument="REF_A"),
     )
 
@@ -193,12 +191,17 @@ def test_one_image_may_be_both_a_base_and_a_source_of_artifacts() -> None:
 def test_edges_are_deduplicated_and_ordered_independently_of_position() -> None:
     """Byte-stability, which is a digest property rather than a tidiness one.
 
-    A label is part of the image configuration, so if moving a COPY within a file
-    reordered this, the image's digest would change for an unchanged build.
+    A label is part of the image configuration, so if moving a stage within a
+    file reordered this, the image's digest would change for an unchanged build.
     """
-    first = f"COPY --from={ref('b')} /x /x\nCOPY --from={ref('a')} /y /y\n"
-    second = f"COPY --from={ref('a')} /y /y\nCOPY --from={ref('b')} /x /x\n"
-    repeated = second + f"COPY --from={ref('a')} /z /z\n"
+    stages = {
+        "a": f"FROM {ref('a')} AS a_artifacts\n",
+        "b": f"FROM {ref('b')} AS b_artifacts\n",
+    }
+    published = "FROM scratch\n"
+    first = stages["b"] + stages["a"] + published
+    second = stages["a"] + stages["b"] + published
+    repeated = stages["a"] + stages["b"] + f"FROM {ref('a')} AS more_a\n" + published
 
     assert parse(first) == parse(second) == parse(repeated)
     assert tuple(dependency.image for dependency in parse(first)) == ("a", "b")
@@ -255,38 +258,20 @@ def test_the_graph_inverts_into_dependents(tmp_path: Path) -> None:
         {
             "base/Dockerfile": "FROM scratch\n",
             "mid/Dockerfile": f"FROM {ref('base')}\n",
-            "top/Dockerfile": f"FROM {ref('base')}\nCOPY --from={ref('mid')} /x /x\n",
+            "top/Dockerfile": (
+                f"FROM {ref('mid')} AS mid_artifacts\n"
+                f"FROM {ref('base')}\n"
+                "COPY --from=mid_artifacts /x /x\n"
+            ),
         },
     )
     definitions = {name: Path(f"{name}/Dockerfile") for name in ("base", "mid", "top")}
 
-    edges = graph(definitions, root)
-    inverted = dependents_of(edges)
+    inverted = graph(definitions, root).dependents
 
     assert inverted["base"] == ("mid", "top")
     assert inverted["mid"] == ("top",)
     assert inverted["top"] == ()
-
-
-def test_graph_membership_covers_both_directions(tmp_path: Path) -> None:
-    """The rule that decides which images carry provenance labels.
-
-    A referenced image must be a member so its consumers can read a batch off it;
-    a referencing image must be a member so it can be compared against what it
-    consumed. An isolated image is in neither direction and keeps a digest that
-    changes only when its content does.
-    """
-    root = tree(
-        tmp_path,
-        {
-            "base/Dockerfile": "FROM scratch\n",
-            "app/Dockerfile": f"FROM {ref('base')}\n",
-            "alone/Dockerfile": "FROM alpine:3.21\n",
-        },
-    )
-    definitions = {name: Path(f"{name}/Dockerfile") for name in ("base", "app", "alone")}
-
-    assert images_in_graph(graph(definitions, root)) == frozenset({"base", "app"})
 
 
 def test_a_second_group_joins_the_graph_without_a_code_change(tmp_path: Path) -> None:
@@ -306,7 +291,9 @@ def test_a_second_group_joins_the_graph_without_a_code_change(tmp_path: Path) ->
             "warehouse/Dockerfile": "FROM debian:trixie\n",
             "warehouse/etl.Dockerfile": f"FROM {ref('warehouse')}\n",
             "reporting/Dockerfile": (
-                f"FROM {ref('warehouse')}\nCOPY --from={ref('warehouse-etl')} /etl /etl\n"
+                f"FROM {ref('warehouse-etl')} AS etl_artifacts\n"
+                f"FROM {ref('warehouse')}\n"
+                "COPY --from=etl_artifacts /etl /etl\n"
             ),
         },
     )
@@ -318,13 +305,13 @@ def test_a_second_group_joins_the_graph_without_a_code_change(tmp_path: Path) ->
         "reporting": Path("reporting/Dockerfile"),
     }
 
-    edges = graph(definitions, root)
+    found = graph(definitions, root)
 
     # The depth rule falls out of the new group's own shape, with nothing here
     # naming it: `reporting` sits two levels above `warehouse` and one above
     # `warehouse-etl`, so the base it lands on must reach a generation further
     # back than the artifacts compiled against that base.
-    assert edges["reporting"] == (
+    assert found.edges["reporting"] == (
         Dependency(
             image="warehouse",
             usage=Usage.BASE,
@@ -338,10 +325,31 @@ def test_a_second_group_joins_the_graph_without_a_code_change(tmp_path: Path) ->
             generations_back=1,
         ),
     )
-    assert dependents_of(edges)["warehouse"] == ("reporting", "warehouse-etl")
-    assert images_in_graph(edges) == frozenset(
-        {"code-server-base", "code-server", "warehouse", "warehouse-etl", "reporting"}
+    assert found.dependents["warehouse"] == ("reporting", "warehouse-etl")
+
+
+# --- references the build cannot use ----------------------------------------
+
+
+def test_an_argument_inside_copy_from_is_refused(tmp_path: Path) -> None:
+    """The form BuildKit rejects outright, caught before a build discovers it.
+
+    `COPY --from` is resolved before argument expansion, so this never copied
+    from something unintended: it failed the build, but only after queueing,
+    pulling a base, and working through a retry budget measured in dozens.
+    Refusing it in the plan job costs a second and names the fix.
+    """
+    root = tree(
+        tmp_path,
+        {
+            "base/Dockerfile": "FROM scratch\n",
+            "app/Dockerfile": f"FROM alpine:3.21\nCOPY --from={ref('base')} /x /x\n",
+        },
     )
+    definitions = {name: Path(f"{name}/Dockerfile") for name in ("base", "app")}
+
+    with pytest.raises(MisdeclaredReference, match="does not expand build arguments"):
+        graph(definitions, root)
 
 
 # --- pinnability ------------------------------------------------------------
@@ -369,7 +377,7 @@ def test_a_literal_reference_to_one_of_our_images_is_refused(tmp_path: Path) -> 
     )
     definitions = {name: Path(f"{name}/Dockerfile") for name in ("base", "app", "forked")}
 
-    with pytest.raises(UnpinnableReference) as raised:
+    with pytest.raises(MisdeclaredReference) as raised:
         graph(definitions, root)
 
     assert set(raised.value.defects) == {"app/Dockerfile", "forked/Dockerfile"}
@@ -392,22 +400,22 @@ def test_an_argument_redeclared_with_a_different_default_is_refused(tmp_path: Pa
             "b/Dockerfile": "FROM scratch\n",
             "app/Dockerfile": (
                 f"ARG SHARED={REGISTRY}:a\n"
-                "FROM ${SHARED}\n"
+                "FROM ${SHARED} AS shared_artifacts\n"
                 f"ARG SHARED={REGISTRY}:b\n"
-                "COPY --from=${SHARED} /x /x\n"
+                "FROM ${SHARED}\n"
             ),
         },
     )
     definitions = {name: Path(f"{name}/Dockerfile") for name in ("a", "b", "app")}
 
-    with pytest.raises(UnpinnableReference, match="redeclared with a different default"):
+    with pytest.raises(MisdeclaredReference, match="redeclared with a different default"):
         graph(definitions, root)
 
 
 def test_an_external_reference_needs_no_declaration(tmp_path: Path) -> None:
     """The rule binds only images we publish; nothing else is pinnable at all."""
     root = tree(tmp_path, {"app/Dockerfile": "FROM alpine:3.21\nCOPY --from=gcc:12 /a /b\n"})
-    assert graph({"app": Path("app/Dockerfile")}, root) == {"app": ()}
+    assert graph({"app": Path("app/Dockerfile")}, root).edges == {"app": ()}
 
 
 def test_an_external_image_sharing_no_name_with_ours_is_untouched(tmp_path: Path) -> None:
@@ -420,7 +428,7 @@ def test_an_external_image_sharing_no_name_with_ours_is_untouched(tmp_path: Path
             )
         },
     )
-    assert graph({"app": Path("app/Dockerfile")}, root) == {"app": ()}
+    assert graph({"app": Path("app/Dockerfile")}, root).edges == {"app": ()}
 
 
 # --- one classifier, three outcomes -----------------------------------------
@@ -486,20 +494,24 @@ def test_the_probe_is_an_image_one_generation_above_a_root(tmp_path: Path) -> No
         {
             "base/Dockerfile": "FROM scratch\n",
             "mid/Dockerfile": f"FROM {ref('base')}\n",
-            "top/Dockerfile": f"FROM {ref('mid')}\nCOPY --from={ref('base')} /x /x\n",
+            "top/Dockerfile": (
+                f"FROM {ref('base')} AS base_artifacts\n"
+                f"FROM {ref('mid')}\n"
+                "COPY --from=base_artifacts /x /x\n"
+            ),
         },
     )
     definitions = {name: Path(f"{name}/Dockerfile") for name in ("base", "mid", "top")}
-    edges = graph(definitions, root)
+    found = graph(definitions, root)
 
-    assert probe_for(edges) == ("mid", "base")
-    assert generations_needed(edges) == 2
+    assert found.probe == ("mid", "base")
+    assert found.depth == 2
 
 
 def test_a_graph_with_no_chain_needs_no_generations(tmp_path: Path) -> None:
     """A repository whose images do not build on each other floats everything."""
     root = tree(tmp_path, {"solo/Dockerfile": "FROM alpine:3.21\n"})
-    edges = graph({"solo": Path("solo/Dockerfile")}, root)
+    found = graph({"solo": Path("solo/Dockerfile")}, root)
 
-    assert probe_for(edges) is None
-    assert generations_needed(edges) == 0
+    assert found.probe is None
+    assert found.depth == 0

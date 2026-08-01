@@ -124,7 +124,7 @@ def test_discover_finds_one_task_per_image_and_platform(tmp_path: Path) -> None:
         (tmp_path / name).mkdir()
         (tmp_path / name / "Dockerfile").write_text("FROM scratch\n")
 
-    found = discover(tmp_path, (Platform.AMD64, Platform.ARM64), max_retries=50)
+    found = discover(tmp_path, (Platform.AMD64, Platform.ARM64), max_retries=50).tasks
 
     assert len(found) == 4
     assert {task.image for task in found} == {"redis", "nginx"}
@@ -134,7 +134,7 @@ def test_discover_finds_one_task_per_image_and_platform(tmp_path: Path) -> None:
 
 
 def test_discover_returns_nothing_for_an_empty_tree(tmp_path: Path) -> None:
-    assert discover(tmp_path, (Platform.AMD64,), max_retries=1) == ()
+    assert discover(tmp_path, (Platform.AMD64,), max_retries=1).tasks == ()
 
 
 def test_a_prefixed_dockerfile_names_the_image_its_sibling_directory_would(
@@ -168,7 +168,7 @@ def test_a_prefixed_dockerfile_builds_from_its_own_directory(tmp_path: Path) -> 
     (tmp_path / "code-server").mkdir()
     (tmp_path / "code-server" / "base.Dockerfile").write_text("FROM scratch\n")
 
-    (task,) = discover(tmp_path, (Platform.AMD64,), max_retries=1)
+    (task,) = discover(tmp_path, (Platform.AMD64,), max_retries=1).tasks
 
     assert task.image == "code-server-base"
     assert task.dockerfile == str(Path("code-server") / "base.Dockerfile")
@@ -212,7 +212,7 @@ def test_discovery_is_ordered_and_reproducible_across_both_layouts(tmp_path: Pat
     (tmp_path / "bravo" / "Dockerfile").write_text("FROM scratch\n")
     (tmp_path / "alpha" / "mike.Dockerfile").write_text("FROM scratch\n")
 
-    found = discover(tmp_path, (Platform.AMD64,), max_retries=1)
+    found = discover(tmp_path, (Platform.AMD64,), max_retries=1).tasks
 
     assert [task.image for task in found] == [
         "alpha",
@@ -220,7 +220,7 @@ def test_discovery_is_ordered_and_reproducible_across_both_layouts(tmp_path: Pat
         "alpha-zulu",
         "bravo",
     ]
-    assert found == discover(tmp_path, (Platform.AMD64,), max_retries=1)
+    assert found == discover(tmp_path, (Platform.AMD64,), max_retries=1).tasks
 
 
 # --- the batch id -----------------------------------------------------------
