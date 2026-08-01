@@ -215,6 +215,19 @@ def run_section(
     return tuple(lines)
 
 
+def _unreached(edges: Sequence[Dependency], resolved: int) -> str:
+    """Marks an image whose edges could not all be pinned this run.
+
+    The figure beside it is where the design puts this image once the generation
+    table is full. An edge reaching further back than the table goes falls back to
+    its floating tag, so until then the image is assembled from something else,
+    and a column that stayed silent about it would be stating the intent while
+    looking like a measurement.
+    """
+    deepest = max((edge.generations_back for edge in edges), default=0)
+    return "" if deepest <= resolved else f" (not reached: needs {deepest} generations)"
+
+
 def _oldest_content(level: int) -> str:
     """How old the deepest thing inside an image at this level is.
 
@@ -231,6 +244,7 @@ def graph_section(
     edges: Mapping[str, tuple[Dependency, ...]],
     dependents: Mapping[str, tuple[str, ...]],
     levels: Mapping[str, int],
+    resolved: int,
 ) -> tuple[str, ...]:
     """The repository's own dependency graph, once, from the plan job.
 
@@ -242,6 +256,12 @@ def graph_section(
     The images with no edges are a count and a fold-out. They are most of the
     repository and they carry no provenance labels, so listing them inline would
     push the part that matters off the first screen.
+
+    `resolved` is how many generations this run actually has, and it is here so
+    the staleness column cannot state a design property as though it were a fact.
+    An edge reaching further back than the table goes floats, so an image with one
+    is not composed the way this table would otherwise claim, and saying so is the
+    difference between describing the run and describing the intent.
     """
     members = sorted(image for image in edges if edges[image] or dependents[image])
     isolated = sorted(set(edges) - set(members))
@@ -271,7 +291,7 @@ def graph_section(
         "| Image | Oldest content | Consumes (usage, generations back) | Consumed by |",
         "| --- | --- | --- | --- |",
         *(
-            f"| `{image}` | {_oldest_content(levels[image])} "
+            f"| `{image}` | {_oldest_content(levels[image])}{_unreached(edges[image], resolved)} "
             f"| {_joined(_edge_label(d) for d in edges[image])} "
             f"| {_joined(f'`{name}`' for name in dependents[image])} |"
             for image in members

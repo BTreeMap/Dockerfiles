@@ -134,7 +134,9 @@ def main() -> int:
                 images=len({task.image for task in tasks}),
                 platforms=len(platforms),
             ),
-            *graph_section(discovered, dependents_of(discovered), levels_of(discovered)),
+            *graph_section(
+                discovered, dependents_of(discovered), levels_of(discovered), len(table)
+            ),
         ]
     )
 

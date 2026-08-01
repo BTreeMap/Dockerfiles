@@ -137,7 +137,7 @@ def test_isolated_images_are_folded_away_but_not_lost() -> None:
     dependents = {"base": ("app",), "app": (), "alone": ()}
     levels = {"base": 1, "app": 2, "alone": 1}
 
-    lines = graph_section(edges, dependents, levels)
+    lines = graph_section(edges, dependents, levels, resolved=9)
     rendered = "\n".join(lines)
 
     assert "<details><summary>Isolated images</summary>" in rendered
@@ -152,7 +152,9 @@ def test_an_empty_cell_reads_as_empty_rather_than_missing() -> None:
     edges = {"base": (), "app": (Dependency(image="base", usage=Usage.BASE),)}
     dependents = {"base": ("app",), "app": ()}
     levels = {"base": 1, "app": 2}
-    assert any(line.endswith("| (none) |") for line in graph_section(edges, dependents, levels))
+    assert any(
+        line.endswith("| (none) |") for line in graph_section(edges, dependents, levels, resolved=9)
+    )
 
 
 # --- ordering ---------------------------------------------------------------
@@ -248,7 +250,7 @@ def test_the_table_answers_how_stale_an_image_is_in_total() -> None:
     dependents = {"base": ("mid",), "mid": ("top",), "top": ("apex",), "apex": ()}
     levels = {"base": 1, "mid": 2, "top": 3, "apex": 4}
 
-    rendered = "\n".join(graph_section(edges, dependents, levels))
+    rendered = "\n".join(graph_section(edges, dependents, levels, resolved=9))
 
     assert "| `base` | this run |" in rendered
     assert "| `mid` | N-1 |" in rendered
@@ -258,3 +260,28 @@ def test_the_table_answers_how_stale_an_image_is_in_total() -> None:
     assert "`apex`" in rendered
     # And the distinction spelled out, since every edge on that row reads "1 back".
     assert "not the largest number on an image's own row" in rendered
+
+
+def test_an_image_the_table_could_not_reach_is_marked_as_such() -> None:
+    """The staleness figure is where the design puts an image, not where it is.
+
+    With a short generation table an edge reaching past its end falls back to its
+    floating tag, so the image is assembled from something other than the column
+    claims. Silence there would state the intent while looking like a measurement,
+    which is the reading the first version of this table invited.
+    """
+    edges = {
+        "base": (),
+        "mid": (Dependency(image="base", usage=Usage.BASE, generations_back=1),),
+        "top": (Dependency(image="mid", usage=Usage.BASE, generations_back=2),),
+    }
+    dependents = {"base": ("mid",), "mid": ("top",), "top": ()}
+    levels = {"base": 1, "mid": 2, "top": 3}
+
+    reached = "\n".join(graph_section(edges, dependents, levels, resolved=2))
+    short = "\n".join(graph_section(edges, dependents, levels, resolved=1))
+
+    assert "not reached" not in reached
+    assert "| `top` | N-2 (not reached: needs 2 generations) |" in short
+    # The image whose edges all fit is not marked, even in the same short run.
+    assert "| `mid` | N-1 |" in short
