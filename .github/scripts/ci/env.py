@@ -6,7 +6,9 @@ one of these parsers rather than being coerced at the point of use.
 
 from __future__ import annotations
 
+import hashlib
 import os
+from base64 import b32encode
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -123,33 +125,90 @@ def read_json[T](name: str, schema: TypeAdapter[T]) -> T:
         raise MissingEnvironment(_explain(name, raw, error)) from error
 
 
+# --- the batch a run publishes under ---------------------------------------
+
+# BLAKE2b personalisation, so this derivation cannot collide with another one
+# over the same material. At most blake2b.PERSON_SIZE (16) bytes.
+_BATCH_SCOPE = b"batch-id-v1"
+
+# 20 bytes is 32 base32 characters exactly: 160 bits divides by 5, so nothing is
+# padded and every batch id is the same width. Width is the point, not entropy --
+# the run id and attempt already identify an execution exactly, and a digest over
+# them can only lose information. What it buys is one opaque token of fixed size,
+# comparable at a glance across the images that share it, instead of a composite
+# that grows with whatever GitHub's run counter reaches.
+_BATCH_BYTES = 20
+
+
+def batch_id(run_id: str, run_attempt: str, commit_sha: str, date_time: str) -> str:
+    """Names the group of images one execution publishes.
+
+    Pure and total, and deliberately derived rather than passed between jobs:
+    every job in a run computes the same token from variables the runner already
+    sets, so there is no wire along which the build, reconcile, and manifest
+    stages could come to disagree about which batch they are in.
+
+    The attempt is mixed in for the reason it is in `mesh.derive_run_key`:
+    GITHUB_RUN_ID is stable across re-runs and only the attempt increments, so
+    without it a re-run would publish into the batch it was meant to replace.
+
+    Newline-joined because none of the four inputs can contain a newline -- the
+    run id and attempt are decimal, the commit is hex, the timestamp is dashes
+    and dots. That makes the encoding injective, which is what stops two distinct
+    runs from presenting identical material to the hash.
+    """
+    material = "\n".join((run_id, run_attempt, commit_sha, date_time))
+    digest = hashlib.blake2b(
+        material.encode(), person=_BATCH_SCOPE, digest_size=_BATCH_BYTES
+    ).digest()
+    # Lowercased because a tag is case-sensitive while a repository name may not
+    # be, and a token that is sometimes shouted invites a 404 nobody can read.
+    # Base32's alphabet is A-Z and 2-7, which already excludes the 0/O and 1/I
+    # pairs, so folding the case costs no distinctness and adds no ambiguity.
+    return b32encode(digest).decode("ascii").lower()
+
+
 @dataclass(frozen=True, slots=True)
 class BuildIdentity:
-    """The timestamp and commit facts that every tag in a run is derived from.
+    """The batch, timestamp, and commit facts that every tag in a run derives from.
 
     Read once and passed down rather than re-read per task, so every image in a
-    run is guaranteed to carry the same date and commit.
+    run is guaranteed to carry the same batch, date, and commit.
     """
 
     date: str
     date_time: str
     commit_sha: str
+    batch: str
     base_image: str
 
     @classmethod
     def from_environment(cls) -> BuildIdentity:
         # Deliberately not a pydantic-settings model. That would aggregate these
-        # five failures into one report, which is worth something -- but none of
+        # seven failures into one report, which is worth something -- but none of
         # these names matches its field, the reads elsewhere are conditional
         # (MESH_SECRET) and dynamically defaulted (BUILD_SLOTS from cpu_count),
         # so the alias and factory boilerplate would exceed what it saves. The
         # constraint work is already pydantic's; only the lookup is not.
         registry = read("DOCKER_REGISTRY", TEXT).lower()
         repository = read("DOCKER_IMAGE_NAME", TEXT).lower()
+        # Bound before the call rather than read inside it: the batch is a
+        # function of these two, and reading them twice would let the tag and the
+        # token they appear in drift if a read ever became non-deterministic.
+        date_time = read("DATE_TIME_STR", TEXT)
+        commit_sha = read("GITHUB_SHA", TEXT)
         return cls(
             date=read("DATE_STR", TEXT),
-            date_time=read("DATE_TIME_STR", TEXT),
-            commit_sha=read("GITHUB_SHA", TEXT),
+            date_time=date_time,
+            commit_sha=commit_sha,
+            # Defaulted because GITHUB_RUN_ATTEMPT is set by the runner but not by
+            # a local invocation, and the first attempt is what its absence means.
+            batch=batch_id(
+                run_id=read("GITHUB_RUN_ID", TEXT),
+                run_attempt=read("GITHUB_RUN_ATTEMPT", TEXT, default="1"),
+                commit_sha=commit_sha,
+                date_time=date_time,
+            ),
             base_image=f"{registry}/{repository}",
         )
 

@@ -37,7 +37,13 @@ ManifestOutcome = ManifestPushed | ManifestFailed
 
 
 def manifest_tags(image: str, identity: BuildIdentity) -> tuple[str, ...]:
-    """The architecture-independent tags that point at the fused manifest."""
+    """The architecture-independent tags that point at the fused manifest.
+
+    Mirrors `docker.tags_for` minus the platform suffix, including the retirement
+    of the `{commit}.{date}` and `{commit}.{date_time}` composites: the batch id
+    is the run-unique pointer now, and the two sets have to agree about that or a
+    manifest would advertise a name no per-platform build published.
+    """
     stem = f"{identity.base_image}:{image}"
     return (
         stem,
@@ -45,8 +51,7 @@ def manifest_tags(image: str, identity: BuildIdentity) -> tuple[str, ...]:
         f"{stem}.{identity.date}",
         f"{stem}.{identity.date_time}",
         f"{stem}.{identity.commit_sha}",
-        f"{stem}.{identity.commit_sha}.{identity.date}",
-        f"{stem}.{identity.commit_sha}.{identity.date_time}",
+        f"{stem}.{identity.batch}",
     )
 
 

@@ -83,6 +83,16 @@ def tags_for(task: Task, identity: BuildIdentity) -> tuple[str, ...]:
     Pure, and the single definition of the naming scheme: reconciliation checks
     for the run-unique tag produced here rather than rebuilding the string, so
     the two cannot drift apart.
+
+    Every tag but the batch one floats: it names a coordinate -- an image, a day,
+    a commit -- that more than one run can land on, and the newest run to finish
+    owns it. The batch tag is the only one that names an execution, which is why
+    it is the only one reconciliation and the manifest stage may trust.
+
+    The `{commit}.{date}` and `{commit}.{date_time}` composites this set used to
+    carry were an attempt at that same guarantee, and a weaker one: two runs of
+    one commit starting in the same second collided. The batch id supersedes
+    them, so publishing them as well would leave two answers to the same question.
     """
     stem = f"{identity.base_image}:{task.image}"
     suffix = task.platform
@@ -92,8 +102,7 @@ def tags_for(task: Task, identity: BuildIdentity) -> tuple[str, ...]:
         f"{stem}.{identity.date}.{suffix}",
         f"{stem}.{identity.date_time}.{suffix}",
         f"{stem}.{identity.commit_sha}.{suffix}",
-        f"{stem}.{identity.commit_sha}.{identity.date}.{suffix}",
-        f"{stem}.{identity.commit_sha}.{identity.date_time}.{suffix}",
+        f"{stem}.{identity.batch}.{suffix}",
     )
 
 
@@ -101,11 +110,11 @@ def run_tag(image: str, platform: str, identity: BuildIdentity) -> str:
     """The tag that proves *this* run produced the image.
 
     Floating tags would still resolve to a previous day's build, so only this
-    one is evidence for reconciliation.
+    one is evidence for reconciliation. The batch id is what makes it evidence:
+    it descends from the run id and attempt, which identify an execution exactly,
+    so no concurrent run and no re-run can publish under this name.
     """
-    return (
-        f"{identity.base_image}:{image}.{identity.commit_sha}.{identity.date_time}.{platform}"
-    )
+    return f"{identity.base_image}:{image}.{identity.batch}.{platform}"
 
 
 def collect_metrics() -> dict[str, str]:

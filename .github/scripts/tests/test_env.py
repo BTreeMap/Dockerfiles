@@ -20,6 +20,7 @@ from ci.env import (
     OPTIONAL_TEXT,
     PORT,
     TEXT,
+    BuildIdentity,
     MissingEnvironment,
     read,
     read_json,
@@ -220,3 +221,50 @@ def test_appending_preserves_earlier_records(
     write_output("first", "1")
     write_output("second", "2")
     assert path.read_text() == "first=1\nsecond=2\n"
+
+
+# --- the run identity -------------------------------------------------------
+
+
+def _stage_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The variables every one of the three stages is given."""
+    for name, value in {
+        "DOCKER_REGISTRY": "GHCR.IO",
+        "DOCKER_IMAGE_NAME": "BTreeMap/Dockerfiles",
+        "DATE_STR": "2026-07-28",
+        "DATE_TIME_STR": "2026-07-28.12-00-00",
+        "GITHUB_SHA": "abc123",
+        "GITHUB_RUN_ID": "18234567891",
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("GITHUB_RUN_ATTEMPT", raising=False)
+
+
+def test_every_stage_of_a_run_derives_the_same_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The property the batch id exists to provide.
+
+    Build, reconcile, and manifest each construct their own identity from the
+    environment rather than being handed one. If those disagreed, reconcile would
+    find no evidence of any build and the manifest stage would fuse nothing.
+    """
+    _stage_environment(monkeypatch)
+    assert BuildIdentity.from_environment() == BuildIdentity.from_environment()
+
+
+def test_a_re_run_gets_its_own_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GITHUB_RUN_ID is stable across re-runs; only the attempt increments.
+
+    Without the attempt in the material, "re-run failed jobs" would publish into
+    the batch it was meant to replace.
+    """
+    _stage_environment(monkeypatch)
+    first = BuildIdentity.from_environment()
+
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    assert BuildIdentity.from_environment().batch != first.batch
+
+
+def test_the_registry_reference_is_lowercased(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A repository name may not carry uppercase; the workflow supplies both cased."""
+    _stage_environment(monkeypatch)
+    assert BuildIdentity.from_environment().base_image == "ghcr.io/btreemap/dockerfiles"

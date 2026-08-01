@@ -12,13 +12,16 @@ import pytest
 from ci.discovery import ConflictingDockerfiles, deal, definitions, discover, seed_for
 from ci.docker import tags_for
 from ci.domain import Platform, Task
-from ci.env import BuildIdentity
+from ci.env import BuildIdentity, batch_id
 from ci.retry import backoff_seconds
 
 IDENTITY = BuildIdentity(
     date="2026-07-28",
     date_time="2026-07-28.12-00-00",
     commit_sha="abc123",
+    batch=batch_id(
+        run_id="17", run_attempt="1", commit_sha="abc123", date_time="2026-07-28.12-00-00"
+    ),
     base_image="ghcr.io/btreemap/dockerfiles",
 )
 
@@ -220,6 +223,61 @@ def test_discovery_is_ordered_and_reproducible_across_both_layouts(tmp_path: Pat
     assert found == discover(tmp_path, (Platform.AMD64,), max_retries=1)
 
 
+# --- the batch id -----------------------------------------------------------
+
+_BATCH_INPUTS = {
+    "run_id": "17",
+    "run_attempt": "1",
+    "commit_sha": "abc123",
+    "date_time": "2026-07-28.12-00-00",
+}
+
+
+def test_the_batch_id_is_a_fixed_width_lowercase_token() -> None:
+    """Width and alphabet are what a tag component is allowed to be.
+
+    128 characters is the whole tag's budget, and this token shares it with an
+    image name and a platform suffix, so its size may not drift silently.
+    """
+    batch = batch_id(**_BATCH_INPUTS)
+
+    assert len(batch) == 32, batch
+    assert set(batch) <= set("abcdefghijklmnopqrstuvwxyz234567"), batch
+
+
+def test_the_batch_id_is_derived_not_random() -> None:
+    """Every job in a run recomputes it rather than being handed it.
+
+    If this were not a function of its inputs alone, the build, reconcile, and
+    manifest stages would each name a different batch and reconciliation would
+    rebuild everything on every run.
+    """
+    assert batch_id(**_BATCH_INPUTS) == batch_id(**_BATCH_INPUTS)
+
+
+@pytest.mark.parametrize("field", sorted(_BATCH_INPUTS))
+def test_every_input_moves_the_batch_id(field: str) -> None:
+    """Including the attempt -- a re-run must not land in the batch it replaces.
+
+    Parametrised so that dropping any one input from the material fails with the
+    name of the input that stopped mattering.
+    """
+    changed = {**_BATCH_INPUTS, field: _BATCH_INPUTS[field] + "9"}
+    assert batch_id(**changed) != batch_id(**_BATCH_INPUTS)
+
+
+def test_the_batch_material_cannot_be_reassociated() -> None:
+    """Adjacent fields must not be able to trade characters across the boundary.
+
+    A separator-free or space-joined encoding would give run 1/attempt 71 and run
+    17/attempt 1 the same material, which is exactly the collision the batch id
+    exists to remove.
+    """
+    assert batch_id(run_id="1", run_attempt="71", commit_sha="abc123", date_time="t") != batch_id(
+        run_id="17", run_attempt="1", commit_sha="abc123", date_time="t"
+    )
+
+
 # --- tagging ---------------------------------------------------------------
 
 
@@ -227,10 +285,41 @@ def test_tags_cover_every_published_variant() -> None:
     task = tasks(1)[0]
     published = tags_for(task, IDENTITY)
 
-    assert len(published) == len(set(published)) == 7
+    assert len(published) == len(set(published)) == 6
     assert published[0] == "ghcr.io/btreemap/dockerfiles:image-0.amd64"
     assert all(tag.endswith(".amd64") for tag in published)
     assert all(":image-0." in tag or tag.endswith(":image-0.amd64") for tag in published)
+
+
+def test_the_superseded_composite_tags_are_no_longer_published() -> None:
+    """The batch id is the run-unique pointer; the old attempts at one are gone.
+
+    Asserted rather than left to the tag count so that reinstating either one
+    fails here with its own name, instead of as an off-by-one nobody can place.
+    """
+    from create_docker_manifests import manifest_tags
+
+    task = tasks(1)[0]
+    superseded = (
+        f"{IDENTITY.commit_sha}.{IDENTITY.date}",
+        f"{IDENTITY.commit_sha}.{IDENTITY.date_time}",
+    )
+    for composite in superseded:
+        assert not any(composite in tag for tag in tags_for(task, IDENTITY)), composite
+        assert not any(composite in tag for tag in manifest_tags("image-0", IDENTITY)), composite
+
+
+def test_the_build_and_manifest_tag_sets_agree() -> None:
+    """A manifest may not advertise a name no per-platform build published.
+
+    The two lists are written out separately -- one carries a platform suffix and
+    the other does not -- so nothing but this check keeps them in step.
+    """
+    from create_docker_manifests import manifest_tags
+
+    task = tasks(1)[0]
+    stripped = tuple(tag.removesuffix(".amd64") for tag in tags_for(task, IDENTITY))
+    assert stripped == manifest_tags("image-0", IDENTITY)
 
 
 def test_the_run_unique_tag_is_among_the_published_tags() -> None:
@@ -262,10 +351,10 @@ def test_backoff_is_capped_and_jittered() -> None:
 def test_manifest_sources_are_run_unique_never_floating() -> None:
     """The property that makes concurrent runs safe to overlap.
 
-    A manifest is fused only from tags carrying both the commit and the run's
-    timestamp, so two runs building at the same time cannot contribute images to
-    each other's manifest. If a source ever became a floating tag, an overlapping
-    run could swap an image out from under a manifest mid-publish.
+    A manifest is fused only from tags carrying this run's batch id, so two runs
+    building at the same time cannot contribute images to each other's manifest.
+    If a source ever became a floating tag, an overlapping run could swap an
+    image out from under a manifest mid-publish.
     """
     from ci.docker import run_tag
     from create_docker_manifests import manifest_tags
@@ -274,16 +363,16 @@ def test_manifest_sources_are_run_unique_never_floating() -> None:
     sources = [run_tag("redis", str(platform), IDENTITY) for platform in platforms]
 
     for source in sources:
-        assert IDENTITY.commit_sha in source, source
-        assert IDENTITY.date_time in source, source
+        assert IDENTITY.batch in source, source
 
     # None of the floating tags the build or manifest stages publish may appear
-    # as a manifest source.
+    # as a manifest source. The date and timestamp are floating now: a re-run of
+    # the same commit within one day shares both, so only the batch is evidence.
     task = Task("redis", "redis/Dockerfile", "redis", Platform.AMD64, 50)
     floating = {
         tag
         for tag in (*tags_for(task, IDENTITY), *manifest_tags("redis", IDENTITY))
-        if IDENTITY.date_time not in tag
+        if IDENTITY.batch not in tag
     }
     assert floating, "expected some floating tags to exist"
     assert not (set(sources) & floating)

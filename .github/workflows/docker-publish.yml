@@ -9,10 +9,12 @@ on:
   workflow_dispatch:
 
 # No workflow-level concurrency: the expensive stages are safe to overlap.
-# A manifest is fused only from tags carrying both the commit and the run's
-# timestamp (see ci/docker.run_tag), so two runs building simultaneously cannot
-# contribute images to each other's manifest. Only the final publish of the
-# floating multi-arch tags is serialised -- see the create-manifest job.
+# A manifest is fused only from tags carrying this run's batch id (see
+# ci/env.batch_id and ci/docker.run_tag), which descends from the run id and
+# attempt and so cannot be minted by any other execution. Two runs building
+# simultaneously therefore cannot contribute images to each other's manifest.
+# Only the final publish of the floating multi-arch tags is serialised -- see
+# the create-manifest job.
 
 env:
   DOCKER_IMAGE_NAME: ${{ github.repository }}
