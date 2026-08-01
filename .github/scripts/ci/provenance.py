@@ -29,7 +29,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, assert_never
 
-from ci.domain import BatchId, Dependency, Platform, Task
+from ci.domain import BatchId, Dependency, Platform, Task, selector, selector_argument
 
 logger = logging.getLogger("ci.provenance")
 
@@ -152,12 +152,11 @@ def resolve(reference: str, platform: Platform) -> Provenance:
     Nothing here may raise, because a build must not fail over a description of
     itself.
 
-    The answer is a snapshot. The build that follows resolves the same floating
-    tag again, and a run publishing concurrently could move it in between. That
-    race is why the digest is recorded beside the batch: it is what makes a
-    disagreement between the label and the image detectable afterwards, and it is
-    an argument for eventually pinning these references rather than describing
-    them.
+    The answer would be only a snapshot -- the build resolving the same floating
+    tag moments later could get something else -- if the build did not then pin
+    to it. `selector_arguments` turns this reading into the reference the build
+    actually uses, which is what makes the label a statement about the image
+    rather than about the registry at an earlier instant.
     """
     try:
         completed = subprocess.run(
@@ -224,6 +223,41 @@ def _compact(payload: Any) -> str:
     changed.
     """
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def selector_arguments(
+    task: Task, registry_repository: str, resolved: Mapping[str, Provenance]
+) -> tuple[str, ...]:
+    """The `--build-arg` arguments pinning each of this task's references.
+
+    An edge we could resolve is pinned to exactly the batch we inspected, which
+    is what closes the gap between describing a build and performing it: without
+    this the label records what the floating tag pointed at when we asked, while
+    the build resolves that same tag again moments later and may get something
+    else. Pinned, the two cannot disagree.
+
+    An edge we could not resolve is passed the empty selector -- the Dockerfile's
+    own default -- so the build proceeds against the floating tag exactly as it
+    did before this mechanism existed. The label already records why, as
+    `unlabelled` or `unreadable`, so a degraded build is described rather than
+    silently different from a pinned one.
+    """
+    if not task.dependencies:
+        return ()
+
+    # The repository half of every reference, passed once. The Dockerfiles carry
+    # the upstream path as a default so they build standalone; a fork's workflow
+    # passes its own here and its images reference each other rather than ours.
+    def pin(dependency: Dependency) -> str:
+        found = resolved.get(dependency.image)
+        batch = found.batch if isinstance(found, Minted) else None
+        return f"{selector_argument(dependency.image)}={selector(batch)}"
+
+    return ("--build-arg", f"REGISTRY={registry_repository}") + tuple(
+        argument
+        for dependency in task.dependencies
+        for argument in ("--build-arg", pin(dependency))
+    )
 
 
 def label_arguments(

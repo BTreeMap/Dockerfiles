@@ -92,6 +92,54 @@ class BatchId:
         return self.value
 
 
+def selector(batch: BatchId | None) -> str:
+    """Renders the optional batch a Dockerfile reference may be sharpened with.
+
+    A Dockerfile writes its dependency as `…:code-server-base${SELECT_…}`, so the
+    image it is built on is literal and unforgeable and only *which batch* is
+    negotiable. That is the whole point of the form: a build argument may narrow
+    the reference, never redirect it. `FROM ${WHOLE_REFERENCE}` would have let a
+    mistake in resolution point the base at any image in the world.
+
+    Absence renders as the empty string, which leaves the floating tag -- so the
+    default value of every selector argument is "" and each Dockerfile still
+    builds standalone with no arguments at all.
+
+    The dot lives here, in the rendering, and never in the value. That is what
+    makes concatenation injective: a batch id is drawn from `_BATCH_ALPHABET`,
+    which contains no dot, so `image` + `.batch` can be read apart again with no
+    escaping and no ambiguity about where the name ends. It is the same law as
+    the separator in `derive.material`, one level down.
+    """
+    return "" if batch is None else f".{batch}"
+
+
+# ASCII only, deliberately -- see `selector_argument`.
+_ARGUMENT_ALPHABET = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+
+def selector_argument(image: str) -> str:
+    """The build argument that carries one image's selector.
+
+    Derived rather than declared, so a Dockerfile and the build stage cannot
+    disagree about what to call it, and so a group of images added tomorrow gets
+    its arguments named by the same rule with no edit anywhere.
+
+    Anything a Dockerfile argument name may not contain becomes an underscore.
+    That is many-to-one -- `a-b` and `a.b` would collide -- which is why
+    discovery checks that the tree's image names stay distinct under it rather
+    than assuming they do.
+
+    Tested against an explicit ASCII set rather than `str.isalnum`, which is
+    Unicode-aware: it admits `é`, and an image name carrying one would have
+    produced `SELECT_CAFÉ_X` -- not a name any Dockerfile argument may take. A
+    directory name is not restricted to ASCII, so this is reachable.
+    """
+    return "SELECT_" + "".join(
+        character if character in _ARGUMENT_ALPHABET else "_" for character in image
+    ).upper()
+
+
 class Platform(StrEnum):
     """The closed set of architectures this repository publishes."""
 
@@ -201,9 +249,6 @@ class Usage(StrEnum):
 
     BASE = "base"
     ARTIFACT = "artifact"
-
-    def __str__(self) -> str:
-        return self.value
 
 
 @pydantic_dataclass(frozen=True)

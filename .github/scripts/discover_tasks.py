@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ci.discovery import ConflictingDockerfiles, MatrixEntry, deal, discover, seed_for
 from ci.domain import Platform
-from ci.env import COUNT, RETRIES, TEXT, read, registry_repository, write_output
+from ci.env import COUNT, RETRIES, TEXT, read, write_output
 from ci.logs import configure
 from ci.references import DanglingReference
 
@@ -34,12 +34,7 @@ def main() -> int:
     worker_count = read("WORKER_COUNT", COUNT, default=4)
 
     try:
-        tasks = discover(
-            Path.cwd(),
-            platforms,
-            read("MAX_RETRIES", RETRIES, default=50),
-            registry_repository(),
-        )
+        tasks = discover(Path.cwd(), platforms, read("MAX_RETRIES", RETRIES, default=50))
     # Both are layout defects the tree can state and only the whole tree can
     # detect, so both are reported here and refuse the run rather than being
     # carried into a build that would publish something arbitrary.

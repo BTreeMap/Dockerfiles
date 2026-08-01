@@ -2,7 +2,30 @@
 # Main image - Using LinuxServer's code-server as the base image
 # code-server provides VS Code in the browser with a full development environment
 # =============================================================================
-FROM ghcr.io/btreemap/dockerfiles:code-server-base
+# The batches this build is pinned to, all empty by default so this file still
+# builds standalone against the floating tags. Only the batch is negotiable --
+# every image below is literal, so a build argument can sharpen a reference but
+# never redirect it. See ci/domain.selector.
+#
+# The repository these images are published under. A default rather than a bare
+# ARG so this file still builds standalone, and a build argument so a fork builds
+# against its *own* images instead of silently consuming upstream's. The workflow
+# passes the same value it pushes to, so this redirects no further than the push
+# destination already does -- while the image name after the colon stays literal,
+# which is the part a mistake must never be able to move.
+# Declared before the first FROM so the base can use one, and re-declared after
+# it for the rest: a global ARG is not in scope inside a build stage until the
+# stage asks for it again, and a COPY --from that silently lost its selector
+# would resolve to the floating tag while every label claimed otherwise.
+ARG REGISTRY=ghcr.io/btreemap/dockerfiles
+ARG SELECT_CODE_SERVER_BASE=
+FROM ${REGISTRY}:code-server-base${SELECT_CODE_SERVER_BASE}
+
+ARG REGISTRY=ghcr.io/btreemap/dockerfiles
+ARG SELECT_CODE_SERVER_PROOT=
+ARG SELECT_CODE_SERVER_HASKELL=
+ARG SELECT_CODE_SERVER_GO=
+ARG SELECT_CODE_SERVER_EBPF_TOOLS=
 
 # Set environment variables for the final image
 ENV CABAL_UPDATE_PACKAGES=true \
@@ -62,19 +85,19 @@ COPY root/ /
 
 # proot lets us create a virtualized filesystem environment without full root
 # privileges. Renamed on the way in, as it was from the builder stage.
-COPY --from=ghcr.io/btreemap/dockerfiles:code-server-proot \
+COPY --from=${REGISTRY}:code-server-proot${SELECT_CODE_SERVER_PROOT} \
     /proot/dist/proot /usr/local/bin/proot
 
 # Haskell (GHC, Cabal, HLS), for development and execution of Haskell programs
-COPY --from=ghcr.io/btreemap/dockerfiles:code-server-haskell \
+COPY --from=${REGISTRY}:code-server-haskell${SELECT_CODE_SERVER_HASKELL} \
     --chown=${PUID}:${PGID} $HASKELL_HOME $HASKELL_HOME
 
 # Go, for development and execution of Go programs
-COPY --from=ghcr.io/btreemap/dockerfiles:code-server-go \
+COPY --from=${REGISTRY}:code-server-go${SELECT_CODE_SERVER_GO} \
     --chown=${PUID}:${PGID} $GO_HOME $GO_HOME
 
 # bpftool, for BPF-related operations
-COPY --from=ghcr.io/btreemap/dockerfiles:code-server-ebpf-tools \
+COPY --from=${REGISTRY}:code-server-ebpf-tools${SELECT_CODE_SERVER_EBPF_TOOLS} \
     --chown=${PUID}:${PGID} $EBPF_TOOLS_HOME $EBPF_TOOLS_HOME
 
 RUN set -ex && \

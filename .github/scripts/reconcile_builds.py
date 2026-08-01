@@ -95,7 +95,7 @@ def main() -> int:
     # directory down under a directory named after the image, which discovery
     # itself does not require.
     try:
-        expected = discover(Path.cwd(), (platform,), max_retries, identity.base_image)
+        expected = discover(Path.cwd(), (platform,), max_retries)
     except ConflictingDockerfiles as conflict:
         logger.error("%s", conflict)
         return 1

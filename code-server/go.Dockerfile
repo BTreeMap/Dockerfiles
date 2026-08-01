@@ -9,7 +9,19 @@
 # Downloads and installs the latest stable Go release for the detected
 # architecture.
 # =============================================================================
-FROM ghcr.io/btreemap/dockerfiles:code-server-base AS go_builder
+# The batch this build is pinned to, empty by default so this file still builds
+# standalone against the floating tag. Only the batch is negotiable -- the image
+# is literal above, so a build argument can sharpen this reference but never
+# redirect it. See ci/domain.selector.
+# The repository these images are published under. A default rather than a bare
+# ARG so this file still builds standalone, and a build argument so a fork builds
+# against its *own* images instead of silently consuming upstream's. The workflow
+# passes the same value it pushes to, so this redirects no further than the push
+# destination already does -- while the image name after the colon stays literal,
+# which is the part a mistake must never be able to move.
+ARG REGISTRY=ghcr.io/btreemap/dockerfiles
+ARG SELECT_CODE_SERVER_BASE=
+FROM ${REGISTRY}:code-server-base${SELECT_CODE_SERVER_BASE} AS go_builder
 
 RUN set -ex && \
     # Determine target architecture

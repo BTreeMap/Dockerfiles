@@ -87,9 +87,7 @@ def definitions(root: Path) -> Mapping[str, Path]:
     return {image: paths[0] for image, paths in grouped.items()}
 
 
-def discover(
-    root: Path, platforms: Iterable[Platform], max_retries: int, registry_repository: str
-) -> tuple[Task, ...]:
+def discover(root: Path, platforms: Iterable[Platform], max_retries: int) -> tuple[Task, ...]:
     """Builds one task per (image, platform), ordered deterministically.
 
     Each task carries both directions of its place in the repository's own
@@ -101,7 +99,7 @@ def discover(
     `DanglingReference` if one consumes an image nothing here builds.
     """
     found = definitions(root)
-    edges = graph(found, registry_repository, root)
+    edges = graph(found, root)
     dependents = dependents_of(edges)
     return tuple(
         Task(

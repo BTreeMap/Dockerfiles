@@ -18,11 +18,28 @@ an edge into a batch live in `ci/provenance.py`, on the other side of that line.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from itertools import dropwhile
 from pathlib import Path
+from typing import assert_never
 
-from ci.domain import Dependency, Usage
+from ci.domain import Dependency, Usage, selector_argument
+
+# The one form a reference to an image of this repository may take. Anchored at
+# both ends so nothing may precede the registry argument or follow the selector.
+#
+# The registry is a build argument rather than a literal path, which is what makes
+# the mechanism fork-safe: a fork publishes under its own name, and a hardcoded
+# `ghcr.io/upstream/...` would make every internal reference look external to it
+# -- no graph, no check, no labels, and a fork silently consuming upstream's
+# images while publishing its own. The image name between them stays literal.
+_INTERNAL = re.compile(r"^\$\{REGISTRY\}:([A-Za-z0-9._-]+)\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
+
+# Everything a reference could name, for the check that catches a reference which
+# should have been written in the form above and was not.
+_TAG = re.compile(r":([A-Za-z0-9._-]+)(?:\$\{[A-Za-z_][A-Za-z0-9_]*\})?$")
 
 
 class DanglingReference(RuntimeError):
@@ -96,67 +113,191 @@ def _reference_in(instruction: Sequence[str]) -> tuple[str, Usage] | None:
             return None
 
 
-def _internal_image(reference: str, registry_repository: str) -> str | None:
-    """The image name this reference names within this repository, or absence.
+# --- what a reference turns out to be ---------------------------------------
 
-    Stage aliases need no tracking to be excluded, which is why none happens
-    here. A `COPY --from=haskell_builder` names a stage declared earlier in the
-    same file, and a stage name may hold only alphanumerics, underscores, dots
-    and hyphens -- so it can never carry the slashes and colon of a registry
-    reference. The prefix test rejects it for free, and `scratch` and every
-    external base with it.
+
+@dataclass(frozen=True, slots=True)
+class Internal:
+    """A reference to an image this repository builds, written so it can be pinned."""
+
+    dependency: Dependency
+
+
+@dataclass(frozen=True, slots=True)
+class Misdeclared:
+    """A reference naming one of our images that cannot be pinned to a batch."""
+
+    reference: str
+    complaint: str
+
+
+@dataclass(frozen=True, slots=True)
+class External:
+    """A reference to an image outside this repository, or to a local stage."""
+
+
+Classified = Internal | Misdeclared | External
+
+# No fields to vary, so one value serves every occurrence.
+_EXTERNAL = External()
+
+
+def classify(reference: str, usage: Usage, known: frozenset[str]) -> Classified:
+    """Decides what one reference is, in a single pass over one regular expression.
+
+    The three outcomes were previously two separate questions -- "is this an edge"
+    and "is this a defect" -- asked by two functions over two traversals of the
+    same file, each running its own match. Two answers to one question can drift;
+    one closed sum cannot, and callers now eliminate it exhaustively instead of
+    testing for absence twice.
+
+    Stage aliases need no tracking to be excluded. A `COPY --from=haskell_builder`
+    names a stage declared earlier in the same file, and a stage name may hold
+    neither `${` nor a colon -- so the canonical pattern rejects it for free, and
+    `scratch` and every external base with it.
+
+    Membership is keyed on the image *name*, not on the registry path, which is
+    what makes the check fork-safe: a fork that left `ghcr.io/upstream/...` in
+    place would otherwise have that reference classified external and never
+    checked, and would consume upstream's images while publishing its own.
     """
-    prefix = f"{registry_repository}:".lower()
-    if not reference.lower().startswith(prefix):
-        return None
-    # Everything after the colon is the tag, which for this repository *is* the
-    # image name -- the naming scheme in ci/discovery.py puts it there.
-    return reference[len(prefix) :] or None
+    canonical = _INTERNAL.match(reference)
+    if canonical is not None:
+        image, declared = canonical.group(1), canonical.group(2)
+        expected = selector_argument(image)
+        if declared != expected:
+            return Misdeclared(
+                reference, f"carries ${{{declared}}}, but {image}'s selector is ${{{expected}}}"
+            )
+        return Internal(Dependency(image=image, usage=usage))
+
+    tagged = _TAG.search(reference)
+    if tagged is None or tagged.group(1) not in known:
+        return _EXTERNAL
+
+    image = tagged.group(1)
+    return Misdeclared(
+        reference,
+        f"names {image}, which this repository builds, but is not written as "
+        f"${{REGISTRY}}:{image}${{{selector_argument(image)}}}",
+    )
 
 
-def _edge_in(instruction: str, registry_repository: str) -> Dependency | None:
-    """One instruction's edge, or absence -- the composition of the two tests.
+class UnpinnableReference(RuntimeError):
+    """A Dockerfile names one of our images without a selector it can be pinned by.
 
-    Named rather than inlined so both partial steps keep a place to fail: a line
-    that is not FROM or COPY, and a reference that is not this repository's.
+    Refused rather than tolerated because tolerating it is invisible. The build
+    would pass a selector, the Dockerfile would ignore it, the floating tag would
+    resolve to whatever is newest, and the label would still claim the batch that
+    was asked for. Every downstream reader would be told something untrue.
     """
-    found = _reference_in(tuple(instruction.split()))
-    if found is None:
-        return None
-    reference, usage = found
-    image = _internal_image(reference, registry_repository)
-    return None if image is None else Dependency(image=image, usage=usage)
+
+    def __init__(self, defects: Mapping[str, tuple[str, ...]]) -> None:
+        super().__init__(
+            "These references cannot be pinned to a batch:\n"
+            + "\n".join(
+                f"  {where}:\n" + "\n".join(f"    {detail}" for detail in details)
+                for where, details in defects.items()
+            )
+        )
+        self.defects = dict(defects)
 
 
-def dependencies_in(text: str, registry_repository: str) -> tuple[Dependency, ...]:
+def classified_in(text: str, known: frozenset[str]) -> Iterator[Classified]:
+    """Every reference one Dockerfile makes, classified, in order of appearance."""
+    return (
+        classify(reference, usage, known)
+        for instruction in logical_lines(text)
+        for found in (_reference_in(tuple(instruction.split())),)
+        if found is not None
+        for reference, usage in (found,)
+    )
+
+
+def _read(text: str, known: frozenset[str]) -> tuple[tuple[Dependency, ...], tuple[str, ...]]:
+    """One file's edges and its defects, from one traversal.
+
+    A loop rather than two comprehensions because both outputs come from one
+    elimination: `match` over a closed sum with `assert_never` is what makes a
+    fourth variant a type error here rather than a silently dropped reference.
+    The mutation is confined to two locals that never escape, which is the honest
+    backend for a partition Python has no primitive for.
+
+    Edges are deduplicated and ordered by (image, usage) rather than by
+    appearance, so a label rendered from them is byte-stable: moving a COPY within
+    a file must not change the digest of the image it builds. One image may
+    legitimately appear twice with different usages -- built on, then copied out
+    of -- so the pair is the unit of identity, not the name.
+    """
+    edges: list[Dependency] = []
+    defects: list[str] = []
+    for item in classified_in(text, known):
+        match item:
+            case Internal(dependency):
+                edges.append(dependency)
+            case Misdeclared(reference, complaint):
+                defects.append(f"{reference}  -- {complaint}")
+            case External():
+                pass
+            case unreachable:
+                assert_never(unreachable)
+    return tuple(sorted(set(edges), key=Dependency.sort_key)), tuple(defects)
+
+
+def dependencies_in(text: str, known: frozenset[str] = frozenset()) -> tuple[Dependency, ...]:
     """The edges one Dockerfile declares, deduplicated and ordered.
 
-    Ordered by (image, usage) rather than by appearance so a label rendered from
-    this is byte-stable: moving a COPY within a file must not change the digest
-    of the image it builds.
-
-    One image may legitimately appear twice with different usages -- built on,
-    then copied out of -- so the pair is the unit of identity, not the name.
+    `known` defaults to empty because edges do not depend on it -- only the defect
+    report does, and a caller asking just for edges has nothing to do with one.
     """
-    edges = filter(
-        None, (_edge_in(instruction, registry_repository) for instruction in logical_lines(text))
-    )
-    return tuple(sorted(set(edges), key=Dependency.sort_key))
+    return _read(text, known)[0]
 
 
-def graph(
-    definitions: Mapping[str, Path], registry_repository: str, root: Path
-) -> Mapping[str, tuple[Dependency, ...]]:
+def _colliding_arguments(definitions: Mapping[str, Path]) -> Mapping[str, tuple[str, ...]]:
+    """Images whose names differ only where `selector_argument` folds them.
+
+    `a-b` and `a.b` both become SELECT_A_B, so one would silently pin the other.
+    Grouped rather than compared pairwise, which reports each collision once
+    instead of once per direction.
+    """
+    grouped: dict[str, list[str]] = {}
+    for image in sorted(definitions):
+        grouped.setdefault(selector_argument(image), []).append(image)
+    return {
+        str(definitions[images[0]]): (
+            f"selector argument ${{{argument}}} is claimed by {', '.join(images)}",
+        )
+        for argument, images in grouped.items()
+        if len(images) > 1
+    }
+
+
+def graph(definitions: Mapping[str, Path], root: Path) -> Mapping[str, tuple[Dependency, ...]]:
     """Every image's outgoing edges, for every image the repository defines.
 
-    Raises `DanglingReference` if any edge names an image no Dockerfile builds.
-    Checked here rather than per file because the question is about the whole
-    tree: a reference is dangling only if *nothing* defines its target.
+    Raises `UnpinnableReference` if a reference cannot carry a batch, and
+    `DanglingReference` if any edge names an image no Dockerfile builds. Both are
+    checked here rather than per file because both are questions about the whole
+    tree: a name is dangling only if *nothing* defines it, and two image names
+    collide as arguments only relative to each other.
+
+    Each Dockerfile is read once and traversed once; `_read` returns both answers
+    from that single pass.
     """
-    edges = {
-        image: dependencies_in((root / path).read_text(encoding="utf-8"), registry_repository)
+    known = frozenset(definitions)
+    parsed = {
+        image: _read((root / path).read_text(encoding="utf-8"), known)
         for image, path in definitions.items()
     }
+
+    unpinnable = {
+        str(definitions[image]): defects for image, (_, defects) in parsed.items() if defects
+    }
+    collisions = _colliding_arguments(definitions)
+    if unpinnable or collisions:
+        raise UnpinnableReference({**collisions, **unpinnable})
+
+    edges = {image: found for image, (found, _) in parsed.items()}
     dangling = {
         target: tuple(
             sorted(image for image, found in edges.items() if any(d.image == target for d in found))
