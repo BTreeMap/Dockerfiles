@@ -158,11 +158,17 @@ class BuildIdentity:
             date=read("DATE_STR", TEXT),
             date_time=date_time,
             commit_sha=commit_sha,
-            # Defaulted because GITHUB_RUN_ATTEMPT is set by the runner but not by
-            # a local invocation, and the first attempt is what its absence means.
+            # PLAN_RUN_*, not GITHUB_RUN_*, and required rather than defaulted.
+            # Both readings matter. The plan job pins these alongside the
+            # timestamp so a partial re-run derives the batch its predecessor
+            # published under; reading the runner's live variables instead would
+            # give a re-run a batch of its own and hide every image already in
+            # the registry from reconcile. And a default would let a job the
+            # workflow forgot to thread fall back to "1" and derive a different
+            # batch in silence -- the same failure, arrived at more quietly.
             batch=BatchId.derive(
-                run_id=read("GITHUB_RUN_ID", TEXT),
-                run_attempt=read("GITHUB_RUN_ATTEMPT", TEXT, default="1"),
+                run_id=read("PLAN_RUN_ID", TEXT),
+                run_attempt=read("PLAN_RUN_ATTEMPT", TEXT),
                 commit_sha=commit_sha,
                 date_time=date_time,
             ),

@@ -227,17 +227,17 @@ def test_appending_preserves_earlier_records(
 
 
 def _stage_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The variables every one of the three stages is given."""
+    """The variables every one of the three stages is given by the plan job."""
     for name, value in {
         "DOCKER_REGISTRY": "GHCR.IO",
         "DOCKER_IMAGE_NAME": "BTreeMap/Dockerfiles",
         "DATE_STR": "2026-07-28",
         "DATE_TIME_STR": "2026-07-28.12-00-00",
         "GITHUB_SHA": "abc123",
-        "GITHUB_RUN_ID": "18234567891",
+        "PLAN_RUN_ID": "18234567891",
+        "PLAN_RUN_ATTEMPT": "1",
     }.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("GITHUB_RUN_ATTEMPT", raising=False)
 
 
 def test_every_stage_of_a_run_derives_the_same_batch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -251,17 +251,51 @@ def test_every_stage_of_a_run_derives_the_same_batch(monkeypatch: pytest.MonkeyP
     assert BuildIdentity.from_environment() == BuildIdentity.from_environment()
 
 
-def test_a_re_run_gets_its_own_batch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """GITHUB_RUN_ID is stable across re-runs; only the attempt increments.
+def test_a_partial_re_run_stays_in_the_batch_it_is_repairing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The case that makes these values plan-pinned rather than read live.
 
-    Without the attempt in the material, "re-run failed jobs" would publish into
-    the batch it was meant to replace.
+    "Re-run failed jobs" leaves the plan job alone and replays its outputs, so a
+    re-run of the build stage is handed attempt 1's values while the runner's own
+    GITHUB_RUN_ATTEMPT says 2. The batch must follow the plan: the images that
+    already landed were published under attempt 1's, and reconcile finds them by
+    that name or not at all.
     """
+    _stage_environment(monkeypatch)
+    planned = BuildIdentity.from_environment()
+
+    # What the runner reports during the re-run. Nothing here may read it.
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setenv("GITHUB_RUN_ID", "99999999999")
+    assert BuildIdentity.from_environment().batch == planned.batch
+
+
+def test_a_fresh_plan_gets_its_own_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Re-running the plan job re-runs everything downstream, so a new batch is
+    the correct outcome -- and the attempt is what distinguishes it, since the
+    run id is stable across re-runs of one run."""
     _stage_environment(monkeypatch)
     first = BuildIdentity.from_environment()
 
-    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setenv("PLAN_RUN_ATTEMPT", "2")
     assert BuildIdentity.from_environment().batch != first.batch
+
+
+@pytest.mark.parametrize("missing", ["PLAN_RUN_ID", "PLAN_RUN_ATTEMPT"])
+def test_an_unthreaded_plan_value_fails_loudly(
+    monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    """Required, not defaulted.
+
+    A default would let a job the workflow forgot to thread derive a different
+    batch in silence, which is the same corruption as reading the live attempt
+    but harder to notice.
+    """
+    _stage_environment(monkeypatch)
+    monkeypatch.delenv(missing, raising=False)
+    with pytest.raises(MissingEnvironment, match=missing):
+        BuildIdentity.from_environment()
 
 
 def test_the_registry_reference_is_lowercased(monkeypatch: pytest.MonkeyPatch) -> None:

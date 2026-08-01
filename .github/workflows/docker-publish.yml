@@ -40,6 +40,8 @@ jobs:
       date: ${{ steps.timestamp.outputs.date }}
       date_time: ${{ steps.timestamp.outputs.date_time }}
       source_date_epoch: ${{ steps.timestamp.outputs.source_date_epoch }}
+      run_id: ${{ steps.timestamp.outputs.run_id }}
+      run_attempt: ${{ steps.timestamp.outputs.run_attempt }}
       matrix: ${{ steps.discover.outputs.matrix }}
       reconcile_matrix: ${{ steps.discover.outputs.reconcile_matrix }}
       images: ${{ steps.discover.outputs.images }}
@@ -71,6 +73,29 @@ jobs:
           echo "date=$date" >> $GITHUB_OUTPUT
           echo "date_time=$date_time" >> $GITHUB_OUTPUT
           echo "source_date_epoch=$source_date_epoch" >> $GITHUB_OUTPUT
+
+          # Pinned here for the same reason the timestamp is, and it is the
+          # attempt that makes it necessary. "Re-run failed jobs" leaves a job
+          # that succeeded alone and replays its stored outputs, so this job
+          # reports the attempt that first planned the run while a downstream
+          # job reading github.run_attempt live would see the attempt it is
+          # being re-run under. The batch would then differ from the one the
+          # images already in the registry were published under: reconcile
+          # would find none of them and rebuild everything, and the manifest
+          # would fuse only from what the re-run produced.
+          #
+          # Pinning makes a batch name the plan that scoped the work rather
+          # than the GitHub execution replaying part of it. Should this job
+          # itself be re-run, every downstream job re-runs with it and the
+          # fresh values are the correct ones.
+          #
+          # Deliberately not spelled GITHUB_RUN_*: build_docker_images.py reads
+          # those live for the mesh key, which must change on a re-run so a key
+          # that may already have been exposed is never reused. Two senses of
+          # "this run", and shadowing the runner's variables would collapse
+          # them into one.
+          echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
+          echo "run_attempt=${{ github.run_attempt }}" >> $GITHUB_OUTPUT
 
       # Single source of truth for the work list: deals disjoint task shares to
       # the workers and mints the run-scoped mesh secret.
@@ -144,6 +169,8 @@ jobs:
         env:
           DATE_STR: ${{ needs.plan.outputs.date }}
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
+          PLAN_RUN_ID: ${{ needs.plan.outputs.run_id }}
+          PLAN_RUN_ATTEMPT: ${{ needs.plan.outputs.run_attempt }}
           DOCKER_PLATFORM: ${{ matrix.platform }}
           SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
           WORKER_ID: ${{ matrix.worker_id }}
@@ -207,6 +234,8 @@ jobs:
         env:
           DATE_STR: ${{ needs.plan.outputs.date }}
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
+          PLAN_RUN_ID: ${{ needs.plan.outputs.run_id }}
+          PLAN_RUN_ATTEMPT: ${{ needs.plan.outputs.run_attempt }}
           SOURCE_DATE_EPOCH: ${{ needs.plan.outputs.source_date_epoch }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}
           BUILD_SLOTS: ${{ env.BUILD_SLOTS }}
@@ -251,6 +280,8 @@ jobs:
         env:
           DATE_STR: ${{ needs.plan.outputs.date }}
           DATE_TIME_STR: ${{ needs.plan.outputs.date_time }}
+          PLAN_RUN_ID: ${{ needs.plan.outputs.run_id }}
+          PLAN_RUN_ATTEMPT: ${{ needs.plan.outputs.run_attempt }}
           IMAGES: ${{ needs.plan.outputs.images }}
           PLATFORMS: ${{ needs.plan.outputs.platforms }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}

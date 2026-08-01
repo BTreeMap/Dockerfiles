@@ -60,15 +60,17 @@ class BatchId:
     def derive(cls, run_id: str, run_attempt: str, commit_sha: str, date_time: str) -> Self:
         """Mints the batch for one execution.
 
-        Pure and total, and deliberately derived rather than passed between
-        jobs: every job in a run computes the same token from variables the
-        runner already sets, so there is no wire along which the build,
-        reconcile, and manifest stages could come to disagree about which batch
-        they are in.
+        Pure and total. Every stage of a run derives the token rather than
+        being handed it, from four values the plan job pinned, so the build,
+        reconcile, and manifest stages cannot come to disagree about which
+        batch they are in.
 
-        The attempt is mixed in for the reason it is in `mesh.derive_run_key`:
-        GITHUB_RUN_ID is stable across re-runs and only the attempt increments,
-        so without it a re-run would publish into the batch it was replacing.
+        The attempt is mixed in because GITHUB_RUN_ID is stable across re-runs
+        and only the attempt increments, so without it a fresh run of the plan
+        would publish into the batch it was replacing. It must be the attempt
+        the *plan* observed, not the live one -- see `env.BuildIdentity`, where
+        that distinction is the difference between a partial re-run reusing the
+        images already in the registry and rebuilding all of them.
         """
         return cls(_BATCH.of(run_id, run_attempt, commit_sha, date_time).base32())
 
