@@ -88,7 +88,7 @@ def decide_idle(
             return Build(task=tasks[0], deferred=tasks[1:])
         case PeerEmpty() | PeerUnreachable():
             if peers_drained:
-                return Stop("all peers reachable and drained")
+                return Stop("every peer accounted for, none with work to spare")
             if idle_elapsed_seconds > grace_seconds:
                 return Stop(f"idle {idle_elapsed_seconds:.0f}s with no reachable work")
             return WaitAndRetry()

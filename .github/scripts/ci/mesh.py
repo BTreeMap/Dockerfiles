@@ -458,11 +458,10 @@ class MeshClient:
         # can be exercised against a plain-HTTP loopback endpoint; in production
         # a quick tunnel is always reached over TLS.
         self._peer_origin = peer_origin
+        # Monotone: a peer that has published its rendezvous ref is remembered
+        # whether or not it still answers, which is what makes the question
+        # `peers_drained` asks a stable one. A mesh cannot un-assemble.
         self._known: dict[int, Hostname] = {}
-        # Monotone: hosts that have answered at least once. Both this and
-        # `_known` only ever grow, which is what makes the questions asked of
-        # them stable -- a peer cannot un-exist, and a mesh cannot un-assemble.
-        self._reached: set[Hostname] = set()
 
     def seed_peers(self, peers: Mapping[int, Hostname]) -> None:
         """Injects known membership, bypassing the git-ref rendezvous."""
@@ -589,14 +588,7 @@ class MeshClient:
         return Stolen(parsed) if parsed else PeerEmpty()
 
     def health_of(self, hostname: Hostname) -> PeerHealth:
-        """Asks one peer what it has to spare. Never raises.
-
-        This is also where the mesh's knowledge of who has ever answered is
-        recorded, because it is the boundary at which contact happens. That set
-        is what lets `peers_drained` tell a peer that has finished and gone away
-        from one that has not booted yet -- an unreachable host is otherwise the
-        same observation in both cases, and they call for opposite decisions.
-        """
+        """Asks one peer what it has to spare. Never raises."""
         try:
             origin = self._peer_origin(hostname)
             response = self._peers.get(
@@ -606,7 +598,6 @@ class MeshClient:
             spare = HealthReport.model_validate_json(response.content).spare
         except (httpx.HTTPError, ValueError, TypeError) as error:
             return HealthUnknown(str(error))
-        self._reached.add(hostname)
         return Drained() if spare == 0 else Working(spare)
 
     def _headers(self, method: str, path: str, body: bytes) -> Mapping[str, str]:
@@ -660,24 +651,19 @@ class MeshClient:
     def peers_drained(self) -> bool:
         """True only when no expected peer can ever hand this worker more work.
 
-        Requiring the full expected count is what stops an incomplete view being
-        mistaken for the work being finished: a peer that has not published yet
-        keeps this false, so silence from a mesh still assembling itself is
-        never read as completion.
-
-        Past that, each peer is settled by `_finished`, and the interesting case
-        is the one this used to get wrong in the other direction. A worker exits
-        only once its own queue is empty, so a peer that answered before and has
-        now gone silent has finished; treating it as unknown made whoever
-        outlived the rest of the mesh sit out the whole grace period at the end
-        of every run, polling hosts that no longer existed.
+        The count gate is what stops an incomplete view being mistaken for the
+        work being finished, and it is also what makes the branch below sound. A
+        worker publishes its rendezvous ref only after its tunnel came up, so a
+        ref is that worker's own signed statement that it booted and served.
+        Until every expected peer has published one, some peer may still be
+        starting and this is false -- which is the case the grace period bounds.
         """
         peers = self.discover_peers()
         if len(peers) < self._expected_peers:
             return False
-        return all(map(self._finished, peers.values()))
+        return all(map(self._settled, peers.values()))
 
-    def _finished(self, hostname: Hostname) -> bool:
+    def _settled(self, hostname: Hostname) -> bool:
         """Whether this peer is ruled out as a source of any future work.
 
         Total over the health sum, and each branch is a different kind of
@@ -688,15 +674,25 @@ class MeshClient:
 
         `Working` is the one answer that keeps a thief alive.
 
-        `HealthUnknown` is read against what this client already knows. A host
-        it has reached before and cannot reach now has shut down, which it does
-        only with an empty queue. A host it has never reached may simply be
-        booting, and that is the case the grace period exists for.
+        `HealthUnknown` is read against the ref that got us here. Its owner
+        published it after its tunnel came up, so this peer booted; unreachable
+        now means it has exited -- which a worker does only with an empty queue
+        -- or that its tunnel has died, which no worker re-establishes. Neither
+        will ever hand over a task, and both are settled.
 
-        The risk in the reached-before branch is a network fault mistaken for a
-        shutdown, and its cost is the one `decide_idle` already accepts for the
-        grace period expiring: a missed steal, never a missed build. An unstolen
-        task stays with whoever was dealt it.
+        This rested on a weaker fact before: whether *this* client had reached
+        that host earlier. Contact only happens when a slot goes idle, so the
+        last worker standing -- the one that stayed busy longest, by definition
+        -- had asked nobody anything and treated every departed peer as possibly
+        still booting. It sat out the entire grace period at the end of every
+        run, polling hosts whose runners were already gone. The ref is the
+        durable form of the same evidence: it records that the peer was alive
+        whether or not anybody happened to be looking.
+
+        The risk is a peer announced but not yet routable, read as departed. Its
+        cost is the one `decide_idle` already accepts when the grace period
+        expires: a missed steal, never a missed build, since an unstolen task
+        stays with whoever was dealt it.
         """
         match self.health_of(hostname):
             case Drained():
@@ -704,6 +700,6 @@ class MeshClient:
             case Working():
                 return False
             case HealthUnknown():
-                return hostname in self._reached
+                return True
             case other:
                 assert_never(other)

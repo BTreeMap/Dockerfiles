@@ -288,16 +288,22 @@ def test_client_reports_empty_rather_than_unreachable_when_a_peer_answers() -> N
 
 
 def test_client_reports_unreachable_when_nobody_answers() -> None:
-    client = client_for(worker_id=1, port=1)
-    assert isinstance(client.steal_from(HOST), PeerUnreachable)
-    assert client.peers_drained() is False
+    """The distinction that makes a silently broken mesh visible in the logs."""
+    assert isinstance(client_for(worker_id=1, port=1).steal_from(HOST), PeerUnreachable)
 
 
-def test_drained_requires_every_expected_peer() -> None:
+def test_a_peer_that_has_not_published_keeps_a_worker_waiting() -> None:
+    """The one case the grace period exists for, and the only thing bounding it.
+
+    A worker that has not published its rendezvous ref may still be booting, and
+    nothing this client can observe distinguishes that from a worker that will
+    never arrive. So it waits, and the grace period is what stops it waiting for
+    the rest of the run.
+    """
     with serve_mesh(worker_id=0, secret=SECRET, queue=TaskQueue([])) as port:
         assert client_for(1, port, expected_peers=1).peers_drained() is True
-        # A peer we have not discovered yet keeps this False, which is what
-        # stops a worker exiting while a late booter still holds tasks.
+        # A second peer, expected but never seen: the count is short and this
+        # stays False whatever the peers that did publish have to say.
         assert client_for(1, port, expected_peers=2).peers_drained() is False
 
 
@@ -324,43 +330,21 @@ def test_a_peer_with_work_to_give_keeps_a_thief_alive() -> None:
         assert client.peers_drained() is False
 
 
-def test_a_peer_that_has_answered_before_and_gone_is_finished() -> None:
-    """A worker shuts down only with an empty queue, so silence after contact is
-    completion rather than absence.
+def test_a_peer_that_published_and_cannot_be_reached_is_finished() -> None:
+    """The case that cost the last worker standing the whole grace period.
 
-    Without this the last worker standing waited out the grace period at the end
-    of every run, polling hosts whose runners had already been torn down.
+    Its ref exists, so that worker booted and served; unreachable now means it
+    has exited, which it does only with an empty queue, or that its tunnel died,
+    which nothing re-establishes. Neither will hand over a task.
+
+    This is the evidence the ref carries and prior contact does not. Contact only
+    happens when a slot goes idle, and the last worker to finish -- the one that
+    stayed busy longest, by definition -- has spoken to nobody by the time every
+    peer is already gone.
     """
-    # Redirected rather than shut down: closing the endpoint leaves the client's
-    # keep-alive connection served by a lingering handler thread, so the peer
-    # would still answer and the test would prove nothing.
-    reachable_at = [0]
-    client = MeshClient(
-        secret=SECRET,
-        worker_id=1,
-        rendezvous=RENDEZVOUS,
-        github=httpx.Client(base_url="http://127.0.0.1:1", timeout=0.25),
-        peers_client=httpx.Client(timeout=5.0),
-        expected_peers=1,
-        peer_origin=lambda _hostname: f"http://127.0.0.1:{reachable_at[0]}",
-    )
-    client.seed_peers({0: HOST})
-
-    with serve_mesh(worker_id=0, secret=SECRET, queue=TaskQueue([task("mine")])) as port:
-        reachable_at[0] = port
-        assert client.health_of(HOST) == Drained()
-
-    reachable_at[0] = 1  # nothing listens here
+    client = client_for(worker_id=1, port=1, expected_peers=1)  # nothing listens on port 1
     assert isinstance(client.health_of(HOST), HealthUnknown)
     assert client.peers_drained() is True
-
-
-def test_a_peer_that_has_never_answered_is_not_finished() -> None:
-    """The distinction the whole rule turns on: not booted yet is not done."""
-    client = client_for(worker_id=1, port=1, expected_peers=1)
-    client.seed_peers({0: HOST})
-    assert isinstance(client.health_of(HOST), HealthUnknown)
-    assert client.peers_drained() is False
 
 
 # --- degradation without a credential --------------------------------------
