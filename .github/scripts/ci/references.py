@@ -172,14 +172,18 @@ def graph(
 def dependents_of(edges: Mapping[str, tuple[Dependency, ...]]) -> Mapping[str, tuple[str, ...]]:
     """The graph inverted: for each image, who consumes it.
 
-    Carried on the task so a published image can say what depends on it, not
-    only what it depends on. That direction is the one a reader needs when
-    deciding whether an image is safe to change, and it is unavailable from the
-    image itself -- nothing downstream has been built yet when it is published.
+    Carried on the task to decide whether it is labelled at all, which is the
+    one thing this direction is needed for. An image nothing here consumes has
+    no use for a batch label; an image something here consumes must carry one
+    even when it has no dependencies of its own, or its consumers have nothing
+    to read off it.
 
-    Usage is deliberately dropped: an image's dependents are a fact about the
-    repository's shape, and recording *how* each consumes it here would duplicate
-    what that consumer's own `consumes` label already states more precisely.
+    Not published as a label. Who consumes an image is a fact about the source
+    tree rather than about the build -- recoverable by running this function over
+    any checkout -- so recording it on the image would duplicate git.
+
+    Usage is dropped for the same reason: membership does not depend on it, and
+    the consumer's own `consumes` label states it more precisely.
     """
     return {
         image: tuple(

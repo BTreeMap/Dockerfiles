@@ -244,13 +244,17 @@ class Task:
     max_retries: _Integer
     # Both directions of this image's place in the repository's own dependency
     # graph, and both carried rather than looked up: a stolen task must still
-    # know what it consumes and who consumes it, which is the same closure
-    # argument the retry budget is here for.
+    # know them, which is the same closure argument the retry budget is here for.
     #
-    # Defaulted because most images are isolated -- they depend on nothing here
-    # and nothing here depends on them -- and an empty pair is precisely how the
-    # provenance labels know to stay off an image whose digest would otherwise
-    # churn on every run for no information. See `provenance.label_arguments`.
+    # They are not symmetric in use. `dependencies` is resolved against the
+    # registry and published as a label; `dependents` is never published -- who
+    # consumes an image is recoverable from any checkout -- and exists only to
+    # decide whether this image is labelled at all.
+    #
+    # Defaulted because most images are isolated, and an empty pair is precisely
+    # how the provenance labels know to stay off an image whose digest would
+    # otherwise churn every run for no information. See
+    # `provenance.label_arguments`.
     dependencies: tuple[Dependency, ...] = ()
     dependents: tuple[_NonEmptyText, ...] = ()
 

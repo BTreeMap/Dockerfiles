@@ -16,7 +16,6 @@ import pytest
 from ci.domain import BatchId, Dependency, Platform, Task, Usage
 from ci.provenance import (
     BATCH_LABEL,
-    CONSUMED_BY_LABEL,
     CONSUMES_LABEL,
     IMAGE_LABEL,
     Minted,
@@ -128,15 +127,37 @@ def test_an_image_outside_the_graph_carries_no_labels() -> None:
 
 
 def test_a_referenced_image_is_labelled_even_with_no_dependencies_of_its_own() -> None:
-    """It must carry a batch, or its consumers have nothing to read."""
+    """It must carry a batch, or its consumers have nothing to read.
+
+    `code-server-base` and `code-server-proot` are this case in the real tree:
+    no edges out, and unlabelled they would break the mechanism for everything
+    downstream of them.
+    """
     rendered_labels = labels(
         label_arguments(task(image="code-server-base", dependents=("code-server",)), BATCH, {})
     )
 
     assert rendered_labels[BATCH_LABEL] == str(BATCH)
     assert rendered_labels[IMAGE_LABEL] == "code-server-base"
-    assert rendered_labels[CONSUMED_BY_LABEL] == '["code-server"]'
     assert CONSUMES_LABEL not in rendered_labels
+
+
+def test_dependents_decide_membership_but_are_never_published() -> None:
+    """Who consumes an image is recoverable from any checkout, so git holds it.
+
+    Every other label describes something only the run knows. This asserts the
+    asymmetry directly: the inverted graph changes *whether* labels appear, and
+    appears in none of them.
+    """
+    consumers = ("code-server", "code-server-full")
+    rendered_labels = labels(
+        label_arguments(task(image="code-server-base", dependents=consumers), BATCH, {})
+    )
+
+    assert set(rendered_labels) == {IMAGE_LABEL, BATCH_LABEL}
+    assert not any(
+        consumer in value for value in rendered_labels.values() for consumer in ("full",)
+    )
 
 
 def test_a_consuming_image_records_the_batch_behind_each_edge() -> None:

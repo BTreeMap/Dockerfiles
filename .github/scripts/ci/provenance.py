@@ -41,7 +41,13 @@ _PREFIX = "io.github.btreemap.dockerfiles"
 IMAGE_LABEL = f"{_PREFIX}.image"
 BATCH_LABEL = f"{_PREFIX}.batch"
 CONSUMES_LABEL = f"{_PREFIX}.consumes"
-CONSUMED_BY_LABEL = f"{_PREFIX}.consumed-by"
+
+# There is deliberately no `consumed-by` label. Who consumes an image is a fact
+# about the source tree rather than about the build, recoverable by running the
+# parser over any checkout, so recording it on the image would duplicate what git
+# already holds. Every other label here describes something only the run knows.
+# The inverted graph is still carried on the task -- it decides *membership*, not
+# a label of its own. See `label_arguments`.
 
 # Bounded because this runs inside a build worker that is already holding a
 # builder and a share of the run's tasks. A registry that has stopped answering
@@ -230,8 +236,15 @@ def label_arguments(
     for whether an image is labelled, and no image outside the graph pays a digest
     change for a batch it has no use for.
 
-    `consumes` and `consumed-by` are each omitted when their direction is empty,
-    so a leaf of the graph carries no key claiming it has no dependents.
+    Both directions decide membership, but only one is rendered. An image nothing
+    here consumes gains nothing from a batch label; an image something here
+    consumes must carry one whether or not it has dependencies of its own, or its
+    consumers have nothing to read. `code-server-base` and `code-server-proot` are
+    exactly that case -- no edges out, and unlabelled they would silently break
+    the mechanism for everything downstream of them.
+
+    `consumes` is omitted when this image has no dependencies, so a root of the
+    graph carries no key claiming it depends on nothing.
     """
     if not task.dependencies and not task.dependents:
         return ()
@@ -251,8 +264,6 @@ def label_arguments(
                 for dependency in task.dependencies
             ]
         )
-    if task.dependents:
-        labels[CONSUMED_BY_LABEL] = _compact(list(task.dependents))
 
     return tuple(
         argument for name, value in labels.items() for argument in ("--label", f"{name}={value}")
