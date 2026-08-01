@@ -38,14 +38,11 @@ from ci.domain import (
     succeeded,
 )
 
-# Enough to tell two batches apart at a glance and to search the log for, while
-# staying narrow enough that a row of them still reads as a row. The full value
-# is one `docker inspect` away and is never the thing being compared by eye.
-_ABBREVIATED = 8
-
-
-def abbreviate(batch: object) -> str:
-    return f"`{str(batch)[:_ABBREVIATED]}…`"
+# A digest is 71 characters and only ever wanted as evidence, not as an
+# identifier to compare by eye, so enough of it to be unambiguous is enough. A
+# batch id is not truncated at all: it is the value a reader copies into a tag or
+# greps the log for, and a table with four columns has the room.
+_DIGEST_SHOWN = 23
 
 
 def _state_of(provenance: Provenance) -> tuple[str, str]:
@@ -57,9 +54,9 @@ def _state_of(provenance: Provenance) -> tuple[str, str]:
     """
     match provenance:
         case Minted(batch, _):
-            return "pinned", abbreviate(batch)
+            return "pinned", f"`{batch}`"
         case Unlabelled(digest):
-            return "floating", f"no batch label ({digest[:14]}…)"
+            return "floating", f"no batch label on `{digest[:_DIGEST_SHOWN]}`"
         case Unreadable(reason):
             return "**floating**", reason
         case unreachable:
@@ -141,9 +138,9 @@ def provenance_section(heading: str, outcomes: Iterable[BuildOutcome]) -> tuple[
     )
 
     verdict = (
-        f"⚠️ **{len(skewed)} image(s) assembled from more than one batch**"
+        f"**SKEW: {len(skewed)} image(s) assembled from more than one generation**"
         if skewed
-        else "✅ every image's edges agree on one batch"
+        else "**OK**: no image is assembled from more than one generation of an ancestor"
     )
 
     return (
@@ -196,14 +193,13 @@ def graph_section(
         "depends on how often the repository changes",
         f"- the deepest edge reaches **{deepest} generation(s)** back. An edge reaching "
         "back *k* is pinned to the *k*-th newest generation, because an artifact's "
-        "binaries were compiled against a base one generation older than its own batch -- "
-        "so the base it lands on has to be that much older too, or they disagree",
+        "binaries were compiled against a base one generation older than its own batch, "
+        "so the base it lands on has to be that much older too or they disagree",
         "",
         "| Image | Consumes (usage, generations back) | Consumed by |",
         "| --- | --- | --- |",
         *(
-            f"| `{image}` "
-            f"| {_joined(f'`{d.image}` ({d.usage}, −{d.generations_back})' for d in edges[image])} "
+            f"| `{image}` | {_joined(_edge_label(d) for d in edges[image])} "
             f"| {_joined(f'`{name}`' for name in dependents[image])} |"
             for image in members
         ),
@@ -216,9 +212,17 @@ def graph_section(
     )
 
 
+def _edge_label(dependency: Dependency) -> str:
+    """One edge as the graph table shows it: what, how, and how far back."""
+    return f"`{dependency.image}` ({dependency.usage}, {dependency.generations_back} back)"
+
+
 def _joined(parts: Iterable[str]) -> str:
-    """An em dash for emptiness, so a blank cell never reads as a missing value."""
-    return ", ".join(parts) or "—"
+    """Spells emptiness out, so a blank cell never reads as a missing value.
+
+    Matches `MatrixEntry.summary`, which already had to answer this question.
+    """
+    return ", ".join(parts) or "(none)"
 
 
 def outcome_rows(outcomes: Sequence[BuildOutcome], dealt: frozenset[str]) -> tuple[str, ...]:

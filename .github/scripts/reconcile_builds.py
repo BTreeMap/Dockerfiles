@@ -147,14 +147,14 @@ def main() -> int:
 
     write_summary(
         [
-            *provenance_section(f"Reconcile ({platform}) — what each rebuild consumed", outcomes),
+            *provenance_section(f"Reconcile ({platform}): what each rebuild consumed", outcomes),
             "",
             f"### Reconcile ({platform})",
             "",
             f"Rebuilt {len(missing)} missing image(s).",
             "",
             *(
-                f"- `{outcome.task.image}.{outcome.task.platform}` — "
+                f"- `{outcome.task.image}.{outcome.task.platform}`: "
                 f"{'ok' if succeeded(outcome) else '**failed**'}"
                 for outcome in outcomes
             ),

@@ -84,7 +84,7 @@ def summarise(
             "| Image | Result | Attempts | Duration | Origin |",
             "| --- | --- | --- | --- | --- |",
             *outcome_rows(outcomes, dealt),
-            *provenance_section(f"Worker {worker_id} — what each image consumed", outcomes),
+            *provenance_section(f"Worker {worker_id}: what each image consumed", outcomes),
             "",
         ]
     )

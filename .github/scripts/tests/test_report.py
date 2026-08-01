@@ -73,7 +73,7 @@ def test_an_ancestor_claimed_at_two_generations_is_called_out() -> None:
         ],
     )
 
-    assert any("⚠️" in line and "1 image(s)" in line for line in lines)
+    assert any("**SKEW:" in line and "1 image(s)" in line for line in lines)
     assert any("two generations of `code-server-base`" in line for line in lines)
 
 
@@ -88,8 +88,8 @@ def test_an_ancestor_claimed_consistently_reports_agreement() -> None:
             )
         ],
     )
-    assert any("✅" in line for line in lines)
-    assert not any("⚠️" in line for line in lines)
+    assert any("**OK**" in line for line in lines)
+    assert not any("SKEW" in line for line in lines)
 
 
 def test_a_floating_edge_is_not_counted_as_disagreement() -> None:
@@ -102,7 +102,7 @@ def test_a_floating_edge_is_not_counted_as_disagreement() -> None:
     lines = provenance_section(
         "W", [built("code-server", (BASE, Minted(BATCH, "sha256:a")), (GO, Unlabelled("sha256:b")))]
     )
-    assert any("✅" in line for line in lines)
+    assert any("**OK**" in line for line in lines)
     assert any("1 unpinned" in line for line in lines)
 
 
@@ -143,7 +143,7 @@ def test_isolated_images_are_folded_away_but_not_lost() -> None:
 def test_an_empty_cell_reads_as_empty_rather_than_missing() -> None:
     edges = {"base": (), "app": (Dependency(image="base", usage=Usage.BASE),)}
     dependents = {"base": ("app",), "app": ()}
-    assert any(line.endswith("| — |") for line in graph_section(edges, dependents))
+    assert any(line.endswith("| (none) |") for line in graph_section(edges, dependents))
 
 
 # --- ordering ---------------------------------------------------------------
