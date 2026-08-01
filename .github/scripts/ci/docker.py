@@ -18,6 +18,7 @@ from typing import assert_never
 
 from ci.domain import BuildFailed, BuildOutcome, BuildSucceeded, Task
 from ci.env import BuildIdentity
+from ci.provenance import label_arguments, resolve_all
 from ci.retry import Exhausted, Succeeded, with_retries
 
 logger = logging.getLogger("ci.docker")
@@ -202,6 +203,15 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
     """
     tags = tags_for(task, identity)
 
+    # Resolved once, outside the retry loop: this describes what the run is
+    # consuming, and re-asking on each of up to fifty attempts would let the
+    # description drift between attempts of a single build.
+    labels = label_arguments(
+        task,
+        identity.batch,
+        resolve_all(task.dependencies, identity.base_image, task.platform),
+    )
+
     command = (
         "docker",
         "buildx",
@@ -222,6 +232,7 @@ def build_and_push(task: Task, identity: BuildIdentity) -> BuildOutcome:
         # stolen by a peer correctly picks up that peer's egress and not the
         # victim's.
         *proxy_build_args(os.environ.get("BUILD_PROXY_URL")),
+        *labels,
         *(argument for tag in tags for argument in ("--tag", tag)),
         "--file",
         task.dockerfile,

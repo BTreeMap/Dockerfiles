@@ -57,6 +57,19 @@ class BatchId:
             raise ValueError(f"not a batch id: {self.value!r}")
 
     @classmethod
+    def parse(cls, raw: str) -> Self | None:
+        """The total form: absence rather than an exception for expected input.
+
+        A batch id read back from a registry label is untrusted -- it was written
+        by some earlier run of unknown vintage, or by hand -- so it crosses into
+        the domain here rather than being believed because of where it was found.
+        """
+        try:
+            return cls(raw.strip())
+        except ValueError:
+            return None
+
+    @classmethod
     def derive(cls, run_id: str, run_attempt: str, commit_sha: str, date_time: str) -> Self:
         """Mints the batch for one execution.
 
@@ -175,6 +188,40 @@ _NonEmptyText = Annotated[str, Field(strict=True, min_length=1)]
 _Integer = Annotated[int, Field(strict=True)]
 
 
+class Usage(StrEnum):
+    """How one image of this repository consumes another.
+
+    The distinction is what makes provenance diagnostic rather than decorative.
+    A BASE edge says this image's shared libraries come from there. An ARTIFACT
+    edge says binaries built against *that* image's libraries were copied in to
+    run against these. When the two edges of one image resolve to different
+    batches and an upstream release bumped in between, that is the mismatch --
+    and it is invisible unless the edges are distinguished.
+    """
+
+    BASE = "base"
+    ARTIFACT = "artifact"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@pydantic_dataclass(frozen=True)
+class Dependency:
+    """One edge from an image to another image this repository builds.
+
+    Ordered by (image, usage) wherever a collection of these is produced, so the
+    labels rendered from them are byte-stable across runs. An unordered set would
+    make every rebuild a digest change for a graph that had not moved.
+    """
+
+    image: _NonEmptyText
+    usage: Usage
+
+    def sort_key(self) -> tuple[str, str]:
+        return (self.image, str(self.usage))
+
+
 @pydantic_dataclass(frozen=True)
 class Task:
     """A self-describing unit of build work.
@@ -195,6 +242,17 @@ class Task:
     context: _Text
     platform: Platform
     max_retries: _Integer
+    # Both directions of this image's place in the repository's own dependency
+    # graph, and both carried rather than looked up: a stolen task must still
+    # know what it consumes and who consumes it, which is the same closure
+    # argument the retry budget is here for.
+    #
+    # Defaulted because most images are isolated -- they depend on nothing here
+    # and nothing here depends on them -- and an empty pair is precisely how the
+    # provenance labels know to stay off an image whose digest would otherwise
+    # churn on every run for no information. See `provenance.label_arguments`.
+    dependencies: tuple[Dependency, ...] = ()
+    dependents: tuple[_NonEmptyText, ...] = ()
 
     @classmethod
     def parse(cls, payload: Any) -> Task | None:

@@ -125,6 +125,20 @@ def read_json[T](name: str, schema: TypeAdapter[T]) -> T:
         raise MissingEnvironment(_explain(name, raw, error)) from error
 
 
+def registry_repository() -> str:
+    """The registry reference this repository publishes every image under.
+
+    Its own function because two stages need it for unrelated reasons and must
+    agree exactly: `BuildIdentity` builds tags from it, and discovery decides
+    which Dockerfile references point back at this repository by testing against
+    it. A discrepancy between those two -- a stray uppercase, say -- would make
+    an internal dependency look external and silently drop it from the graph.
+    """
+    registry = read("DOCKER_REGISTRY", TEXT).lower()
+    repository = read("DOCKER_IMAGE_NAME", TEXT).lower()
+    return f"{registry}/{repository}"
+
+
 @dataclass(frozen=True, slots=True)
 class BuildIdentity:
     """The batch, timestamp, and commit facts that every tag in a run derives from.
@@ -147,8 +161,6 @@ class BuildIdentity:
         # (MESH_SECRET) and dynamically defaulted (BUILD_SLOTS from cpu_count),
         # so the alias and factory boilerplate would exceed what it saves. The
         # constraint work is already pydantic's; only the lookup is not.
-        registry = read("DOCKER_REGISTRY", TEXT).lower()
-        repository = read("DOCKER_IMAGE_NAME", TEXT).lower()
         # Bound before the call rather than read inside it: the batch is a
         # function of these two, and reading them twice would let the tag and the
         # token they appear in drift if a read ever became non-deterministic.
@@ -172,7 +184,7 @@ class BuildIdentity:
                 commit_sha=commit_sha,
                 date_time=date_time,
             ),
-            base_image=f"{registry}/{repository}",
+            base_image=registry_repository(),
         )
 
 

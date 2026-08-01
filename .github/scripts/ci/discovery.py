@@ -18,6 +18,7 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from ci.derive import Derivation, Scope
 from ci.domain import Platform, Task
+from ci.references import dependents_of, graph
 
 # Each glob is paired with the naming rule it implies, so no layout can be
 # admitted without stating what it is called. The two rules agree by
@@ -86,11 +87,22 @@ def definitions(root: Path) -> Mapping[str, Path]:
     return {image: paths[0] for image, paths in grouped.items()}
 
 
-def discover(root: Path, platforms: Iterable[Platform], max_retries: int) -> tuple[Task, ...]:
+def discover(
+    root: Path, platforms: Iterable[Platform], max_retries: int, registry_repository: str
+) -> tuple[Task, ...]:
     """Builds one task per (image, platform), ordered deterministically.
 
-    Raises `ConflictingDockerfiles` if the tree defines one image twice.
+    Each task carries both directions of its place in the repository's own
+    dependency graph, resolved here because this is where the whole tree is in
+    view: whether an image is consumed by another is not a fact any single
+    Dockerfile can state.
+
+    Raises `ConflictingDockerfiles` if the tree defines one image twice, and
+    `DanglingReference` if one consumes an image nothing here builds.
     """
+    found = definitions(root)
+    edges = graph(found, registry_repository, root)
+    dependents = dependents_of(edges)
     return tuple(
         Task(
             image=image,
@@ -98,8 +110,10 @@ def discover(root: Path, platforms: Iterable[Platform], max_retries: int) -> tup
             context=str(dockerfile.parent.relative_to(root)),
             platform=platform,
             max_retries=max_retries,
+            dependencies=edges[image],
+            dependents=dependents[image],
         )
-        for image, dockerfile in definitions(root).items()
+        for image, dockerfile in found.items()
         for platform in platforms
     )
 
