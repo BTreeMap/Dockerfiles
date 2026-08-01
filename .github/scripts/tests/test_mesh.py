@@ -10,8 +10,10 @@ import pytest
 
 from ci.domain import (
     Authenticated,
+    Drained,
     HeaderAuthOutcome,
     HeadersAuthentic,
+    HealthUnknown,
     Hostname,
     PeerEmpty,
     PeerUnreachable,
@@ -218,11 +220,18 @@ def _local(port: int, path: str, body: bytes = b"") -> httpx.Response:
         return http.get(url, headers=headers)
 
 
-def test_health_reports_the_pending_count() -> None:
+def test_health_reports_what_the_peer_would_hand_over() -> None:
+    """Two queued, one retained, so one is on offer.
+
+    The published figure is the releasable count rather than the queue depth,
+    because those two disagree at exactly the size where the disagreement costs
+    a thief the whole grace period: a peer holding one task refuses every steal
+    while a depth report calls it busy.
+    """
     queue = TaskQueue([task("a"), task("b")])
     with serve_mesh(worker_id=0, secret=SECRET, queue=queue) as port:
         payload = _local(port, "/health").json()
-    assert payload == {"worker_id": 0, "pending": 2}
+    assert payload == {"worker_id": 0, "spare": 1}
 
 
 def test_steal_hands_over_real_tasks() -> None:
@@ -268,8 +277,8 @@ def test_client_steal_and_health_against_a_live_endpoint() -> None:
         assert isinstance(outcome, Stolen) and len(outcome.tasks) == 1
         assert outcome.tasks[0].image == "t2"  # the tail, not the head
 
-        # Two of three remain, so the peer is Working rather than Drained.
-        assert client.health_of(HOST) == Working(2)
+        # Two of three remain, one of which is retained, so one is still spare.
+        assert client.health_of(HOST) == Working(1)
 
 
 def test_client_reports_empty_rather_than_unreachable_when_a_peer_answers() -> None:
@@ -292,11 +301,66 @@ def test_drained_requires_every_expected_peer() -> None:
         assert client_for(1, port, expected_peers=2).peers_drained() is False
 
 
-def test_drained_is_only_true_for_a_confirmed_empty_queue() -> None:
-    with serve_mesh(worker_id=0, secret=SECRET, queue=TaskQueue([task("busy")])) as port:
+def test_a_peer_holding_only_its_retained_task_is_drained() -> None:
+    """The case that used to cost a run the full grace period.
+
+    A victim never hands over its last task, so this peer has already given its
+    final answer to every steal that will ever be attempted against it. Read as
+    "busy", it kept a thief polling for ninety seconds to be told the same thing
+    thirty times.
+    """
+    with serve_mesh(worker_id=0, secret=SECRET, queue=TaskQueue([task("mine")])) as port:
+        client = client_for(1, port, expected_peers=1)
+        assert client.health_of(HOST) == Drained()
+        assert client.peers_drained() is True
+
+
+def test_a_peer_with_work_to_give_keeps_a_thief_alive() -> None:
+    with serve_mesh(worker_id=0, secret=SECRET, queue=TaskQueue([task("mine"), task("spare")])) as (
+        port
+    ):
         client = client_for(1, port, expected_peers=1)
         assert client.health_of(HOST) == Working(1)
         assert client.peers_drained() is False
+
+
+def test_a_peer_that_has_answered_before_and_gone_is_finished() -> None:
+    """A worker shuts down only with an empty queue, so silence after contact is
+    completion rather than absence.
+
+    Without this the last worker standing waited out the grace period at the end
+    of every run, polling hosts whose runners had already been torn down.
+    """
+    # Redirected rather than shut down: closing the endpoint leaves the client's
+    # keep-alive connection served by a lingering handler thread, so the peer
+    # would still answer and the test would prove nothing.
+    reachable_at = [0]
+    client = MeshClient(
+        secret=SECRET,
+        worker_id=1,
+        rendezvous=RENDEZVOUS,
+        github=httpx.Client(base_url="http://127.0.0.1:1", timeout=0.25),
+        peers_client=httpx.Client(timeout=5.0),
+        expected_peers=1,
+        peer_origin=lambda _hostname: f"http://127.0.0.1:{reachable_at[0]}",
+    )
+    client.seed_peers({0: HOST})
+
+    with serve_mesh(worker_id=0, secret=SECRET, queue=TaskQueue([task("mine")])) as port:
+        reachable_at[0] = port
+        assert client.health_of(HOST) == Drained()
+
+    reachable_at[0] = 1  # nothing listens here
+    assert isinstance(client.health_of(HOST), HealthUnknown)
+    assert client.peers_drained() is True
+
+
+def test_a_peer_that_has_never_answered_is_not_finished() -> None:
+    """The distinction the whole rule turns on: not booted yet is not done."""
+    client = client_for(worker_id=1, port=1, expected_peers=1)
+    client.seed_peers({0: HOST})
+    assert isinstance(client.health_of(HOST), HealthUnknown)
+    assert client.peers_drained() is False
 
 
 # --- degradation without a credential --------------------------------------

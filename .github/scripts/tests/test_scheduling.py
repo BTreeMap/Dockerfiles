@@ -102,6 +102,19 @@ def test_a_victim_never_strips_itself_idle() -> None:
     assert len(queue) == 1
 
 
+def test_spare_is_what_release_would_actually_hand_over() -> None:
+    """The two must agree exactly: one is advertised, the other is honoured.
+
+    A queue that published a count it then refused to release would leave a
+    thief polling a peer whose answer could no longer change, which is the whole
+    reason the health endpoint reports this rather than the queue depth.
+    """
+    for depth in range(4):
+        queue = TaskQueue([task(f"t{index}") for index in range(depth)])
+        advertised = queue.spare()
+        assert advertised == len(queue.release(depth))
+
+
 def test_release_is_bounded_by_what_is_spare() -> None:
     queue = TaskQueue([task(f"t{index}") for index in range(5)])
     assert len(queue.release(10)) == 4

@@ -75,23 +75,23 @@ def test_task_elements_stay_opaque_so_one_bad_entry_costs_only_itself() -> None:
 
 def test_health_defaults_are_safe_when_fields_are_missing() -> None:
     report = HealthReport.model_validate_json(b"{}")
-    assert report.pending == 0 and report.worker_id == -1
+    assert report.spare == 0 and report.worker_id == -1
 
 
-def test_a_negative_pending_count_is_rejected() -> None:
-    """`pending` is the evidence `peers_drained` rests on.
+def test_a_negative_spare_count_is_rejected() -> None:
+    """`spare` is the evidence `peers_drained` rests on.
 
-    A negative depth is nonsense, and the old `int(...)` accepted it silently --
+    A negative count is nonsense, and the old `int(...)` accepted it silently --
     which would have read as "emptier than empty" to a caller deciding whether
     the run was finished.
     """
     with pytest.raises(ValidationError):
-        HealthReport.model_validate_json(b'{"pending": -1}')
+        HealthReport.model_validate_json(b'{"spare": -1}')
 
 
 def test_health_round_trips_through_its_own_schema() -> None:
-    encoded = HealthReport(worker_id=2, pending=5).model_dump()
-    assert HealthReport.model_validate(encoded) == HealthReport(worker_id=2, pending=5)
+    encoded = HealthReport(worker_id=2, spare=5).model_dump()
+    assert HealthReport.model_validate(encoded) == HealthReport(worker_id=2, spare=5)
 
 
 # --- Cloudflare's registration API ------------------------------------------

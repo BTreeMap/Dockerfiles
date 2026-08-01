@@ -107,10 +107,18 @@ class StealResponse(BaseModel):
 
 
 class HealthReport(BaseModel):
-    """A peer's queue depth. The evidence `peers_drained` rests on."""
+    """How much work a peer would part with. The evidence `peers_drained` rests on.
+
+    `spare`, not the queue depth. A victim retains its last task, so a peer
+    holding exactly one would answer every steal with nothing while reporting
+    itself busy -- and a thief believing that report polls a peer whose answer
+    can no longer change. Publishing the releasable count instead makes the two
+    statements the same one, and the default of zero is the safe direction: a
+    response this build cannot read describes a peer with nothing to offer.
+    """
 
     worker_id: int = -1
-    pending: Annotated[int, Field(ge=0)] = 0
+    spare: Annotated[int, Field(ge=0)] = 0
 
 
 # The three derivations this module mints. Distinct scopes give domain
@@ -317,7 +325,7 @@ class _MeshHandler(BaseHTTPRequestHandler):
             "GET",
             "/health",
             lambda _: HealthReport(
-                worker_id=self.worker_id, pending=len(self.queue)
+                worker_id=self.worker_id, spare=self.queue.spare()
             ).model_dump(),
         )
 
@@ -451,6 +459,10 @@ class MeshClient:
         # a quick tunnel is always reached over TLS.
         self._peer_origin = peer_origin
         self._known: dict[int, Hostname] = {}
+        # Monotone: hosts that have answered at least once. Both this and
+        # `_known` only ever grow, which is what makes the questions asked of
+        # them stable -- a peer cannot un-exist, and a mesh cannot un-assemble.
+        self._reached: set[Hostname] = set()
 
     def seed_peers(self, peers: Mapping[int, Hostname]) -> None:
         """Injects known membership, bypassing the git-ref rendezvous."""
@@ -577,16 +589,25 @@ class MeshClient:
         return Stolen(parsed) if parsed else PeerEmpty()
 
     def health_of(self, hostname: Hostname) -> PeerHealth:
+        """Asks one peer what it has to spare. Never raises.
+
+        This is also where the mesh's knowledge of who has ever answered is
+        recorded, because it is the boundary at which contact happens. That set
+        is what lets `peers_drained` tell a peer that has finished and gone away
+        from one that has not booted yet -- an unreachable host is otherwise the
+        same observation in both cases, and they call for opposite decisions.
+        """
         try:
             origin = self._peer_origin(hostname)
             response = self._peers.get(
                 f"{origin}/health", headers=self._headers("GET", "/health", b"")
             )
             response.raise_for_status()
-            pending = HealthReport.model_validate_json(response.content).pending
+            spare = HealthReport.model_validate_json(response.content).spare
         except (httpx.HTTPError, ValueError, TypeError) as error:
             return HealthUnknown(str(error))
-        return Drained() if pending == 0 else Working(pending)
+        self._reached.add(hostname)
+        return Drained() if spare == 0 else Working(spare)
 
     def _headers(self, method: str, path: str, body: bytes) -> Mapping[str, str]:
         timestamp = f"{time.time():.3f}"
@@ -637,13 +658,52 @@ class MeshClient:
         return PeerEmpty() if reachable else PeerUnreachable("no peer answered")
 
     def peers_drained(self) -> bool:
-        """True only when every expected peer is reachable and reports empty.
+        """True only when no expected peer can ever hand this worker more work.
 
         Requiring the full expected count is what stops an incomplete view being
-        mistaken for the work being finished; a peer that has not published yet
-        keeps this false, and so does one that cannot be reached.
+        mistaken for the work being finished: a peer that has not published yet
+        keeps this false, so silence from a mesh still assembling itself is
+        never read as completion.
+
+        Past that, each peer is settled by `_finished`, and the interesting case
+        is the one this used to get wrong in the other direction. A worker exits
+        only once its own queue is empty, so a peer that answered before and has
+        now gone silent has finished; treating it as unknown made whoever
+        outlived the rest of the mesh sit out the whole grace period at the end
+        of every run, polling hosts that no longer existed.
         """
         peers = self.discover_peers()
         if len(peers) < self._expected_peers:
             return False
-        return all(isinstance(self.health_of(hostname), Drained) for hostname in peers.values())
+        return all(map(self._finished, peers.values()))
+
+    def _finished(self, hostname: Hostname) -> bool:
+        """Whether this peer is ruled out as a source of any future work.
+
+        Total over the health sum, and each branch is a different kind of
+        evidence rather than a different confidence in the same kind:
+
+        `Drained` is the peer's own answer, and it is permanent -- work moves
+        only by stealing, so a peer with nothing spare can never acquire any.
+
+        `Working` is the one answer that keeps a thief alive.
+
+        `HealthUnknown` is read against what this client already knows. A host
+        it has reached before and cannot reach now has shut down, which it does
+        only with an empty queue. A host it has never reached may simply be
+        booting, and that is the case the grace period exists for.
+
+        The risk in the reached-before branch is a network fault mistaken for a
+        shutdown, and its cost is the one `decide_idle` already accepts for the
+        grace period expiring: a missed steal, never a missed build. An unstolen
+        task stays with whoever was dealt it.
+        """
+        match self.health_of(hostname):
+            case Drained():
+                return True
+            case Working():
+                return False
+            case HealthUnknown():
+                return hostname in self._reached
+            case other:
+                assert_never(other)

@@ -71,11 +71,17 @@ def decide_idle(
 
     1. Work in hand always wins.
     2. Stopping requires positive evidence -- `peers_drained` is true only when
-       every expected peer was reached *and* reported empty. An unreachable peer
-       leaves it false, so silence is never read as completion.
+       every expected peer has been accounted for and none of them holds work it
+       would ever hand over. A peer nobody has managed to contact yet leaves it
+       false, so silence from a mesh still assembling itself is never read as
+       completion.
     3. Otherwise the grace period bounds how long a slot waits on a peer that
        may still be booting. Expiring it costs a missed steal, never a missed
        build: an unstolen task stays with whoever was dealt it.
+
+    Rule 3 is the fallback, not the normal path. It fires when some peer never
+    answered at all; a mesh whose members all answered settles under rule 2 as
+    soon as the last of them runs out of spare work.
     """
     match steal:
         case Stolen(tasks):
@@ -109,15 +115,33 @@ class TaskQueue:
         with self._lock:
             return self._tasks.popleft() if self._tasks else None
 
-    def release(self, count: int) -> tuple[Task, ...]:
-        """Releases up to `count` tasks from the tail for a stealing peer.
+    def _spare(self) -> int:
+        """All but one. The retention rule itself, stated once.
 
-        Always retains at least one, so a victim never strips itself idle to
-        satisfy a thief that may be about to become busy anyway.
+        Two consumers must agree on it exactly: `release` bounds a handover by
+        it, and the health endpoint publishes it as the evidence a thief decides
+        to stop on. Written twice, a victim could advertise work it would then
+        refuse to part with, which is a thief polling forever.
+
+        The caller holds the lock; `threading.Lock` is not reentrant.
+        """
+        return max(0, len(self._tasks) - 1)
+
+    def spare(self) -> int:
+        """How many tasks this queue would hand to a peer that asked now.
+
+        Published rather than inferred from a refused steal, because the two are
+        different facts. A steal returns nothing both when the victim is out of
+        spare work and when it lost a race for the last one, and only the first
+        is grounds for a thief to give up on that peer for good.
         """
         with self._lock:
-            spare = max(0, len(self._tasks) - 1)
-            return tuple(self._tasks.pop() for _ in range(min(count, spare)))
+            return self._spare()
+
+    def release(self, count: int) -> tuple[Task, ...]:
+        """Releases up to `count` tasks from the tail for a stealing peer."""
+        with self._lock:
+            return tuple(self._tasks.pop() for _ in range(min(count, self._spare())))
 
     def restore(self, tasks: Iterable[Task]) -> None:
         """Returns tasks to the head, so nothing is lost mid-handoff."""

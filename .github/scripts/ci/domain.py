@@ -466,12 +466,24 @@ StealOutcome = Stolen | PeerEmpty | PeerUnreachable
 
 @dataclass(frozen=True, slots=True)
 class Drained:
-    """The peer confirmed an empty queue."""
+    """The peer holds nothing it could ever hand over.
+
+    Not the same as an empty queue, and the difference is what a thief is
+    actually asking about. A victim retains its last task rather than stripping
+    itself idle, so a peer holding exactly one will refuse every steal for the
+    rest of its life; reporting it as busy left the thief polling a peer that
+    had already given its final answer. What makes stopping on this sound is
+    that a queue only ever shrinks -- work moves between workers by stealing,
+    and a peer with nothing spare has nothing to move -- so a peer that is
+    drained once is drained for good.
+    """
 
 
 @dataclass(frozen=True, slots=True)
 class Working:
-    pending: int
+    """The peer holds tasks beyond the one it keeps for itself."""
+
+    spare: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -480,8 +492,10 @@ class HealthUnknown:
 
 
 # Only Drained is evidence that a peer is finished. HealthUnknown must never be
-# read as "done", which is precisely the confusion that would let a worker exit
-# while a late-booting peer still holds tasks.
+# read as "done" on its own, which is precisely the confusion that would let a
+# worker exit while a late-booting peer still holds tasks -- see
+# `MeshClient.peers_drained`, which admits it only for a peer it has reached
+# before and so knows to have shut down rather than not yet started.
 PeerHealth = Drained | Working | HealthUnknown
 
 
