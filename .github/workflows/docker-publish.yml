@@ -121,6 +121,14 @@ jobs:
           PLATFORMS: amd64,arm64
           WORKER_COUNT: ${{ env.WORKER_COUNT }}
           MAX_RETRIES: ${{ env.MAX_RETRIES }}
+          # The same identity the build stages receive. This job derives the batch
+          # rather than being told it, so it needs every input the derivation
+          # takes, and the summary reports that batch beside the generations it
+          # walked.
+          DATE_STR: ${{ steps.timestamp.outputs.date }}
+          DATE_TIME_STR: ${{ steps.timestamp.outputs.date_time }}
+          PLAN_RUN_ID: ${{ steps.timestamp.outputs.run_id }}
+          PLAN_RUN_ATTEMPT: ${{ steps.timestamp.outputs.run_attempt }}
 
   build:
     needs: plan
