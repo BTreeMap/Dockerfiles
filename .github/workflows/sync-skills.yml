@@ -1,0 +1,46 @@
+# Ready to use: copy this file to .github/workflows/sync-skills.yml in your
+# repository (a real copy - GitHub Actions does not resolve symlinks under
+# .github/workflows). It works as-is with the standard setup:
+#
+#   git submodule add https://github.com/BTreeMap/SKILLs.git .github/skills
+#
+# Twice a day it fast-forwards the .github/skills gitlink to the upstream tip
+# on each branch listed below (default: main and master; missing branches
+# are skipped, not errors) and pushes one `chore:` commit per branch; when a
+# branch is already current it is left untouched. The upstream is whatever
+# each branch's .gitmodules records, so a fork of SKILLs with the same layout
+# works unchanged.
+#
+# All logic lives in the reusable workflow inside the SKILLs repository -
+# this caller contributes only the schedule and the `contents: write` grant.
+# (Forked SKILLs? Point the `uses:` line at your fork.) Pushes made with
+# GITHUB_TOKEN do not trigger other workflows, so this cannot recurse. If a
+# target branch is protected, allow github-actions to push or add a bypass.
+
+name: Sync skills
+
+on:
+  schedule:
+    # Twice daily (UTC), off the top of the hour to dodge cron congestion.
+    - cron: "23 4,16 * * *"
+  workflow_dispatch:
+
+# Deny-all default; the job below grants the reusable workflow exactly the
+# one permission it needs, and only for its own job.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    permissions:
+      contents: write
+    uses: BTreeMap/SKILLs/.github/workflows/sync-skills.yml@main
+    # Defaults shown; uncomment and adjust as needed:
+    # with:
+    #   submodule-path: .github/skills
+    #   branches: main master            # any list; missing ones are skipped
+    #   upstream-url: ""                 # e.g. https://github.com/you/SKILLs.git
+    #   upstream-ref: ""                 # branch to track, or HEAD for default
