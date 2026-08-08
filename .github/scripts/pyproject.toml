@@ -7,8 +7,13 @@ dependencies = [
     # The http2 extra is not decoration: Cloudflare's registration API is
     # reached over HTTP/2, which httpx only speaks when `h2` is installed.
     "httpx[http2]>=0.28.1",
-    # P-256 keys for MASQUE enrolment.
-    "cryptography>=44.0.0",
+    # P-256 keys for MASQUE enrolment. The floor is 50.0.0 rather than the 44.0.0
+    # those keys actually need: every release in [44.0.0, 50.0.0) distinguishes
+    # PKCS#7 EnvelopedData decryption failures by error text and by timing, which
+    # is a Bleichenbacher oracle. Nothing here decrypts EnvelopedData, so the
+    # floor exists to stop a resolver from selecting a vulnerable build, not to
+    # patch a call we make.
+    "cryptography>=50.0.0",
     # The parse boundary. Every untrusted value in this project -- environment
     # JSON, a peer's stolen-task payload, a hostname read back from a mutable
     # git ref -- crosses into the domain through a pydantic decoder, so the
@@ -36,6 +41,12 @@ dev = [
 # imported from the scripts directory on sys.path. Skipping the build backend
 # keeps CI setup to a dependency install.
 package = false
+# h2 is reached only through httpx's http2 extra, so there is no direct
+# requirement to raise. A constraint puts a floor under a transitive package
+# without fabricating a dependency the code does not import: h2 <=4.4.0 accepts
+# and forwards duplicate Host headers, which becomes a request-smuggling
+# primitive wherever HTTP/2 is downgraded to HTTP/1.1.
+constraint-dependencies = ["h2>=4.4.1"]
 
 [tool.ruff]
 line-length = 100
