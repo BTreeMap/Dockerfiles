@@ -77,6 +77,7 @@ RUN set -ex && \
         software-properties-common \
         strace \
         tar \
+        ttyd \
         unzip \
         valgrind \
         wget \
