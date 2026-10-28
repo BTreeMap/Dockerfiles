@@ -1,2 +1,1 @@
-FROM seafileltd/sdoc-server:2.0-latest
-
+FROM seafileltd/sdoc-server:2.0.9
