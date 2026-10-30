@@ -48,6 +48,7 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
         iptables \
         iputils-ping \
         jq \
+        libatomic1 \
         lsb-release \
         make \
         mtr \
