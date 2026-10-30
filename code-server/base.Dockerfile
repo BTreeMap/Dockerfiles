@@ -49,6 +49,7 @@ RUN set -ex && \
         iptables \
         iputils-ping \
         jq \
+        libatomic1 \
         libbpf-dev \
         libbpf1 \
         libc6-dev \
