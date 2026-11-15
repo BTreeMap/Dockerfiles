@@ -115,14 +115,21 @@ RUN set -ex && \
     \
     # Upgrade npm and install global AI CLIs (npm is now instantly available)
     npm install -g npm@latest --no-audit --no-fund && \
-    npm install -g @openai/codex@latest --no-audit --no-fund && \
     npm install -g @anthropic-ai/claude-code@latest --no-audit --no-fund --allow-scripts=@anthropic-ai/claude-code && \
+    npm install -g @github/copilot@latest --no-audit --no-fund && \
+    npm install -g @openai/codex@latest --no-audit --no-fund && \
     \
     # Clear npm cache
     npm cache clean --force && \
     \
     # Install Antigravity CLI globally
     curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && \
+    \
+    # Verify every AI coding CLI prints its version
+    agy --version && \
+    claude --version && \
+    codex --version && \
+    copilot --version && \
     \
     # Fix ownership for the fnm directory
     chown -R ${PUID}:${PGID} $FNM_DIR && \

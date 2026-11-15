@@ -106,14 +106,21 @@ RUN DOCKER_TMP_DIR="/tmp/.docker" && \
     # Install and use latest Node LTS, then upgrade npm and install AI CLIs
     fnm use lts/latest --install-if-missing && \
     npm install -g npm@latest --no-audit --no-fund && \
-    npm install -g @openai/codex@latest --no-audit --no-fund && \
     npm install -g @anthropic-ai/claude-code@latest --no-audit --no-fund --allow-scripts=@anthropic-ai/claude-code && \
+    npm install -g @github/copilot@latest --no-audit --no-fund && \
+    npm install -g @openai/codex@latest --no-audit --no-fund && \
     node -v && \
     npm -v && \
     npm cache clean --force && \
     \
     # Install Antigravity CLI globally via official script
     curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && \
+    \
+    # Verify every AI coding CLI prints its version
+    agy --version && \
+    claude --version && \
+    codex --version && \
+    copilot --version && \
     \
     # System-wide shell integration for fnm (/etc/profile.d is sufficient for our use cases)
     printf '%s\n' 'eval "$(fnm env --use-on-cd --shell bash)"' \
