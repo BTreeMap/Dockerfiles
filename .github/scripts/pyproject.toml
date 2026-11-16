@@ -29,9 +29,10 @@ dev = [
 # Entry-point scripts run in place, not a distributable library, so there is
 # nothing to build.
 package = false
-# GHSA-6q48-6c7w-9gw2
-# GHSA-6hr6-w5qg-qmwg
-constraint-dependencies = ["certifi>=2026.10.19", "h2>=4.4.1"]
+constraint-dependencies = [
+    "certifi>=2026.10.19",  # GHSA-6q48-6c7w-9gw2
+    "h2>=4.4.1",  # GHSA-6hr6-w5qg-qmwg
+]
 
 [tool.ruff]
 line-length = 100
