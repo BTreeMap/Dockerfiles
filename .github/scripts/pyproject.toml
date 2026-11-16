@@ -30,9 +30,7 @@ dev = [
 # nothing to build.
 package = false
 # GHSA-6q48-6c7w-9gw2
-# h2 is transitive through httpx's http2 extra: <=4.4.0 forwards duplicate
-# Host headers, a request-smuggling primitive where HTTP/2 downgrades to
-# HTTP/1.1.
+# GHSA-6hr6-w5qg-qmwg
 constraint-dependencies = ["certifi>=2026.10.19", "h2>=4.4.1"]
 
 [tool.ruff]
