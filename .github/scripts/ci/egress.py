@@ -138,6 +138,7 @@ _PROXY_NAME = "warp"
 # Cloudflare infrastructure either way.
 _PROXIED_DOMAINS: tuple[str, ...] = (
     "cloudflare.com",
+    "joefang.org",
     "launchpad.net",
     "launchpadcontent.net",
 )
