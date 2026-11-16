@@ -7,19 +7,12 @@ dependencies = [
     # The http2 extra is not decoration: Cloudflare's registration API is
     # reached over HTTP/2, which httpx only speaks when `h2` is installed.
     "httpx[http2]>=0.28.1",
-    # P-256 keys for MASQUE enrolment. The floor is 50.0.0 rather than the 44.0.0
-    # those keys actually need: every release in [44.0.0, 50.0.0) distinguishes
-    # PKCS#7 EnvelopedData decryption failures by error text and by timing, which
-    # is a Bleichenbacher oracle. Nothing here decrypts EnvelopedData, so the
-    # floor exists to stop a resolver from selecting a vulnerable build, not to
-    # patch a call we make.
+    # P-256 keys for MASQUE enrolment need only 44.0.0, but the floor is
+    # 50.0.0: releases in [44.0.0, 50.0.0) leak PKCS#7 EnvelopedData
+    # decryption failures by error text and timing, a Bleichenbacher oracle.
     "cryptography>=50.0.0",
-    # The parse boundary. Every untrusted value in this project -- environment
-    # JSON, a peer's stolen-task payload, a hostname read back from a mutable
-    # git ref -- crosses into the domain through a pydantic decoder, so the
-    # schema is declared once and enforced identically on both the encoding and
-    # decoding side. Types the code constructs itself stay stdlib dataclasses:
-    # validating a value we just built is ceremony, not safety.
+    # Every untrusted value in this project crosses the parse boundary
+    # through a pydantic decoder.
     "pydantic>=2.9",
 ]
 
@@ -27,31 +20,23 @@ dependencies = [
 dev = [
     "pytest>=8.3.4",
     "ruff>=0.9.4",
-    # The domain model is built out of closed sums eliminated with
-    # `assert_never`. That construction only means anything if something
-    # actually checks exhaustiveness -- without a type checker, `assert_never`
-    # is a comment that costs a function call. It is a dev dependency because
-    # it gates merges, not builds.
+    # mypy gates merges by checking exhaustiveness of assert_never over the
+    # closed sums.
     "mypy>=1.14",
 ]
 
 [tool.uv]
-# These are entry-point scripts run in place, not a distributable library, so
-# there is nothing to build: `uv sync` resolves dependencies only, and `ci` is
-# imported from the scripts directory on sys.path. Skipping the build backend
-# keeps CI setup to a dependency install.
+# Entry-point scripts run in place, not a distributable library, so there is
+# nothing to build.
 package = false
-# certifi is reached only through httpx, so there is no direct requirement to
-# raise. The same constraint mechanism as h2 below: 2026.7.22 bundles emSign
-# root CAs with compromised intermediate keys (GHSA-6q48-6c7w-9gw2). The first
-# fixed release is 2026.10.18, but the advisory recommends 2026.10.19 or
-# later: 2026.10.18 removed all emSign roots, 2026.10.19 restores the ones
-# that are not affected.
-# h2 is reached only through httpx's http2 extra, so there is no direct
-# requirement to raise. A constraint puts a floor under a transitive package
-# without fabricating a dependency the code does not import: h2 <=4.4.0 accepts
-# and forwards duplicate Host headers, which becomes a request-smuggling
-# primitive wherever HTTP/2 is downgraded to HTTP/1.1.
+# certifi is transitive through httpx, so its floor lives here, not in
+# dependencies: 2026.7.22 bundles emSign roots with compromised intermediate
+# keys (GHSA-6q48-6c7w-9gw2), and the floor is 2026.10.19 because 2026.10.18
+# fixed the CVE but removed all emSign roots while 2026.10.19 restores the
+# unaffected ones.
+# h2 is transitive through httpx's http2 extra: <=4.4.0 forwards duplicate
+# Host headers, a request-smuggling primitive where HTTP/2 downgrades to
+# HTTP/1.1.
 constraint-dependencies = ["certifi>=2026.10.19", "h2>=4.4.1"]
 
 [tool.ruff]
@@ -70,9 +55,8 @@ python_version = "3.12"
 files = ["ci", "tests", "build_docker_images.py", "create_docker_manifests.py",
          "discover_tasks.py", "reconcile_builds.py", "setup_egress.py"]
 strict = true
-# The point of the strict setting above is exhaustiveness. These two make a
-# forgotten variant an error rather than a shrug: without them a non-exhaustive
-# `match` over a union silently infers `None` and `assert_never` never fires.
+# These two flags make a forgotten variant an error instead of silently
+# inferring None, so assert_never fires.
 warn_unreachable = true
 disallow_any_explicit = false
 
