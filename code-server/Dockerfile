@@ -31,6 +31,7 @@ FROM ${CODE_SERVER_BASE}
 
 # Set environment variables for the final image
 ENV CABAL_UPDATE_PACKAGES=true \
+    COPILOT_CACHE_HOME=/opt/copilot \
     PATCH_JSON=true \
     PATCH_JSON_ENABLE_SORT_KEYS=true \
     PATCH_JSON_USE_FORCE=true \
@@ -131,8 +132,8 @@ RUN set -ex && \
     codex --version && \
     copilot --version && \
     \
-    # Fix ownership for the fnm directory
-    chown -R ${PUID}:${PGID} $FNM_DIR && \
+    # Fix ownership for the fnm directory and the Copilot cache
+    mkdir -p /opt/copilot && chown -R ${PUID}:${PGID} $FNM_DIR /opt/copilot && \
     \
     # Remove temporary and unnecessary files
     apt-get clean && \
